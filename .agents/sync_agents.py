@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -161,13 +163,28 @@ def existing_generated(root: Path) -> set[Path]:
         (".codex/agents", "*.toml"),
     ):
         for p in (root / d).glob(pattern):
+            # Scan the whole file: in Markdown the marker follows the front matter,
+            # which can be arbitrarily long.
             try:
-                head = p.read_text(encoding="utf-8")[:2000]
-            except OSError:
+                text = p.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
                 continue
-            if MARKER in head:
+            if MARKER in text:
                 found.add(p)
     return found
+
+
+def write_atomic(path: Path, content: str) -> None:
+    """Replace `path` in one step, so an interrupted sync never leaves a partial file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def main() -> int:
@@ -218,8 +235,7 @@ def main() -> int:
         return 0
 
     for p, c in sorted(to_write.items()):
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(c, encoding="utf-8")
+        write_atomic(p, c)
         print(f"wrote: {p.relative_to(root)}")
     for p in to_delete:
         p.unlink()
