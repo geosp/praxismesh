@@ -13,26 +13,30 @@ The local stack SHALL start with `make up` and stop with `make down`, from a cle
 - **WHEN** a developer runs `make up` on a clean checkout with `.env` created from `.env.example`
 - **THEN** every service reports healthy and the Temporal UI is reachable on its documented port
 
+#### Scenario: Repeat start
+- **WHEN** a developer runs `make up` a second time on a running or stopped stack
+- **THEN** it succeeds, and the schema and namespace jobs make no changes
+
 #### Scenario: Stop
 - **WHEN** a developer runs `make down`
 - **THEN** all stack containers stop and named volumes remain
 
 ### Requirement: Health checks
-Every service in the stack SHALL define a health check, and `make up` SHALL wait until all services are healthy or exit non-zero naming the unhealthy service. (Plan: Phase 0 task 3.)
+Every service in the stack SHALL define a health check. The database health check SHALL prove that its databases and roles exist, not only that the server accepts connections. `make up` SHALL wait until all services are healthy or exit non-zero naming the unhealthy service, and `make status` SHALL report each service's health. (Plan: Phase 0 task 3.)
 
 #### Scenario: Unhealthy service
-- **WHEN** a service fails its health check within the start timeout
-- **THEN** `make up` exits non-zero and names that service
+- **WHEN** the `db` service is stopped while the rest of the stack runs
+- **THEN** `make status` names `db` as unhealthy and `make smoke` fails naming the database as unreachable
 
 ### Requirement: Persistent state
-Database contents, Temporal history and stored objects SHALL be kept in named volumes and survive `make down` followed by `make up`. (Plan: Phase 0 accept criteria.)
+Database contents, Temporal history and stored objects SHALL be kept in named volumes and survive `make down` followed by `make up`, checked by an automated restart sequence (`make restart-check`) that CI runs. (Plan: Phase 0 accept criteria; §8 tests before demos.)
 
 #### Scenario: Restart keeps state
 - **WHEN** a Workflow has completed and an object has been stored, and the stack is restarted
 - **THEN** the Workflow is still visible in Temporal and the object can still be read
 
 ### Requirement: Configuration without committed secrets
-All endpoints, ports and credentials SHALL come from `.env`. The repository SHALL contain only `.env.example` with placeholder values. (Plan: Phase 0 task 3; §2 no committed secrets.)
+All endpoints, ports and credentials SHALL come from `.env` at the repository root. The repository SHALL contain only `.env.example` with placeholder values; CI copies it to `.env`. (Plan: Phase 0 task 3; §2 no committed secrets.)
 
 #### Scenario: No secrets in Git
 - **WHEN** the repository is scanned by CI's secret scan
@@ -46,7 +50,7 @@ A missing prerequisite (Docker not running, `.env` missing, a required variable 
 - **THEN** it exits non-zero with a message telling the developer to copy `.env.example`
 
 ### Requirement: Temporal smoke test
-A hello-world Workflow and Activity SHALL run against the local Temporal and complete, and the run SHALL appear in the Temporal UI. (Plan: Phase 0 task 4 and accept criteria.)
+A hello-world Workflow and Activity SHALL run against the local Temporal, through an in-process worker on a task queue unique to the run, in the namespace the stack creates with its configured retention, and complete. The run SHALL appear in the Temporal UI. (Plan: Phase 0 task 4 and accept criteria; §4.13 retention.)
 
 #### Scenario: Hello Workflow
 - **WHEN** the smoke test starts the hello-world Workflow

@@ -11,8 +11,9 @@ Every later phase runs on a local platform stack: durable execution (Temporal), 
   - Temporal Server with its UI;
   - SeaweedFS with an S3-compatible endpoint.
 - `make up`, `make down` and `make migrate`; `.env.example` with no secrets committed; health checks; named volumes.
-- vLLM is reached as an **external** endpoint configured in `.env` (the DGX Spark pair), with an optional Compose profile for a local vLLM on a GPU machine.
-- An Alembic migration baseline for the application database, with `pg_search` available there.
+- vLLM is reached as an **external** endpoint configured in `.env` (the DGX Spark pair: two machines serving one model at one base URL). A local vLLM Compose profile is deferred until a GPU machine runs the stack.
+- An Alembic migration baseline for the application database (`common/persistence/migrations/`, plan §6), with `pg_search` installed there by the database init.
+- One-shot jobs that set up Temporal's schema and create its namespace with a retention period (§4.13), safe to repeat.
 - Smoke tests:
   - a hello-world Temporal Workflow;
   - both vLLM API styles (Anthropic Messages and OpenAI chat);
@@ -20,7 +21,7 @@ Every later phase runs on a local platform stack: durable execution (Temporal), 
   - migrations from a clean volume and after a restart.
 - A reproducible demo, including a missing-dependency failure that gives a clear diagnostic.
 
-Not in scope: product code (gateway, orchestrator, harness workers), Kubernetes, GCS or Ceph services (documented only), and security hardening beyond keeping secrets out of Git.
+Not in scope: product code (gateway, orchestrator, harness workers), Kubernetes, GCS or Ceph services (documented only), a Compose vLLM service, and security hardening beyond keeping secrets out of Git.
 
 ## Capabilities
 
@@ -35,7 +36,8 @@ Not in scope: product code (gateway, orchestrator, harness workers), Kubernetes,
 
 ## Impact
 
-- New: `infra/` (Compose file, environment template), `Makefile`, `migrations/` (Alembic), `tests/smoke/`, a CI job that runs the stack on GitHub's runners.
-- New runtime dependencies (Python, pinned in `uv.lock`): `temporalio`, `alembic`, a PostgreSQL driver, and an S3 client.
-- Container images, pinned by tag and digest: ParadeDB `0.26.6-pg16` (AGPL-3.0, run unmodified; see `docs/release.md`), Temporal Server and admin tools 1.32.2, Temporal UI 2.58.1, SeaweedFS 4.53.
+- New: `infra/` (Compose file, database init script), `.env.example`, `Makefile`, `common/persistence/migrations/` (Alembic), `tests/integration/` (marked `integration`, excluded from the default unit run), a CI `stack` job, and a Dependabot `docker-compose` entry.
+- New runtime dependencies (Python, pinned in `uv.lock`): `temporalio`, `alembic`, `psycopg[binary]` 3, `boto3`, `httpx`; dev: `boto3-stubs[s3]`.
+- Container images, pinned by tag and digest: ParadeDB `0.26.6-pg16` (AGPL-3.0, run unmodified; see `docs/release.md`), Temporal Server and admin tools 1.32.2, Temporal UI 2.58.1, SeaweedFS `chrislusf/seaweedfs:4.53`.
+- Tracking issue: #34.
 - Design: [docs/rfcs/phase-0-local-infrastructure.md](../../../docs/rfcs/phase-0-local-infrastructure.md).
