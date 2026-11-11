@@ -1,0 +1,37 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Node / UI
+node_modules/
+
+# Agent tooling: local, per-user settings and session data
+.claude/settings.local.json
+.claude/*.local.*
+.codex/*.local.*
+
+# Imported skills awaiting adaptation (may reference other projects; never publish)
+candidate_skills/
+
+# Scratch output from the github-pr skill
+pr-description.md
+
+# Editors / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store

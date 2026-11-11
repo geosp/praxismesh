@@ -1,0 +1,47 @@
+# PraxisMesh plan: Phase 0
+
+Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [PROJECT_PLAN.md](../../../PROJECT_PLAN.md). Section numbers match the core plan's document map.
+
+## Phase 0: Local infrastructure
+
+**Read first:** `PROJECT_PLAN.md`, then §4.13, §4.16 (precedence rule), §4.17.
+
+- [ ] Create `infra/docker-compose.yml` with Temporal OSS (verify supported release, target ≥1.28), PostgreSQL, Temporal UI, **SeaweedFS with S3-compatible endpoint**, and configurable vLLM. Maintain a separate application database/schema.
+- [ ] Configure vLLM for supported local model, `--served-model-name` without `/`, and model-appropriate tool-choice/parser flags, after checking current vLLM docs and selected model.
+- [ ] Add `make up`, `make down`, `.env.example`, health checks, ports, volume persistence and no committed secrets.
+- [ ] Provide a hello-world Temporal Workflow smoke test and `curl` tests for vLLM `/v1/messages` and OpenAI chat endpoint.
+- [ ] Smoke-check default `BlobStore` configuration (S3 put/get/delete against SeaweedFS). Document optional GCS and Ceph backend settings without requiring either service.
+- [ ] Establish the application-database **migration baseline** (Alembic or the verified equivalent): an empty baseline revision, `make migrate`, and a check that migrations apply from a clean volume and after a Compose restart. Later phases add tables to this baseline; the schema is no longer first created in Phase 3.
+- **Accept:** hello workflow completes and appears in UI; both vLLM endpoints answer; SeaweedFS object round-trip succeeds; the migration baseline applies cleanly; restarting Compose preserves intended persistent state.
+
+**Human-readable documentation and skill deliverables (planned for Phase 0):**
+
+- [ ] Author a human-readable Phase 0 RFC from the approved OpenSpec requirements and project plan, including topology, service boundaries, test/demo approach, alternatives and expected failures. Obtain independent design approval **before** infrastructure implementation; the first RFC uses a simple template because the documentation skill does not yet exist.
+- [ ] After the Phase 0 RFC is approved (under the light tier, at any point before Phase 3A begins), create a project-level **PraxisMesh documentation skill** and reusable RFC, ADR and as-built architecture templates. Skill instructions must enforce source/revision links, a readable narrative, diagrams where useful, accurate observed-versus-planned distinctions, and no invented verification. Version the skill in Git and test it in a fresh session; review it using the existing independent implementation-review process.
+- [ ] Record meaningful Phase 0 architectural decisions as ADRs; reconcile any approved requirements changes into OpenSpec/master plan before treating the design as current.
+- [ ] After Phase 0 implementation and preliminary tests/demo, draft the initial as-built architecture overview **before final independent verification**, with actual Compose services, Temporal smoke-test flow, data boundaries, failure/restart behavior and deviations from the RFC. Reference the frozen tested implementation `code_sha`, then commit and independently validate the docs at `docs_sha`; preserve the mapping to the eventual latest delivery head separately without a self-referential SHA.
+
+**Phase 0 execution and independent review protocol (planning only; no work has started)**
+
+The *bootstrap prerequisite* in §0 must pass before any Phase 0 session starts. For this phase, use separate, fresh Claude Code sessions with the existing exported specialist skills. **Git and the approved Phase 0 requirements are the common inputs; conversation histories are not.** The master session coordinates handoffs and approval but does not substitute its judgment for an independent reviewer.
+
+**Light-tier application (rev 2.9):** Phase 0 runs under the §7.0 light tier. The independent implementation-review and independent verification steps below run as **one** fresh session that invokes both skills in sequence against the same `code_sha`, recording review findings before verification begins. Record `docs_sha` only if documentation lands in a separate commit; otherwise validate the docs at the PR head. Every other step applies as written.
+
+- [ ] **Specification alignment, before design:** Define the Phase 0 scope in an approved OpenSpec specification/change referencing the relevant `PROJECT_PLAN.md` requirements. Record a simple traceability list (requirement -> spec -> acceptance test). Before implementation, check that the master plan and OpenSpec do not contradict each other; resolve any conflict explicitly. Do not let a proposed OpenSpec change silently override the master plan.
+- [ ] **Skill provenance, before sessions:** Export the existing design-review, implementation-review, and verification skills from the other Claude Code account. Inspect for secrets, absolute paths, external dependencies, and excessive permissions; choose project-level installation where suitable. Commit sanitized skill definitions or pinned, reproducible references to them, recording their versions. Keep private credentials and per-user secrets out of Git.
+- [ ] **Independent design review session:** In a new session, supply the approved Phase 0 specification, architectural constraints, and proposed design. Invoke the existing design-review skill; save the findings and an explicit pass/fail recommendation under `docs/reviews/phase-0/design-review.md`. Resolve blocking design findings before implementation begins.
+- [ ] **Implementation session:** In a separate session, supply the approved design/spec and authorized implementation skill or tooling. Implement on a dedicated branch, commit small changes, run the Phase 0 tests and demo, and hand off the exact commit SHA, commands, test output, and demo evidence. No review-session conversation history is needed.
+- [ ] **Independent implementation review session:** In a new session, supply the approved spec/design and immutable tested implementation `code_sha`, but not prior reviewers' reports, verdicts or implementation-session transcript. Invoke the existing implementation-review skill; independently inspect code, tests, security/secret handling and integrations. Save findings under `docs/reviews/phase-0/implementation-review.md`, with the inspected `code_sha` and blocking issues. Recording the report in Git does not change the source snapshot being reviewed.
+- [ ] **Independent verification session:** In another fresh session, supply approved requirements/acceptance criteria, environment prerequisites, frozen implementation `code_sha` and the as-built documentation revision `docs_sha`. Do **not** seed the verifier with implementation or reviewer transcripts, earlier verdicts or conclusions. Invoke the verification skill to reproduce tests, Phase 0 live demo (including failure/recovery), and documented as-built claims. Save factual findings under `docs/reviews/phase-0/verification.md` and `docs/demos/phase-0.md`, identifying the tested source and documentation revisions. These evidence files need not contain the SHA of a later commit that incorporates them.
+- [ ] **Coordinator approval gate:** The master session checks approved design, independent implementation review, tests, verification, demo and as-built evidence against the recorded `code_sha`/`docs_sha`. It then checks all required status checks on the **actual latest** `head_sha` and confirms that relevant source content matches the reviewed source snapshot. Changes to source require affected code review, tests and documentation checks; docs-only changes require affected doc checks and latest-head CI without automatic repetition of unaffected code checks. Store the final `head_sha` linkage in a separate PR/check/approval record rather than inside a self-referential tracked document. Mark Phase 0 complete only after these conditions pass; otherwise return precise blockers.
+
+**Session handoff contract:** Every handoff names the approved requirements/spec revision, the **relevant** immutable source or documentation revision (`code_sha` and/or `docs_sha`), skill/version used, reproducible commands, artifacts, findings and pass/fail state. The coordinator additionally records final `head_sha` after it exists. Reviewers independently assess approved artifacts, not earlier reviewer conclusions; handoff files are evidence, not a substitute for independent assessment. This process adds no runtime components to Phase 0.
+
+**Demo checklist (required; run live or record a reproducible walkthrough)**  
+**Audience-visible outcome:** The local platform starts and answers a request; data survives a restart.
+
+- [ ] From a clean checkout, run documented `make up` and show healthy Temporal, PostgreSQL, SeaweedFS, and vLLM services (with no hidden manual setup).
+- [ ] Submit the hello-world Workflow and show its completed status in Temporal UI; send a real prompt to each configured vLLM endpoint and show the replies.
+- [ ] Upload a test object to SeaweedFS, restart the Compose stack, show the object and intended persistent state remain, then download and delete the object.
+- [ ] Show a failed health check or missing dependency produces a clear diagnostic rather than silent success.
+- [ ] Save demo evidence and reproduction steps in `docs/demos/phase-0.md` (environment/versions, exact commands or UI actions, IDs/links, expected vs. observed result, screenshots or recording, cleanup, pass/fail).

@@ -1,0 +1,42 @@
+schema: spec-driven
+
+context: |
+  PROJECT_PLAN.md (plus docs/plan/) governs scope, sequencing, constraints and gates; OpenSpec governs
+  detailed requirement text and every requirement must trace to plan sections (plan §4.16). Cite them.
+  Read only PROJECT_PLAN.md, the phase file and its "Read first" sections (plan §9.7).
+  A change's design.md does not replace the phase RFC in docs/rfcs/ (docs-design skill); link it.
+  Design review, implementation, implementation review and verification run in separate sessions;
+  reviewers never see the implementer's transcript or another reviewer's verdict.
+  Never check a task off until its tests, acceptance criteria and phase demo pass (plan §8).
+  Work is tracked in GitHub issues; no attribution in commits, PRs or issues (AGENTS.md).
+
+# Project context (optional)
+# Add only constraints that should guide OpenSpec artifacts and workflows.
+# Include constraints an agent cannot infer by reading the code.
+# Keep general project documentation and discoverable codebase facts out.
+# Example:
+#   context: |
+#     Designs and tasks must cover Windows, macOS, and Linux
+#     Write all artifacts in Spanish
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always state what is out of scope
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
