@@ -8,4 +8,4 @@ Proposed designs, written and independently reviewed **before** a phase or mater
 
 | RFC | Phase | Status |
 |---|---|---|
-| *(none yet)* | | |
+| [phase-0-local-infrastructure](phase-0-local-infrastructure.md) | 0 | proposed |
