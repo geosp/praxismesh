@@ -56,6 +56,13 @@ No sync step is needed: all three harnesses see the new folder immediately.
 
 **Review and verification skills:** `review-design` and `review-implementation` are project-owned adaptations of skills the repository owner wrote for another of their own projects, and `verify-phase` was written for this project. There is no third-party source or license: all three are part of this repository under its Apache-2.0 license (issue #1). The owner chose adaptation over plan §0.3's "use the original, pinned" rule; see [decision-log.md](../docs/plan/decision-log.md). Change them like any other project file, through a reviewed pull request.
 
+**Per-harness enforcement of session roles** (see [docs/reviews/README.md](../docs/reviews/README.md#session-roles-and-permissions)):
+
+- **Claude Code:** project permission rules in `.claude/settings.json` deny pushes to `main`, force-pushes, repository-setting changes and any writing `gh api` call, and ask before `gh pr merge`; they also bind subagents. Agent tool lists add per-role limits.
+- **Codex CLI:** reviewer agents run with `sandbox_mode: read-only`, the verifier with `workspace-write`; Codex enforces these. It does not read `.claude/settings.json`.
+- **GitHub Copilot:** limits come from each agent's `tools` list and instructions only; it does not read `.claude/settings.json` and has no sandbox mode here.
+- **All tools:** ruleset `protect-main` on GitHub is the one control every session is subject to.
+
 ## Adding an agent
 
 1. `cp .agents/templates/agent.md .agents/agents/<agent-name>.md` and edit it. The format is in [agents/README.md](agents/README.md).
