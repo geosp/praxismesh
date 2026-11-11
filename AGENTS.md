@@ -6,7 +6,7 @@ Shared instructions for every coding agent working in this repository: Claude Co
 
 **PraxisMesh** is an open-source, self-hosted platform for durable orchestration of autonomous AI agents on Temporal. It exposes an OpenAI-compatible API. Requests are triaged, planned as a task DAG, dispatched to harness workers, verified, and delivered (repository work arrives as a GitHub pull request). See [PROJECT_PLAN.md](PROJECT_PLAN.md) §1.
 
-**Status:** the §0 bootstrap ([docs/plan/bootstrap.md](docs/plan/bootstrap.md)) is closed: tooling, CI and review skills are in place, but no product code yet. The Pre-0 spike decided **go** (see `docs/spikes/harness-vllm.md`). Next: Phase 0.
+**Status:** Phase 0 (local infrastructure) is implemented on the Compose stack in `infra/` and awaits its implementation review and verification. No product code yet. The Pre-0 spike decided **go** (see `docs/spikes/harness-vllm.md`).
 
 ## Read this first: context loading (plan §9.7)
 

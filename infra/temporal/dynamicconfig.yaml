@@ -1,0 +1,4 @@
+# Temporal dynamic configuration for the local stack. Empty on purpose: the
+# server's defaults apply. Add keys here (see Temporal's dynamic config docs)
+# rather than in the Compose file.
+{}
