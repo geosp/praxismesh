@@ -2,7 +2,7 @@
 name = "praxismesh"
 version = "0.0.0"
 description = "Durable orchestration for autonomous AI agents"
-readme = "AGENTS.md"
+readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = []

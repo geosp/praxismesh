@@ -18,6 +18,6 @@ This folder is read by Codex directly and by Claude Code and GitHub Copilot thro
 
 The `openspec-*` folders and `.openspec-target` are written by `openspec init --tools agents` / `openspec update` (OpenSpec 1.17.0, delivery `skills`, profile `core`). Do not edit them by hand; `openspec update` overwrites them. They need the `openspec` CLI on PATH.
 
-Use only the `agents` target. Do not run `openspec init` with `claude` or `codex`: through the `.claude/skills` symlink both write the same files, and each `openspec update` then rewrites them with alternating wording. Do not add `github-copilot` either; it creates a duplicate set in `.github/skills/` (Copilot already reads `.claude/skills`). `openspec update` prints "Detected new tool: GitHub Copilot" because `.github/` exists; ignore it.
+Use only the `agents` target. Do not run `openspec init` with `claude` or `codex`: through the `.claude/skills` symlink both write the same files, and each `openspec update` then rewrites them with alternating wording. Do not add `github-copilot` either; it creates a duplicate set in `.github/skills/` (Copilot already reads `.claude/skills`). `openspec update` prints "Detected new tool: GitHub Copilot" because `.github/` exists; ignore it. It also reports `Tools: claude, agents`: it sees the Claude target through the `.claude/skills` symlink. That is expected; the files stay identical across updates (CI checks this).
 
 The specialist review skills are still pending under plan §0.3.
