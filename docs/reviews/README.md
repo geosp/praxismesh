@@ -38,3 +38,23 @@ After design review, implementation review, verification and the demo evidence e
 3. The source is unchanged from the reviewed snapshot: `git diff --stat <code_sha> <head_sha> -- . ':!docs'` is empty. Source changes require the affected code review, tests and verification again; docs-only changes need only the affected doc checks and latest-head CI.
 4. Record `head_sha` in the PR or approval record (for example a PR comment), not inside a tracked file that would change it.
 5. Only then tick the phase's tasks and demo items; otherwise list the precise blockers.
+
+## Session roles and permissions
+
+Separation between roles comes from **sessions**, not credentials: every session uses the owner's GitHub login (owner decision; see the decision log). Each role runs in its own session with its own context, tools and instructions, and project permission rules stop every session from changing what protects `main`.
+
+| Role | Runs | May | May not |
+|---|---|---|---|
+| Implementer | A normal session; `openspec-apply-change` | Edit files, run tests, commit, push a feature branch, open and update its PR | Push to `main`, merge, change repository settings, protection or secrets |
+| Design or implementation reviewer | `review-design` / `review-implementation`; agents `design-reader`, `design-reviewer`, `impl-reviewer` | Read code and inputs; run read-only commands (`git diff`, `git show`, `grep`, `gh issue view`, `gh pr view`) | Edit files, commit, push, write anything to GitHub, fix what it finds |
+| Verifier | `verify-phase`; agent `verifier` | Run tests and the demo in a disposable worktree at the pinned commit | Edit the user's working copy, commit, push, write to GitHub |
+| Coordinator | The session that runs a skill and writes its report | Choose inputs, merge findings, write the report, open a docs PR | Change the reviewed code, merge, change protection |
+| Owner (a human) | - | Merge PRs, change repository settings, rulesets, secrets and security features | - |
+
+**What enforces it:**
+
+- **All Claude Code sessions and their subagents:** `.claude/settings.json` (committed). It denies pushing to `main`, force-pushes, `gh repo edit/delete/rename/archive`, any `gh api` request that writes (`-X`, `--method`, `-f`, `-F`, `--field`, `--raw-field`, `--input`), `gh secret`/`gh variable` changes, `gh workflow disable` and `gh auth token`, and asks before `gh pr merge`. Deny rules apply in every permission mode and override user-level allow rules. They match the command as written, so they are a guardrail, not a wall: a wrapper such as `bash -c '...'` is not seen through.
+- **Reviewer and verifier agents:** their tool lists in `.agents/agents/` (Claude Code: no Edit or Write; Codex: `sandbox_mode: read-only`, or `workspace-write` for the verifier) and their instructions.
+- **GitHub, for every session:** ruleset `protect-main`. No push reaches `main` without a pull request and a passing `ci-ok`, whatever the session.
+
+Agents therefore never change repository settings: when one is needed, the agent gives the owner the exact command to run.
