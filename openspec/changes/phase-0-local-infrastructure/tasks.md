@@ -10,7 +10,7 @@
 - [x] 1.1 `infra/docker-compose.yml`: ParadeDB `0.26.6-pg16`, Temporal Server and admin tools 1.32.2, Temporal UI 2.58.1, `chrislusf/seaweedfs:4.53`; tags pinned and digests recorded; ports bound to 127.0.0.1; volumes `pgdata`, `seaweeddata`
 - [x] 1.2 `infra/db/init.sh` (`set -e`, `ON_ERROR_STOP`): roles, three databases, `REVOKE CONNECT ... FROM PUBLIC` and grants, `CREATE EXTENSION IF NOT EXISTS pg_search` in `praxismesh` only
 - [x] 1.3 `temporal-schema` job (`temporal-sql-tool --plugin postgres12`, setup and update for both databases), safe to repeat
-- [x] 1.4 `temporal-namespace` job: create `TEMPORAL_NAMESPACE` with `TEMPORAL_RETENTION`; "already exists" is success; exit only once `namespace describe` succeeds
+- [x] 1.4 `temporal-namespace` job: create `TEMPORAL_NAMESPACE` with `TEMPORAL_RETENTION`; "already exists" is success; exit only once `namespace describe` succeeds (since the gate fixes: a differing retention is updated, not left unchanged; decision log)
 - [x] 1.5 Health checks for every service; the database check runs over TCP and checks that `pg_search` exists in `praxismesh`; verify the Temporal CLI is in the server image or use a gRPC probe; check whether the image adds extensions to its template database; have `init.sh` finish with a marker the health check reads (for example `COMMENT ON DATABASE praxismesh`), or give `db` no restart policy (follow-up 2: F4a)
 - [x] 1.6 Verify `docker compose up --wait` with completed one-shot jobs; `make up` twice in a row succeeds
 
@@ -43,6 +43,6 @@
 
 ## 6. Documentation and demo
 
-- [x] 6.1 README: running the stack, `make reset` for a failed init or changed passwords, `temporal operator namespace update` for a changed retention, optional GCS and Ceph settings, and the ParadeDB AGPL-3.0 note
+- [x] 6.1 README: running the stack, `make reset` for a failed init or changed passwords, a changed retention (applied by `make up` since the gate fixes; originally `temporal operator namespace update`), optional GCS and Ceph settings, and the ParadeDB AGPL-3.0 note
 - [x] 6.2 Run the demo, including a passing model run against the Sparks and `docker stats` (under 6 GB), and record `docs/demos/phase-0.md`
 - [x] 6.3 As-built section in `docs/architecture/overview.md`; record the Phase 0 deviation (no Compose vLLM profile) in the decision log

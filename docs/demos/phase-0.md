@@ -29,7 +29,7 @@ Evidence for the Phase 0 demo in [docs/plan/phases/phase-0.md](../plan/phases/ph
 | Case | Command | Observed |
 |---|---|---|
 | `infra/.env` missing | `make up ENV_FILE=infra/.env.absent` | `error: infra/.env.absent is missing; create it with: cp infra/.env.example infra/.env.absent`; the script exits 1 and `make` exits 2 |
-| Database stopped | `docker compose -p praxismesh --env-file infra/.env -f infra/docker-compose.yml stop db`, then `make status` and `make smoke`. Automated since the gate fixes as `make unhealthy-check` | `make status`: `unhealthy or stopped: db`. `make smoke`: `RuntimeError: database server (service db) at 127.0.0.1:5432 is unreachable; check make status: [Errno 111] Connect call failed ('127.0.0.1', 5432)` |
+| Database stopped | `docker compose --env-file infra/.env -f infra/docker-compose.yml stop db` (the project name comes from `infra/.env`), then `make status` and `make smoke`. Automated since the gate fixes as `make unhealthy-check` | `make status`: `unhealthy or stopped: db`. `make smoke`: `RuntimeError: database server (service db) at 127.0.0.1:5432 is unreachable; check make status: [Errno 111] Connect call failed ('127.0.0.1', 5432)` |
 | Model endpoint unreachable | `make smoke VLLM_BASE_URL=http://127.0.0.1:9` | `EndpointUnreachableError: model endpoint http://127.0.0.1:9 is unreachable: ConnectError('[Errno 111] Connection refused')` for each model test; `3 failed, 12 passed` |
 
 Also covered by tests (`tests/integration/test_env_check.py`): an unset required variable (`error: APP_DB_PASSWORD is not set in ...`) and a model name containing `/`.

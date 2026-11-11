@@ -99,7 +99,7 @@ Two one-shot jobs, `temporal-schema` and `temporal-namespace`, set up Temporal's
 ```bash
 cp infra/.env.example infra/.env   # then edit: passwords, and VLLM_BASE_URL if you have a model server
 make up                            # start and wait until healthy (safe to repeat)
-make status                        # service health and model endpoint; exit 1 if unhealthy
+make status                        # addresses, service health, model endpoint; fails if unhealthy
 make migrate                       # apply application database migrations
 make smoke                         # integration tests against the stack
 make restart-check                 # a repeat start changes nothing; state survives down/up
@@ -108,15 +108,16 @@ make down                          # stop, keep data
 make reset                         # stop and delete all data volumes
 ```
 
-`infra/.env` is git-ignored; keep hosts, passwords and keys there, never in the repository. Write it as plain `KEY=value` lines, with no quotes, spaces, `#`, `$`, `\` or backticks in values: Make and Docker Compose read anything else differently. `make up` names whatever is wrong: Docker not running, `infra/.env` absent, a line with other syntax, or a required variable unset.
+`infra/.env` is git-ignored; keep hosts, passwords and keys there, never in the repository. Make never reads it: Docker Compose reads it with `--env-file`, and the tests and migrations get it through `uv run --env-file`. Write it as plain `KEY=value` lines using the names in `infra/.env.example`; values may use only `A-Z a-z 0-9 . _ : / @ % + , = -`. `make up` names whatever is wrong: Docker not running, `infra/.env` absent, a line that breaks these rules, or a required variable unset. A variable set in your shell overrides the file.
 
-**Several checkouts.** Each checkout that runs its own stack needs its own `COMPOSE_PROJECT_NAME` (and its own ports) in its `infra/.env`. Otherwise `make reset` in one deletes the other's data.
+**Several checkouts.** Each checkout that runs its own stack needs its own `COMPOSE_PROJECT_NAME` (and its own ports) in its `infra/.env`, or set in the shell. Otherwise `make reset` in one deletes the other's data. `make down` and `make reset` act only on the named project, and refuse when no name is set rather than fall back to a default.
 
 **Model endpoint.** Set `VLLM_BASE_URL` to the server's base URL without `/v1` (for example `http://<host>:8000`) and `VLLM_MODEL` to its served model name, which must not contain `/`. The model tests use both API styles at that URL: Anthropic Messages (`/v1/messages`) and OpenAI chat (`/v1/chat/completions`). With `VLLM_BASE_URL` empty they are skipped; set but unreachable, they fail and name the endpoint.
 
 **When things go wrong.**
 
 - `db` never becomes healthy after a first start: database init failed, or you changed a database password after the volume was created. Init runs only on a fresh volume, so run `make reset` (this deletes all data) and `make up`.
+- A database volume created before the gate fixes (PR #38) is still accepted as initialised; no reset is needed after updating.
 - `TEMPORAL_RETENTION` takes `<number><s|m|h|d>`, for example `72h`. After you change it, `make up` updates the existing namespace.
 - `make logs` follows every service's logs; `make status` exits 1 and names any unhealthy service.
 
@@ -124,9 +125,10 @@ make reset                         # stop and delete all data volumes
 
 ```bash
 # Ask the model in each API style
-curl -s "$VLLM_BASE_URL/v1/messages" -H 'content-type: application/json' \
+# (drop the Authorization header if VLLM_API_KEY is empty)
+curl -s "$VLLM_BASE_URL/v1/messages" -H 'content-type: application/json' -H "Authorization: Bearer $VLLM_API_KEY" \
   -d "{\"model\":\"$VLLM_MODEL\",\"max_tokens\":200,\"messages\":[{\"role\":\"user\",\"content\":\"Say hello\"}]}"
-curl -s "$VLLM_BASE_URL/v1/chat/completions" -H 'content-type: application/json' \
+curl -s "$VLLM_BASE_URL/v1/chat/completions" -H 'content-type: application/json' -H "Authorization: Bearer $VLLM_API_KEY" \
   -d "{\"model\":\"$VLLM_MODEL\",\"max_tokens\":200,\"messages\":[{\"role\":\"user\",\"content\":\"Say hello\"}]}"
 
 # Store, read and delete an object (boto3, from the project environment)
@@ -141,7 +143,7 @@ s3.delete_bucket(Bucket="demo")
 '
 
 # Stop one service (Compose needs the file and env file from the repository root)
-docker compose -p "$COMPOSE_PROJECT_NAME" --env-file infra/.env -f infra/docker-compose.yml stop db
+docker compose --env-file infra/.env -f infra/docker-compose.yml stop db
 ```
 
 **Other object stores.** Code reaches storage through the S3 API, so another S3-compatible store works by changing the endpoint and keys:
