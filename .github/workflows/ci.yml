@@ -115,6 +115,7 @@ jobs:
       - run: make migrate
       - run: make smoke
       - run: make restart-check
+      - run: make unhealthy-check
       - name: Stack logs on failure
         if: failure()
         run: make status; docker compose --env-file infra/.env -f infra/docker-compose.yml logs --no-color --tail 200

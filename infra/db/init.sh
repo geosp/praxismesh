@@ -11,7 +11,8 @@
 # database gets only what this script adds (ADR-0002).
 #
 # The last statement writes the marker the health check reads, so `db` reports
-# healthy only after every step here has succeeded.
+# healthy only after every step here has succeeded. The marker is a comment on
+# database `postgres`, which only the superuser can change.
 set -euo pipefail
 
 : "${TEMPORAL_DB_PASSWORD:?TEMPORAL_DB_PASSWORD is not set}"
@@ -26,7 +27,7 @@ CREATE DATABASE temporal OWNER temporal TEMPLATE template0;
 CREATE DATABASE temporal_visibility OWNER temporal TEMPLATE template0;
 CREATE DATABASE praxismesh OWNER praxismesh TEMPLATE template0;
 
-REVOKE CONNECT ON DATABASE temporal, temporal_visibility, praxismesh FROM PUBLIC;
+REVOKE CONNECT ON DATABASE postgres, temporal, temporal_visibility, praxismesh FROM PUBLIC;
 GRANT CONNECT ON DATABASE temporal, temporal_visibility TO temporal;
 GRANT CONNECT ON DATABASE praxismesh TO praxismesh;
 EOSQL
@@ -37,7 +38,7 @@ CREATE EXTENSION IF NOT EXISTS pg_search CASCADE;
 EOSQL
 
 psql -v ON_ERROR_STOP=1 -d postgres <<'EOSQL'
-COMMENT ON DATABASE praxismesh IS 'praxismesh-init-complete';
+COMMENT ON DATABASE postgres IS 'praxismesh-init-complete';
 EOSQL
 
 echo "PraxisMesh database init completed"
