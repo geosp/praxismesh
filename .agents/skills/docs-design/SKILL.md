@@ -172,7 +172,7 @@ When all sections are filled:
 | No way to check the decision is followed | Add a Confirmation: test, CI check, review item or demo step. |
 - With their agreement, set `status: proposed`, push, and mark the PR ready: `gh pr ready` (confirm first).
 
-**You are the author, not the reviewer.** Never set `status: accepted` and never approve or merge the PR. Approval comes from an **independent design review in a fresh session** (plan §0.3, §7.0) that receives only the approved inputs and this document. The review is saved under `docs/reviews/phase-N/design-review.md`. Status becomes `accepted` in the commit that merges after a passing review.
+**You are the author, not the reviewer.** Never set `status: accepted` and never approve or merge the PR. Approval comes from an **independent design review in a fresh session** (plan §0.3, §7.0) that receives only the approved inputs and this document: run the `review-design` skill in gate mode there (see `docs/reviews/README.md`). The review is saved under `docs/reviews/phase-N/design-review.md`. Status becomes `accepted` in the commit that merges after a passing review.
 
 Give the user the PR URL and tell them they can keep chatting to make further edits.
 

@@ -8,6 +8,8 @@ This folder is read by Codex directly and by Claude Code and GitHub Copilot thro
 | Skill | Purpose |
 |---|---|
 | [docs-design](docs-design/SKILL.md) | Write a full RFC, short RFC or ADR on a draft PR (provisional) |
+| [review-design](review-design/SKILL.md) | Independent design review of an OpenSpec change and its RFC; informal or phase-gate mode |
+| [review-implementation](review-implementation/SKILL.md) | Independent review of code and tests against the change's contract; informal or phase-gate mode |
 | [github-pr](github-pr/SKILL.md) | Prepare and open a pull request linked to a GitHub issue |
 | `openspec-*` (6) | OpenSpec workflows: explore, propose, apply-change, update-change, sync-specs, archive-change. **Generated** by OpenSpec; do not edit (see below) |
 

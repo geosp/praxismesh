@@ -5,6 +5,7 @@
 | [rfc.md](rfc.md) | Full RFC: Phase 3A onward and material changes (plan §7.0, §4.17) | `docs/rfcs/phase-N-<topic>.md` |
 | [rfc-short.md](rfc-short.md) | Short RFC: light-tier Phases 0-2 | `docs/rfcs/phase-N-<topic>.md` |
 | [adr.md](adr.md) | One consequential architecture decision | `docs/adr/NNNN-<decision>.md` (next free number) |
+| [review-report.md](review-report.md) | Saved gate-mode review (design or implementation) | `docs/reviews/phase-N/design-review.md` or `implementation-review.md` |
 
 `adr.md` is adapted from the MADR 4.0.0 minimal template (https://github.com/adr/madr), with MADR's Confirmation section and a Links section added. The MADR license is still to be verified and recorded here.
 
