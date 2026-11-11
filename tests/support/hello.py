@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from temporalio import activity, workflow
+from temporalio.common import RetryPolicy
 
 
 @activity.defn
@@ -21,5 +22,8 @@ class HelloWorkflow:
     @workflow.run
     async def run(self, name: str) -> str:
         return await workflow.execute_activity(
-            say_hello, name, start_to_close_timeout=timedelta(seconds=10)
+            say_hello,
+            name,
+            start_to_close_timeout=timedelta(seconds=10),
+            retry_policy=RetryPolicy(maximum_attempts=3),
         )

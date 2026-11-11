@@ -39,6 +39,7 @@ pythonpath = ["."]
 addopts = "-ra -m 'not integration'"
 markers = ["integration: needs the local stack from infra/docker-compose.yml (make smoke)"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [dependency-groups]
 dev = [
