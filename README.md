@@ -49,7 +49,8 @@ uv sync --locked
 
 # Node: version from .node-version; add fnm's shell hook so it is on PATH in new shells
 fnm install
-echo 'eval "$(fnm env --use-on-cd --version-file-strategy=recursive --shell bash)"' >> ~/.bashrc
+line='eval "$(fnm env --use-on-cd --version-file-strategy=recursive --shell bash)"'
+grep -qxF "$line" ~/.bashrc || echo "$line" >> ~/.bashrc
 source ~/.bashrc
 
 # OpenSpec CLI, pinned, with the settings this repository uses
