@@ -4,7 +4,7 @@
 
 PraxisMesh is an open-source, self-hosted platform that exposes an OpenAI-compatible API and runs agent work as durable [Temporal](https://temporal.io/) workflows. A request is triaged, planned as a task DAG when needed, dispatched to harness workers, verified, and delivered. Repository work arrives as a GitHub pull request.
 
-> **Status: planning.** No implementation exists yet. The project is in its bootstrap stage: plan, tooling, CI and review process. See the [project plan](PROJECT_PLAN.md).
+> **Status: Phase 0.** The local platform stack (Temporal, database, object storage, model endpoints) runs with one command. No product code yet. See the [project plan](PROJECT_PLAN.md).
 
 ## Where to start
 
@@ -24,7 +24,10 @@ docs/                  plan, RFCs, ADRs, architecture, reviews, demos, templates
 openspec/              OpenSpec specifications and changes
 .agents/               skills and agent definitions shared by Claude Code, Copilot and Codex
 .github/               CI workflows, issue and PR templates, CODEOWNERS
-tests/                 tests for the repository's own tooling
+infra/                 local stack: docker-compose.yml, database init, .env.example
+common/persistence/    application database migrations (Alembic)
+Makefile               stack commands (make help)
+tests/                 unit tests; tests/integration/ needs the local stack
 ```
 
 Product code (gateway, orchestrator, workers and so on) arrives phase by phase; its planned layout is in [PROJECT_PLAN.md](PROJECT_PLAN.md) §6.
@@ -62,7 +65,7 @@ openspec --version
 
 The OpenSpec settings are per machine (`~/.config/openspec/`). This repository uses only OpenSpec's shared `agents` target. Refresh the generated skills with `openspec update`; never re-run `openspec init` with other tool IDs. See [.agents/skills/README.md](.agents/skills/README.md).
 
-Model servers are not needed yet. When they are, their endpoints go in a local, git-ignored `.env`, never in the repository.
+You also need Docker with the Compose plugin to run the local stack (below).
 
 ### Checks
 
@@ -79,6 +82,49 @@ gitleaks git --config .gitleaks.toml --redact .   # if gitleaks is installed
 ```
 
 CI also lints the workflows with actionlint, checks internal links offline and, on pull requests, reviews new dependencies. The gitleaks and link checks each run a canary that proves they still catch a planted problem.
+
+## Local stack
+
+`infra/docker-compose.yml` runs the platform services PraxisMesh builds on, bound to `127.0.0.1` only. The design is in [docs/rfcs/phase-0-local-infrastructure.md](docs/rfcs/phase-0-local-infrastructure.md).
+
+| Service | What it is | Address |
+|---|---|---|
+| `db` | ParadeDB (PostgreSQL 16 with `pg_search`): databases `temporal`, `temporal_visibility` and `praxismesh` | `127.0.0.1:5432` |
+| `temporal` | Temporal Server 1.32 | `127.0.0.1:7233` |
+| `temporal-ui` | Temporal Web UI | <http://127.0.0.1:8080> |
+| `s3` | SeaweedFS with an S3-compatible endpoint | <http://127.0.0.1:8333> |
+
+Two one-shot jobs, `temporal-schema` and `temporal-namespace`, set up Temporal's schema and namespace; both are safe to repeat. The model server (vLLM) is not part of the stack: it is an external endpoint you configure.
+
+```bash
+cp infra/.env.example infra/.env   # then edit: passwords, and VLLM_BASE_URL if you have a model server
+make up                            # start and wait until healthy (safe to repeat)
+make status                        # service health and model endpoint
+make migrate                       # apply application database migrations
+make smoke                         # integration tests against the stack
+make restart-check                 # state survives down/up
+make down                          # stop, keep data
+make reset                         # stop and delete all data volumes
+```
+
+`infra/.env` is git-ignored; keep hosts, passwords and keys there, never in the repository. `make up` names whatever is missing: Docker not running, `infra/.env` absent, or a required variable unset.
+
+**Model endpoint.** Set `VLLM_BASE_URL` to the server's base URL without `/v1` (for example `http://<host>:8000`) and `VLLM_MODEL` to its served model name, which must not contain `/`. The model tests use both API styles at that URL: Anthropic Messages (`/v1/messages`) and OpenAI chat (`/v1/chat/completions`). With `VLLM_BASE_URL` empty they are skipped; set but unreachable, they fail and name the endpoint.
+
+**When things go wrong.**
+
+- `db` never becomes healthy after a first start: database init failed, or you changed a database password after the volume was created. Init runs only on a fresh volume, so run `make reset` (this deletes all data) and `make up`.
+- Changing `TEMPORAL_RETENTION` does not affect an existing namespace. Update it with the Temporal CLI, for example `temporal operator namespace update --address 127.0.0.1:7233 --namespace default --retention 168h`, or run `make reset`.
+- `make logs` follows every service's logs.
+
+**Other object stores.** Code reaches storage through the S3 API, so another S3-compatible store works by changing the endpoint and keys:
+
+- **Ceph RGW:** point the endpoint at the RADOS Gateway (for example `http://<rgw-host>:7480`) with an RGW user's access and secret keys; use path-style addressing.
+- **Google Cloud Storage:** use the XML API's S3 interoperability endpoint `https://storage.googleapis.com` with an HMAC key pair for a service account.
+
+Only SeaweedFS is run and tested in Phase 0.
+
+**License note.** ParadeDB is AGPL-3.0. The stack runs it unmodified as a separate service, which does not change PraxisMesh's Apache-2.0 license; distributing a modified ParadeDB would carry AGPL obligations. See [docs/release.md](docs/release.md) and [ADR-0002](docs/adr/0002-paradedb-as-postgresql-server.md).
 
 ## Contributing
 
