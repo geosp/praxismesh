@@ -5,8 +5,8 @@
 # 10_bootstrap_paradedb.sh. It never runs again on an existing volume, so a
 # failed init or a changed password needs `make reset`.
 #
-# ParadeDB's bootstrap installs its extensions (pg_search, vector, postgis,
-# pg_cron, ...) into template1. All three databases are created from template0
+# ParadeDB's bootstrap installs its extensions (pg_search, vector, postgis, ...)
+# into template1 and its own `paradedb` database, and pg_cron into `postgres`. All three databases are created from template0
 # instead, so Temporal's databases carry no extensions and the application
 # database gets only what this script adds (ADR-0002).
 #
@@ -27,7 +27,7 @@ CREATE DATABASE temporal OWNER temporal TEMPLATE template0;
 CREATE DATABASE temporal_visibility OWNER temporal TEMPLATE template0;
 CREATE DATABASE praxismesh OWNER praxismesh TEMPLATE template0;
 
-REVOKE CONNECT ON DATABASE postgres, temporal, temporal_visibility, praxismesh FROM PUBLIC;
+REVOKE CONNECT ON DATABASE postgres, paradedb, temporal, temporal_visibility, praxismesh FROM PUBLIC;
 GRANT CONNECT ON DATABASE temporal, temporal_visibility TO temporal;
 GRANT CONNECT ON DATABASE praxismesh TO praxismesh;
 EOSQL

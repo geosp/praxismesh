@@ -118,7 +118,9 @@ jobs:
       - run: make unhealthy-check
       - name: Stack logs on failure
         if: failure()
-        run: make status; docker compose --env-file infra/.env -f infra/docker-compose.yml logs --no-color --tail 200
+        run: |
+          make status || true
+          docker compose --env-file infra/.env -f infra/docker-compose.yml logs --no-color --tail 200
       - name: Clean up
         if: always()
         run: make reset
