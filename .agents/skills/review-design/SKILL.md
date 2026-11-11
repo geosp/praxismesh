@@ -12,7 +12,7 @@ description: >-
 
 An agent that helped write a design fills its gaps from the conversation and doesn't notice them. This skill hands the design to reviewers that have no conversation history, so they judge only what is written, what the plan requires and what the code shows.
 
-Order of work: `openspec-propose` (and `docs-design` for the RFC) -> **`review-design`** -> `openspec-apply-change` -> `review-implementation` -> tests -> `github-pr`.
+Order of work: `openspec-propose` (and `docs-design` for the RFC) -> **`review-design`** -> `openspec-apply-change` -> `review-implementation` -> tests -> `github-pr` -> at a phase gate, `verify-phase`.
 
 ## Step 0: Choose the mode
 
