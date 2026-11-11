@@ -35,6 +35,20 @@ Do not load all of `docs/plan/` by default.
 - Open PRs with the `github-pr` skill, which fills in `.github/pull_request_template.md`.
 - Use closing keywords (`Closes #N`, `Fixes #N` …) only for the issue the PR resolves. Use `Part of #N` or `Related: #N` for anything else.
 
+## Checks
+
+CI (`.github/workflows/ci.yml`) runs on every PR; `ci-ok` is the required check on `main`. Run the same checks locally before pushing:
+
+```bash
+uv sync --locked
+uv run ruff check . && uv run ruff format --check .
+uv run mypy
+uv run pytest
+uv run .agents/sync_agents.py --check
+```
+
+CI also runs `openspec validate --all`, gitleaks (config `.gitleaks.toml`), an offline link check and, on PRs, dependency review. Python is pinned to the 3.11 floor (`.python-version`) and Node to `.node-version`.
+
 ## Agent tooling layout
 
 `.agents/` is the **only source of truth** for skills and agent definitions. See [.agents/README.md](.agents/README.md).

@@ -1,0 +1,165 @@
+# Project CI (plan §0.1, §8). Runs on every PR and on pushes to main.
+# Fork safety: only `pull_request` (never `pull_request_target`), a read-only
+# token, and no secrets referenced anywhere in this file.
+# Every action is pinned to a full commit SHA; Dependabot proposes updates.
+# The single required status check on main is `ci-ok`.
+# Model- and GPU-dependent suites run separately (scheduled / self-hosted, §8).
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OPENSPEC_VERSION: "1.17.0"
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --locked
+      - run: uv run mypy
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv sync --locked
+      # Unit tests. Temporal Workflow replay and time-skipping tests join this
+      # job once Workflows exist (plan §8); model-dependent suites do not.
+      - run: uv run pytest
+
+  agents-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv run .agents/sync_agents.py --check
+
+  openspec:
+    runs-on: ubuntu-latest
+    env:
+      OPENSPEC_TELEMETRY: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - run: npm install -g "@fission-ai/openspec@${OPENSPEC_VERSION}"
+      - run: openspec --version
+      - run: openspec validate --all
+      # Generated openspec-* skills must match what this OpenSpec version
+      # produces with the project's settings (shared `agents` target, skills only).
+      - run: |
+          openspec config set delivery skills
+          out="$(openspec update --dry-run)"
+          echo "$out"
+          grep -q "No changes" <<<"$out"
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (pinned, checksum verified)
+        run: |
+          f="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSLo "$f" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${f}"
+          echo "${GITLEAKS_SHA256}  ${f}" | sha256sum -c -
+          tar -xzf "$f" gitleaks
+      - name: Scan commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            ./gitleaks git --config .gitleaks.toml --redact --log-opts="${BASE_SHA}..${HEAD_SHA}" .
+          else
+            ./gitleaks git --config .gitleaks.toml --redact .
+          fi
+
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Offline: internal links and anchors only, so external sites never block
+      # a merge. External URLs are checked weekly (links-weekly.yml).
+      # .claude/skills is a symlink to .agents/skills; checking it twice would
+      # resolve relative links from the wrong directory.
+      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          fail: true
+          args: >-
+            --offline --no-progress --include-fragments --hidden
+            --exclude-path '\.claude/skills' --exclude-path '\.git/' --exclude-path '\.venv'
+            './**/*.md'
+
+  licenses:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Checks dependencies added or changed by the PR: licenses must be
+      # compatible with Apache-2.0, and no high-severity known vulnerabilities.
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never
+          allow-licenses: >-
+            Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0, Python-2.0,
+            MPL-2.0, Unlicense, 0BSD, CC0-1.0, Zlib
+
+  ci-ok:
+    if: always()
+    needs: [lint, types, tests, agents-sync, openspec, secrets, links, licenses]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All required jobs passed
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          if echo "$RESULTS" | grep -qE '"(failure|cancelled)"'; then
+            echo "A required job failed or was cancelled." >&2
+            exit 1
+          fi
