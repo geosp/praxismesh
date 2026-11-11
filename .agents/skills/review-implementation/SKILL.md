@@ -13,7 +13,7 @@ description: >-
 
 Design review happens before the code exists, and tests and mutation checks only measure the code that was written. Neither notices a promise the code quietly doesn't keep: a requirement enforced in one place but not another, a retry that reads the wrong state, or a limit that holds per batch but not per run. This skill hands the contract and the diff to reviewers with no conversation history, so they judge the code only against what was promised.
 
-It is the implementation counterpart of `review-design`. Order of work: `openspec-propose` -> `review-design` -> `openspec-apply-change` -> **`review-implementation`** -> tests -> `github-pr`.
+It is the implementation counterpart of `review-design`. Order of work: `openspec-propose` -> `review-design` -> `openspec-apply-change` -> **`review-implementation`** -> tests -> `github-pr` -> at a phase gate, `verify-phase`.
 
 ## Step 0: Choose the mode
 
@@ -98,7 +98,7 @@ If a Blocker or Major was fixed, offer one more round with fresh reviewers for t
 - A finding the engineer contested or accepted stays closed, even if a new reviewer raises it again.
 - A fixed finding that comes back means the fix didn't work. Reopen it.
 
-Stop after the second round and list anything still open. Suggest running the test suites and then `github-pr` as the next steps.
+Stop after the second round and list anything still open. Suggest running the test suites and then `github-pr` as the next steps; at a phase gate, `verify-phase` follows (in the light tier, in this same fresh session against the same `code_sha`).
 
 ## Reviewer briefs
 
