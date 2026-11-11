@@ -58,7 +58,7 @@ Do not add anything else. In particular, don't pass along your own reasoning, th
 
 ## Step 3: Run the reviewers
 
-Start all three reviewers at once with the `impl-reviewer` agent (defined in `.agents/agents/` and generated for each harness). Give each one its brief from [Reviewer briefs](#reviewer-briefs) with the placeholders filled in, and nothing more. If a harness cannot load the agent, spawn a fresh read-only subagent for each.
+Start all three reviewers at once with the `impl-reviewer` agent (defined in `.agents/agents/` and generated for each harness). It reads the diff and the contract itself with read-only shell commands (`git diff`, `git show`, `gh issue view`, `gh pr view`), so its definition grants a shell in every harness. Give each one its brief from [Reviewer briefs](#reviewer-briefs) with the placeholders filled in, and nothing more. If a harness cannot load the agent, spawn a fresh read-only subagent for each.
 
 | Reviewer | Asks |
 | --- | --- |
@@ -66,7 +66,7 @@ Start all three reviewers at once with the `impl-reviewer` agent (defined in `.a
 | Failure and retry | What does a retry, resume, replay or next run see after a stop at any point? |
 | Scope and composition | Does each mechanism hold at its promised scope, and do correct parts stay correct together? |
 
-A reviewer that errors or returns nothing has not reviewed. Retry it once. If it fails again, report it as "not run", never as "no findings".
+A reviewer that errors, returns nothing, or says it could not read its inputs (the diff, the contract or the code) has not reviewed. Retry it once. If it fails again, report it as "not run", never as "no findings". Don't make up for a missing tool by summarising the diff or the code for the reviewer: that hands it your context. Fix the agent definition instead.
 
 ## Step 4: Report
 

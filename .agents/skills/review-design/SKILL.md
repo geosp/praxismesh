@@ -58,10 +58,10 @@ Start all three reviewers at once. Give each one its brief from [Reviewer briefs
 
 The agents are defined in `.agents/agents/` and generated for each harness.
 - `design-reader` can only read files. In Claude Code it starts without `CLAUDE.md`/`AGENTS.md` (`omitClaudeMd`). Codex and Copilot cannot skip project instructions; when the reader ran there, say so in the report, because its paraphrase is less independent.
-- `design-reviewer` searches the code read-only.
+- `design-reviewer` searches the code with read-only shell commands, so its definition grants a shell in every harness.
 - If a harness cannot load these agents, spawn a fresh read-only subagent for each reviewer.
 
-A reviewer that errors or returns nothing has not reviewed. Retry it once. If it fails again, report it as "not run", never as "no findings".
+A reviewer that errors, returns nothing, or says it could not read its inputs (the diff, the contract or the code) has not reviewed. Retry it once. If it fails again, report it as "not run", never as "no findings". Don't make up for a missing tool by summarising the diff or the code for the reviewer: that hands it your context. Fix the agent definition instead.
 
 ## Step 4: Report
 

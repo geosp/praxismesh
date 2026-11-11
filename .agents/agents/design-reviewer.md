@@ -9,7 +9,7 @@ claude:
   disallowedTools: Edit, Write
   model: inherit
 copilot:
-  tools: [read, search]
+  tools: [read, search, execute]
 codex:
   sandbox_mode: read-only
 ---
