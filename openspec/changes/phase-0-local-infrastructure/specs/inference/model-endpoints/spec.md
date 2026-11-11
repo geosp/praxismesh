@@ -7,10 +7,10 @@ Access to the local model servers in both API styles the platform uses: Anthropi
 ## ADDED Requirements
 
 ### Requirement: External model endpoint by configuration
-The stack SHALL reach vLLM through `VLLM_BASE_URL`, `VLLM_MODEL` and `VLLM_API_KEY` in `.env` (by default the external DGX Spark pair, one base URL for both API styles). Model name, base URL and key SHALL be configuration, never hard-coded. The model's launch flags SHALL be recorded (`docs/spikes/harness-vllm.md`). (Plan: Phase 0 task 2; §2; decision log 2026-11-10 hardware roles.)
+The stack SHALL reach vLLM through `VLLM_BASE_URL`, `VLLM_MODEL` and `VLLM_API_KEY` in `infra/.env` (by default the external DGX Spark pair, one base URL for both API styles). Model name, base URL and key SHALL be configuration, never hard-coded. The model's launch flags SHALL be recorded (`docs/spikes/harness-vllm.md`). (Plan: Phase 0 task 2; §2; decision log 2026-11-10 hardware roles.)
 
 #### Scenario: Endpoint from configuration
-- **WHEN** `VLLM_BASE_URL` is set in `.env`
+- **WHEN** `VLLM_BASE_URL` is set in `infra/.env`
 - **THEN** the model smoke tests call that endpoint and no other
 
 ### Requirement: Both API styles answer
@@ -21,7 +21,7 @@ The configured endpoint SHALL answer a real prompt on `/v1/messages` (Anthropic 
 - **THEN** each returns a non-empty reply
 
 #### Scenario: Endpoint not configured
-- **WHEN** `VLLM_BASE_URL` is unset
+- **WHEN** `VLLM_BASE_URL` is unset or empty
 - **THEN** the model smoke tests are skipped with that reason
 
 #### Scenario: Endpoint unreachable

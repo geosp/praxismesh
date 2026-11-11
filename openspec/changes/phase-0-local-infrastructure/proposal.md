@@ -10,8 +10,8 @@ Every later phase runs on a local platform stack: durable execution (Temporal), 
   - ParadeDB as the one PostgreSQL server (ADR-0002), hosting Temporal's databases and a separate application database;
   - Temporal Server with its UI;
   - SeaweedFS with an S3-compatible endpoint.
-- `make up`, `make down` and `make migrate`; `.env.example` with no secrets committed; health checks; named volumes.
-- vLLM is reached as an **external** endpoint configured in `.env` (the DGX Spark pair: two machines serving one model at one base URL). A local vLLM Compose profile is deferred until a GPU machine runs the stack.
+- `make up`, `down`, `reset`, `status`, `migrate`, `smoke`, `restart-check` and `logs`; `infra/.env.example` (plan §6) with no secrets committed; health checks; named volumes.
+- vLLM is reached as an **external** endpoint configured in `infra/.env` (the DGX Spark pair: two machines serving one model at one base URL). A local vLLM Compose profile is deferred until a GPU machine runs the stack.
 - An Alembic migration baseline for the application database (`common/persistence/migrations/`, plan §6), with `pg_search` installed there by the database init.
 - One-shot jobs that set up Temporal's schema and create its namespace with a retention period (§4.13), safe to repeat.
 - Smoke tests:
@@ -36,8 +36,8 @@ Not in scope: product code (gateway, orchestrator, harness workers), Kubernetes,
 
 ## Impact
 
-- New: `infra/` (Compose file, database init script), `.env.example`, `Makefile`, `common/persistence/migrations/` (Alembic), `tests/integration/` (marked `integration`, excluded from the default unit run), a CI `stack` job, and a Dependabot `docker-compose` entry.
-- New runtime dependencies (Python, pinned in `uv.lock`): `temporalio`, `alembic`, `psycopg[binary]` 3, `boto3`, `httpx`; dev: `boto3-stubs[s3]`.
+- New: `infra/` (Compose file, database init script, `.env.example`), `Makefile`, `common/persistence/migrations/` (Alembic), `tests/integration/` (marked `integration`, excluded from the default unit run), a CI `stack` job, and a Dependabot `docker-compose` entry.
+- New runtime dependencies (Python, pinned in `uv.lock`): `temporalio`, `alembic`, `sqlalchemy[asyncio]` with `asyncpg` (not LGPL `psycopg`), `boto3`, `httpx`; dev: `boto3-stubs[s3]`.
 - Container images, pinned by tag and digest: ParadeDB `0.26.6-pg16` (AGPL-3.0, run unmodified; see `docs/release.md`), Temporal Server and admin tools 1.32.2, Temporal UI 2.58.1, SeaweedFS `chrislusf/seaweedfs:4.53`.
 - Tracking issue: #34.
 - Design: [docs/rfcs/phase-0-local-infrastructure.md](../../../docs/rfcs/phase-0-local-infrastructure.md).

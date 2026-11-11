@@ -12,7 +12,7 @@ hardware: x86_64 workstation with Docker (no GPU needed); vLLM on the DGX Spark 
 pre0_inputs: [GPU hardware (answered), model per tier (spike model qwen3.8-flash-next)]
 date: 2026-11-11
 authors: [owner, coding agent]
-revision: 2 (addresses the design review of 83e0ae3, docs/reviews/phase-0/design-review.md)
+revision: 3 (addresses the design review of 83e0ae3 and the targeted follow-up of 7da1b8b, docs/reviews/phase-0/)
 ---
 
 # RFC: Phase 0 local infrastructure
@@ -55,7 +55,7 @@ flowchart LR
 
 | Service | Image (pinned by tag; digest recorded at implementation) | Host port (127.0.0.1 only) | Health check |
 |---|---|---|---|
-| `db` | `paradedb/paradedb:0.26.6-pg16` | 5432 | script: `pg_isready` **and** a query proving the three databases and two roles exist (F4) |
+| `db` | `paradedb/paradedb:0.26.6-pg16` | 5432 | script over TCP: `pg_isready -h 127.0.0.1`, then `psql -h 127.0.0.1` checking that `pg_search` exists in `praxismesh`, the last thing init creates, so it passes only once init has finished and the server accepts network connections (F4) |
 | `temporal-schema` | `temporalio/admin-tools:1.32.2` | none (one-shot) | exits 0 |
 | `temporal` | `temporalio/server:1.32.2` | 7233 | `temporal operator cluster health`. If the server image lacks the `temporal` CLI (verify at implementation), use a gRPC health probe instead |
 | `temporal-namespace` | `temporalio/admin-tools:1.32.2` | none (one-shot) | exits 0 |
@@ -69,15 +69,15 @@ Not in Phase 0: a Compose vLLM service. The model runs on the Sparks, launched f
 ### Startup order and idempotency (F1, F4)
 
 1. **`db`** starts. On a **fresh volume only**, `infra/db/init.sh` runs as the superuser, with `set -e` and `psql -v ON_ERROR_STOP=1`. It:
-   - creates roles `temporal` and `praxismesh` with passwords from `.env`;
+   - creates roles `temporal` and `praxismesh` with passwords from `infra/.env`;
    - creates databases `temporal`, `temporal_visibility` (owner `temporal`) and `praxismesh` (owner `praxismesh`);
    - runs `REVOKE CONNECT ON DATABASE … FROM PUBLIC` on all three and grants `CONNECT` only to the owning role (F15);
-   - runs `CREATE EXTENSION IF NOT EXISTS pg_search` in `praxismesh` only, as the superuser (F2).
+   - runs `CREATE EXTENSION IF NOT EXISTS pg_search` in `praxismesh` only, as the superuser (F2). Whether the image's own setup also adds extensions to its template database (and so to Temporal's databases) is checked at implementation; Temporal needs none and is unaffected either way.
 
    If init fails, the health check never passes and `make up` reports `db` unhealthy. Init does not re-run on an existing volume, so a half-failed init or a changed password needs `make reset`. The README and the error message say so.
 2. **`temporal-schema`** waits for a healthy `db`, then runs `temporal-sql-tool --plugin postgres12` `setup-schema -v 0.0` and `update-schema` for both Temporal databases. Both commands are safe to repeat, which implementation verifies by running `make up` twice.
 3. **`temporal`** starts after `temporal-schema` completes successfully.
-4. **`temporal-namespace`** waits for a healthy `temporal`. It creates namespace `TEMPORAL_NAMESPACE` (default `default`) with retention `TEMPORAL_RETENTION` (default `72h`; plan §4.13). If the namespace already exists, it succeeds without changes.
+4. **`temporal-namespace`** waits for a healthy `temporal`. It creates namespace `TEMPORAL_NAMESPACE` (default `default`) with retention `TEMPORAL_RETENTION` (default `72h`; plan §4.13). If the namespace already exists, it succeeds without changes. It exits only once `temporal operator namespace describe` succeeds, so the namespace is usable. A changed `TEMPORAL_RETENTION` is not applied to an existing namespace; the README documents `temporal operator namespace update` for that (N7).
 5. **`temporal-ui`** and **`s3`** start in parallel.
 
 `make up` runs `docker compose up -d --wait --wait-timeout 180`. `--wait` treats one-shot jobs that exited 0 as done; if it doesn't (verify at implementation), `make up` waits for the long-running services only, then checks the jobs' exit codes. **Requirement: `make up` succeeds when run twice in a row.**
@@ -86,12 +86,12 @@ Not in Phase 0: a Compose vLLM service. The model runs on the Sparks, launched f
 
 - **One ParadeDB server, three databases** (ADR-0002). Each role can connect only to its own databases.
 - **Application schema:** Alembic in `common/persistence/migrations/`, per plan §6 (F10), applied with `make migrate` as role `praxismesh`. The baseline revision is empty. A second revision only **checks** that `pg_search` is installed, because creating it needs the superuser (done by init). Downgrading it is a no-op.
-- **Objects:** SeaweedFS S3 with an access key and secret from `.env`. Tests create a uniquely named bucket per run and remove it afterwards (F22). GCS and Ceph RGW settings are documented in the README, not run.
+- **Objects:** SeaweedFS S3 with an access key and secret from `infra/.env`. Tests create a uniquely named bucket per run and remove it afterwards (F22). GCS and Ceph RGW settings are documented in the README, not run.
 - **Models:** see Configuration.
 
 ### Configuration (F7, F12, F18)
 
-`.env` lives at the **repository root**. The Makefile passes it with `docker compose --env-file .env -f infra/docker-compose.yml`. `.env.example` lists every variable with placeholders:
+The template is **`infra/.env.example`**, where plan §6 puts it (N2). The developer copies it to `infra/.env` (git-ignored). The Makefile passes it with `docker compose --env-file infra/.env -f infra/docker-compose.yml`, and `make smoke` and `make restart-check` export the same file into the test environment (N5). `infra/.env.example` lists every variable with placeholders:
 
 - database: `POSTGRES_PASSWORD`, `TEMPORAL_DB_PASSWORD`, `APP_DB_PASSWORD`, `DB_PORT`;
 - Temporal: `TEMPORAL_PORT`, `TEMPORAL_UI_PORT`, `TEMPORAL_NAMESPACE`, `TEMPORAL_RETENTION`;
@@ -100,22 +100,22 @@ Not in Phase 0: a Compose vLLM service. The model runs on the Sparks, launched f
 
 Both API styles use the same base URL: Anthropic Messages at `/v1/messages`, OpenAI chat at `/v1/chat/completions`.
 
-CI copies `.env.example` to `.env`. The placeholder passwords are local to the runner and are not secrets. `VLLM_BASE_URL` stays empty there.
+CI copies `infra/.env.example` to `infra/.env`. The placeholder passwords are local to the runner and are not secrets. `VLLM_BASE_URL` stays empty there.
 
 ### Commands
 
-`make up`, `make down` (keeps volumes), `make reset` (removes volumes), `make status` (lists each service's health and names any that are unhealthy), `make migrate`, `make smoke` (integration tests), `make restart-check` (the automated restart sequence below), `make logs`.
+`make up`, `make down` (keeps volumes), `make reset` (removes volumes), `make status` (lists each service's health and names any that are unhealthy, plus whether the model endpoint answers `/v1/models`; N8), `make migrate`, `make smoke` (integration tests), `make restart-check` (the automated restart sequence below), `make logs`.
 
-`make up` first checks that Docker is running, that `.env` exists, and that every required variable is set. It names whatever is missing (F6, F25).
+`make up` first checks that Docker is running, that `infra/.env` exists, and that every required variable is set. It names whatever is missing (F6, F25).
 
 ### Code and tests (F8, F11, F19)
 
 - **Dependencies:**
-  - runtime, in `[project] dependencies`: `temporalio` (1.36), `alembic` (1.20), `psycopg[binary]` 3, `boto3`, `httpx`;
+  - runtime, in `[project] dependencies`: `temporalio` (1.36, MIT), `alembic` (1.20, MIT), `sqlalchemy[asyncio]` (2.1, MIT) with the `asyncpg` driver (0.32, Apache-2.0), `boto3` (Apache-2.0), `httpx` (BSD-3-Clause). Not `psycopg` 3: it is LGPL-3.0, which CI's license allow-list does not include (N1). Alembic uses its async environment template;
   - dev: `boto3-stubs[s3]` for strict mypy;
   - all locked in `uv.lock`.
-- **Integration tests** in `tests/integration/` (plan §6 lists integration as a suite), marked `integration`. The default `pytest` run excludes them (`addopts = -m "not integration"`), so CI's unit `tests` job is unchanged. `make smoke` runs `pytest -m integration`.
-- **Hello Workflow:** the test starts an **in-process Temporal worker** on a unique task queue per run (`phase0-smoke-<run id>`). It runs a `HelloWorkflow` that calls one `say_hello` Activity, and uses a unique Workflow ID per run. Phase 0 has no worker container. The Workflow also gets a replay test against a history recorded in the test, which runs with the unit tests (plan §8).
+- **Integration tests** in `tests/integration/` (plan §6 lists integration as a suite), marked `integration`. The default `pytest` run excludes them (`addopts = "-ra -m 'not integration'"`, keeping `-ra`), so CI's unit `tests` job is unchanged. `make smoke` runs `pytest -m integration`.
+- **Hello Workflow:** the test starts an **in-process Temporal worker** on a unique task queue per run (`phase0-smoke-<run id>`). It runs a `HelloWorkflow` that calls one `say_hello` Activity, and uses a unique Workflow ID per run. Phase 0 has no worker container. Visibility checks poll for up to 10 seconds, since visibility lags (N7). The Workflow also gets a **replay test** in `tests/test_hello_replay.py`, a unit test against a history file committed under `tests/fixtures/` (recorded once from the stack at implementation), so it needs no server (plan §8; N6). The Workflow has no timers, so no time-skipping test applies.
 
 ### Automated restart check (F3)
 
@@ -131,7 +131,7 @@ CI copies `.env.example` to `.env`. The placeholder passwords are local to the r
 
 A new `stack` job runs `make up`, `make migrate`, `make smoke` and `make restart-check`, with model tests skipped because `VLLM_BASE_URL` is empty.
 - **Adding it to `ci-ok`** means two edits: add `stack` to `REQUIRED_JOBS` in `.github/scripts/ci_gate.py`, and to `ci-ok`'s `needs:` in `ci.yml`.
-- **Cost:** a few minutes per PR, plus anonymous Docker Hub pulls, which are rate limited per runner IP. If pulls become flaky, the job runs only on PRs that touch `infra/`, `common/persistence/` or `tests/integration/`, and on `main`.
+- **Cost:** a few minutes per PR, plus anonymous Docker Hub pulls, which are rate limited per runner IP. If pulls become flaky, the job still always runs, but its steps skip when a PR touches none of `infra/`, `common/persistence/`, `tests/integration/` (a skipped *job* would fail `ci-ok`; N4).
 - **Updates:** Dependabot gets a `docker-compose` ecosystem entry for the image tags (F14).
 
 ## Traceability (F9)
@@ -139,9 +139,9 @@ A new `stack` job runs `make up`, `make migrate`, `make smoke` and `make restart
 | Plan requirement (phase-0.md) | OpenSpec requirement | Acceptance test |
 |---|---|---|
 | Compose: Temporal ≥ 1.28, PostgreSQL, UI, SeaweedFS S3, separate app DB | local-stack: One-command start and stop; app-database: Separate application database | `make up` twice in a row; `test_role_isolation` |
-| vLLM configured, served name without `/` | model-endpoints: External model endpoint by configuration | `test_model_config`; demo step 3 |
+| vLLM configured, served name without `/` | model-endpoints: External model endpoint by configuration | `test_model_listed` (`VLLM_MODEL` appears in `/v1/models`); demo step 3 |
 | `make up/down`, `.env.example`, health checks, ports, volumes, no secrets | local-stack: Health checks; Configuration without committed secrets; Clear diagnostics | `make status`; `test_env_check`; CI gitleaks |
-| Hello Workflow smoke test; `curl` tests for both vLLM endpoints | local-stack: Temporal smoke test; model-endpoints: Both API styles answer | `test_hello_workflow`; `test_messages_endpoint`, `test_chat_endpoint` |
+| Hello Workflow smoke test; `curl` tests for both vLLM endpoints | local-stack: Temporal smoke test; model-endpoints: Both API styles answer, Endpoint unreachable | `test_hello_workflow`; `test_hello_replay` (unit); `test_messages_endpoint`, `test_chat_endpoint`; `test_unreachable_endpoint_fails` |
 | BlobStore S3 put/get/delete; GCS and Ceph documented | blob-store: S3 round trip; Optional backends documented | `test_s3_round_trip`; README section |
 | Migration baseline; clean volume and after restart | app-database: Migration baseline | `make restart-check` |
 | Accept: state survives restart | local-stack: Persistent state | `make restart-check` |
@@ -158,7 +158,7 @@ A new `stack` job runs `make up`, `make migrate`, `make smoke` and `make restart
 
 - **Temporal on ParadeDB is untested upstream.** Rethink trigger (§7.1): the schema job or the hello Workflow fails on this image. Fallback: a plain `postgres:16` service for Temporal's databases.
 - **Memory:** the stack must stay under **6 GB** combined on the workstation (about 15 GB visible). `docker stats` is recorded in `docs/demos/phase-0.md`. Rethink trigger: over 6 GB at idle.
-- **Model endpoint outside Compose (F5).** If `VLLM_BASE_URL` is **unset**, model tests are skipped with the reason. If it is **set but unreachable**, they **fail**, naming the endpoint. Phase 0 closes only with a recorded run in which the model tests passed against the Sparks.
+- **Model endpoint outside Compose (F5).** If `VLLM_BASE_URL` is **unset or empty**, model tests are skipped with the reason. If it is **set but unreachable**, they **fail**, naming the endpoint. Phase 0 closes only with a recorded run in which the model tests passed against the Sparks.
 - **Image pinning:** digests are recorded at implementation; Dependabot proposes updates.
 
 ## Testing and demo
@@ -171,7 +171,7 @@ Demo (`docs/demos/phase-0.md`):
 3. Send a real prompt to each vLLM endpoint (`/v1/messages`, `/v1/chat/completions`) and show the replies.
 4. Upload an object; `make down` then `make up`; show the Workflow history and the object are still there; download and delete it.
 5. **Failure cases:**
-   - with `.env` missing, `make up` names the missing file;
+   - with `infra/.env` missing, `make up` names the missing file;
    - stop `db` with `docker compose stop db`, then `make status` names `db` as unhealthy and `make smoke` fails naming the database as unreachable;
    - with `VLLM_BASE_URL` set to an unreachable address, the model tests fail naming it.
 6. Record `docker stats`; clean up with `make reset`.

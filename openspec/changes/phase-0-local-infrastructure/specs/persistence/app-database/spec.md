@@ -18,7 +18,7 @@ The application database SHALL be managed by Alembic migrations in `common/persi
 
 #### Scenario: Clean volume
 - **WHEN** `make migrate` runs against a freshly created database volume
-- **THEN** the baseline revision is applied and recorded as current
+- **THEN** all revisions up to head are applied and head is recorded as current
 
 #### Scenario: After restart
 - **WHEN** the stack is restarted and `make migrate` runs again
