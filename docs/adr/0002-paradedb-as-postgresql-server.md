@@ -1,7 +1,7 @@
 ---
 id: ADR-0002
 title: Use ParadeDB as the PostgreSQL server, shared by the application and Temporal in Compose
-status: proposed
+status: accepted
 date: 2026-11-11
 issue: null
 related: ["PROJECT_PLAN.md §2, §3", "docs/plan/schemas.md §5", "docs/plan/design-decisions.md §4.16", "docs/plan/phases/phase-0.md"]
