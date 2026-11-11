@@ -1,0 +1,11 @@
+# gitleaks configuration: all default rules, plus narrowly scoped allowlists for
+# reviewed false positives. Each allowlist names the rule, the matched text and why.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Plan prose in docs/plan/schemas.md: 'idempotency key, parent/previous response ID' is a field list, not a secret"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = ['''request ID/idempotency key, parent/previous response ID''']
