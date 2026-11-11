@@ -74,7 +74,11 @@ uv run mypy
 uv run pytest
 uv run .agents/sync_agents.py --check
 openspec validate --all
+openspec update --dry-run      # expect "No changes"
+gitleaks git --config .gitleaks.toml --redact .   # if gitleaks is installed
 ```
+
+CI also lints the workflows with actionlint, checks internal links offline and, on pull requests, reviews new dependencies. The gitleaks and link checks each run a canary that proves they still catch a planted problem.
 
 ## Contributing
 

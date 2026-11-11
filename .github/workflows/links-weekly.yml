@@ -1,6 +1,10 @@
 # Weekly online link check over all Markdown, including external URLs.
 # Informational only: not a required check, so a slow or down website never
 # blocks a merge (plan §0.1 link check; PR CI checks internal links offline).
+# GitHub notifies the user who last changed the cron schedule when a scheduled run
+# fails; with a single maintainer that is the owner. Revisit when maintainers change.
+# 429 (rate limited) counts as reachable, so a site that always rate-limits the
+# runner is never really checked; that is accepted to keep the report readable.
 
 name: links-weekly
 

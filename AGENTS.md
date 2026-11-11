@@ -45,9 +45,11 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pytest
 uv run .agents/sync_agents.py --check
+openspec validate --all
+openspec update --dry-run      # expect "No changes"
 ```
 
-CI also runs `openspec validate --all`, gitleaks (config `.gitleaks.toml`), an offline link check and, on PRs, dependency review. Python is pinned to the 3.11 floor (`.python-version`) and Node to `.node-version`.
+CI also runs gitleaks (config `.gitleaks.toml`), actionlint, an offline link check and, on PRs, dependency review; the gitleaks and link checks each run a canary. The `ci-ok` rule is `.github/scripts/ci_gate.py`. Python is pinned to the 3.11 floor (`.python-version`) and Node to `.node-version`.
 
 ## Agent tooling layout
 
