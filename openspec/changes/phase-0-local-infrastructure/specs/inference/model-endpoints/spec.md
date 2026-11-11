@@ -9,6 +9,10 @@ Access to the local model servers in both API styles the platform uses: Anthropi
 ### Requirement: External model endpoint by configuration
 The stack SHALL reach vLLM through `VLLM_BASE_URL`, `VLLM_MODEL` and `VLLM_API_KEY` in `infra/.env` (by default the external DGX Spark pair, one base URL for both API styles). Model name, base URL and key SHALL be configuration, never hard-coded. The model's launch flags SHALL be recorded (`docs/spikes/harness-vllm.md`). (Plan: Phase 0 task 2; §2; decision log 2026-11-10 hardware roles.)
 
+#### Scenario: Served model is listed
+- **WHEN** `VLLM_BASE_URL` is set and reachable
+- **THEN** `VLLM_MODEL` appears in the endpoint's `/v1/models` list
+
 #### Scenario: Endpoint from configuration
 - **WHEN** `VLLM_BASE_URL` is set in `infra/.env`
 - **THEN** the model smoke tests call that endpoint and no other

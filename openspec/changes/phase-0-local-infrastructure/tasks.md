@@ -2,7 +2,7 @@
 
 ## 0. Project setup
 
-- [ ] 0.1 Add runtime dependencies (`temporalio`, `alembic`, `sqlalchemy[asyncio]`, `asyncpg`, `boto3`, `httpx`) and dev `boto3-stubs[s3]`; lock with `uv`; confirm the `licenses` job passes
+- [ ] 0.1 Add runtime dependencies (`temporalio`, `alembic`, `sqlalchemy[asyncio]`, `asyncpg`, `boto3`, `httpx`) and dev `boto3-stubs[s3]`; lock with `uv`; confirm the `licenses` job passes; update the `typing-extensions` allow-list comment in `ci.yml` (it becomes a runtime dependency); type asyncpg access through SQLAlchemy only, or add stubs or a narrow mypy override (follow-up 2: N1a, M1)
 - [ ] 0.2 Register the `integration` pytest marker and exclude it from the default run while keeping `-ra`; extend mypy `files` to the new packages
 
 ## 1. Compose stack
@@ -11,13 +11,13 @@
 - [ ] 1.2 `infra/db/init.sh` (`set -e`, `ON_ERROR_STOP`): roles, three databases, `REVOKE CONNECT ... FROM PUBLIC` and grants, `CREATE EXTENSION IF NOT EXISTS pg_search` in `praxismesh` only
 - [ ] 1.3 `temporal-schema` job (`temporal-sql-tool --plugin postgres12`, setup and update for both databases), safe to repeat
 - [ ] 1.4 `temporal-namespace` job: create `TEMPORAL_NAMESPACE` with `TEMPORAL_RETENTION`; "already exists" is success; exit only once `namespace describe` succeeds
-- [ ] 1.5 Health checks for every service; the database check runs over TCP and checks that `pg_search` exists in `praxismesh`; verify the Temporal CLI is in the server image or use a gRPC probe; check whether the image adds extensions to its template database
+- [ ] 1.5 Health checks for every service; the database check runs over TCP and checks that `pg_search` exists in `praxismesh`; verify the Temporal CLI is in the server image or use a gRPC probe; check whether the image adds extensions to its template database; have `init.sh` finish with a marker the health check reads (for example `COMMENT ON DATABASE praxismesh`), or give `db` no restart policy (follow-up 2: F4a)
 - [ ] 1.6 Verify `docker compose up --wait` with completed one-shot jobs; `make up` twice in a row succeeds
 
 ## 2. Developer commands and configuration
 
 - [ ] 2.1 `infra/.env.example` (plan §6) with every variable (database, Temporal, S3, `VLLM_BASE_URL`, `VLLM_MODEL`, `VLLM_API_KEY`); `infra/.env` git-ignored
-- [ ] 2.2 `Makefile`: `up`, `down`, `reset`, `status` (including model endpoint reachability), `migrate`, `smoke`, `restart-check`, `logs`, all using `infra/.env`; `smoke` and `restart-check` export it to the tests
+- [ ] 2.2 `Makefile`: `up`, `down`, `reset`, `status` (including model endpoint reachability, shown as "not configured" when `VLLM_BASE_URL` is empty), `migrate`, `smoke`, `restart-check`, `logs`, all using `infra/.env`; `smoke` and `restart-check` export it to the tests
 - [ ] 2.3 Prerequisite checks with named diagnostics: Docker not running, `infra/.env` missing, required variable unset
 
 ## 3. Application database
@@ -30,7 +30,7 @@
 - [ ] 4.1 Hello Workflow and Activity with an in-process worker, unique task queue and Workflow ID per run; result checked; listed by the visibility API (polled up to 10 s)
 - [ ] 4.2 Replay test `tests/test_hello_replay.py` (unit run) against a history file committed under `tests/fixtures/`, recorded once from the stack
 - [ ] 4.3 S3 put, get and delete in a unique bucket per run
-- [ ] 4.4 Model endpoints: skipped when `VLLM_BASE_URL` is unset or empty, failing (endpoint named) when set but unreachable (`test_unreachable_endpoint_fails`); `VLLM_MODEL` contains no `/` and appears in `/v1/models`
+- [ ] 4.4 Model endpoints: skipped when `VLLM_BASE_URL` is unset or empty, failing (endpoint named) when set but unreachable (`test_unreachable_endpoint_fails`, using its own unreachable URL, not the configured one; follow-up 2: M2); `VLLM_MODEL` contains no `/` and appears in `/v1/models`
 - [ ] 4.5 Application role refused on Temporal's databases; `pg_search` installed
 - [ ] 4.6 `infra/.env` check: missing file and unset variable produce named diagnostics
 - [ ] 4.7 `make restart-check`: up, migrate, seed, down, up, migrate (no-op), assert Workflow and object survive

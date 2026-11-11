@@ -2,7 +2,7 @@
 title: Phase 0 local infrastructure
 type: rfc
 tier: light
-status: proposed
+status: accepted
 phase: 0
 issue: "#34"
 openspec_change: openspec/changes/phase-0-local-infrastructure
