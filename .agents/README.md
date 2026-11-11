@@ -54,7 +54,7 @@ Name every skill `<domain>-<capability>`:
 
 No sync step is needed: all three harnesses see the new folder immediately.
 
-**Review and verification skills:** `review-design` and `review-implementation` are project-owned adaptations of external skills, and `verify-phase` was written for this project. The owner chose this over plan §0.3's "use the original, pinned" rule; see [decision-log.md](../docs/plan/decision-log.md). Their upstream source and license are not yet recorded (tracked in issue #1). Change them like any other project file, through a reviewed pull request.
+**Review and verification skills:** `review-design` and `review-implementation` are project-owned adaptations of skills the repository owner wrote for another of their own projects, and `verify-phase` was written for this project. There is no third-party source or license: all three are part of this repository under its Apache-2.0 license (issue #1). The owner chose adaptation over plan §0.3's "use the original, pinned" rule; see [decision-log.md](../docs/plan/decision-log.md). Change them like any other project file, through a reviewed pull request.
 
 ## Adding an agent
 
