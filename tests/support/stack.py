@@ -61,7 +61,8 @@ async def run_hello(client: Client, workflow_id: str, name: str) -> str:
             name,
             id=workflow_id,
             task_queue=task_queue,
-            execution_timeout=timedelta(seconds=30),
+            # Longer than 3 Activity attempts of 10 s plus backoff (hello.py).
+            execution_timeout=timedelta(seconds=60),
         )
 
 

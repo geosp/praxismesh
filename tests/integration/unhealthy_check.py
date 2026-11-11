@@ -1,8 +1,8 @@
 """`make unhealthy-check`: a stopped database is reported by name (local-stack spec,
 Unhealthy service).
 
-    stop db -> `make status` exits non-zero naming db
-    -> the database smoke test fails naming the database -> start db, make up
+    stop db -> `make status` fails naming db
+    -> `make smoke` fails naming the database server -> start db, make up (must pass)
 
 Run through make, which loads infra/.env: make unhealthy-check
 """
@@ -16,8 +16,6 @@ import sys
 COMPOSE = [
     "docker",
     "compose",
-    "-p",
-    os.environ.get("COMPOSE_PROJECT_NAME", "praxismesh"),
     "--env-file",
     os.environ.get("ENV_FILE", "infra/.env"),
     "-f",
@@ -38,24 +36,17 @@ def main() -> int:
         if status.returncode == 0 or "unhealthy or stopped: db" not in status.stdout:
             failures.append(f"make status did not name db (exit {status.returncode})")
 
-        smoke = run(
-            [
-                "uv",
-                "run",
-                "pytest",
-                "-m",
-                "integration",
-                "tests/integration/test_database.py::test_pg_search_installed",
-            ]
-        )
+        smoke = run(["make", "--no-print-directory", "smoke"])
         if smoke.returncode == 0:
             failures.append("the database smoke test passed with db stopped")
         elif "database server (service db)" not in smoke.stdout:
             failures.append("the database smoke test failed without naming the database")
     finally:
-        print("unhealthy-check: starting db", flush=True)
-        run([*COMPOSE, "start", "db"])
-        subprocess.run(["make", "--no-print-directory", "up"], check=False)
+        print("unhealthy-check: starting db and the stack", flush=True)
+        if run([*COMPOSE, "start", "db"]).returncode != 0:
+            failures.append("could not start db again")
+        if subprocess.run(["make", "--no-print-directory", "up"], check=False).returncode != 0:
+            failures.append("make up failed after restarting db; the stack is not healthy")
 
     for failure in failures:
         print(f"unhealthy-check: FAIL {failure}", file=sys.stderr)

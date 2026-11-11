@@ -24,7 +24,7 @@ def test_s3_round_trip() -> None:
         assert s3.list_objects_v2(Bucket=bucket).get("KeyCount", 0) == 0
     finally:
         # Best effort; never hide the assertion that failed.
-        with contextlib.suppress(ClientError):
+        with contextlib.suppress(Exception):
             s3.delete_object(Bucket=bucket, Key="hello.txt")
             s3.delete_bucket(Bucket=bucket)
 

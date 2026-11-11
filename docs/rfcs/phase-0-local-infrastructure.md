@@ -17,6 +17,8 @@ revision: 3 (addresses the design review of 83e0ae3 and the targeted follow-up o
 
 # RFC: Phase 0 local infrastructure
 
+> **Amended by the decision log (2026-11-11, Phase 0 gate fixes).** `make up` now applies a changed `TEMPORAL_RETENTION` (step 4 below said it would not); `infra/.env` has a strict syntax and Make no longer reads it; `make status` fails when a service is unhealthy; the Compose project name is configurable. The as-built behavior is in `docs/architecture/overview.md`.
+
 ## Background
 
 Every later phase runs on a local platform stack: Temporal for durable execution, the application database, object storage and model endpoints. Phase 0 builds that stack so it starts with one command, keeps its state across restarts and proves each part works. It contains no product logic.

@@ -47,7 +47,7 @@ Database contents, Temporal history and stored objects SHALL be kept in named vo
 - **THEN** the Workflow is still visible in Temporal and the object can still be read
 
 ### Requirement: Configuration without committed secrets
-All endpoints, ports and credentials SHALL come from `infra/.env`, written as plain `KEY=value` lines that Make and Docker Compose read identically; `make up` SHALL reject any other syntax, naming the line. The repository SHALL contain only `infra/.env.example` with placeholder values (plan §6); CI copies it to `infra/.env`. (Plan: Phase 0 task 3; §2 no committed secrets.)
+All endpoints, ports and credentials SHALL come from `infra/.env`, written as plain `KEY=value` lines that every reader (Docker Compose, `uv run --env-file`) reads identically; `make up` SHALL reject any other syntax, naming the line. The repository SHALL contain only `infra/.env.example` with placeholder values (plan §6); CI copies it to `infra/.env`. (Plan: Phase 0 task 3; §2 no committed secrets.)
 
 #### Scenario: No secrets in Git
 - **WHEN** the repository is scanned by CI's secret scan

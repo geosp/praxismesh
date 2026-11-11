@@ -31,7 +31,7 @@ Chosen option: "ParadeDB as the one server", because it gives the application se
 
 - **Image:** `paradedb/paradedb:0.26.6-pg16`, pinned by tag (and digest in Compose). PostgreSQL 16 is the newest major version Temporal tests. Move to a newer PostgreSQL major only once Temporal's tested range includes it.
 - **Separation stays logical:** Temporal's persistence and visibility databases and the application database are separate databases on the shared server, with separate roles. Temporal's databases stay private to Temporal (§4.16); the application never reads them.
-- **Portability:** application tables, queries and Alembic migrations use plain PostgreSQL. ParadeDB features (`pg_search` indexes, vector columns) are used only where search or retrieval needs them, in their own migrations, so a plain PostgreSQL server can still run everything else.
+- **Portability:** application tables, queries and Alembic migrations use plain PostgreSQL. ParadeDB features (`pg_search` indexes, vector columns) are used only where search or retrieval needs them, in their own migrations, so a plain PostgreSQL server can still run everything else. (Phase 0 note: migration `0002` requires `pg_search` on the main chain; a plain-PostgreSQL deployment would branch around it. Decision log, Phase 0 gate fixes.)
 - **Production (Phase 7):** may split Temporal and the application onto separate servers. This ADR does not decide that.
 
 ### Consequences
