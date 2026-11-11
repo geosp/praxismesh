@@ -10,3 +10,4 @@ One record per consequential architecture decision, written when the decision is
 | ADR | Decision | Status |
 |---|---|---|
 | [0001](0001-keep-default-openspec-schema.md) | Keep OpenSpec's default `spec-driven` schema; review gates live in the review skills and CI | proposed |
+| [0002](0002-paradedb-as-postgresql-server.md) | Use ParadeDB as the PostgreSQL server, shared by the application and Temporal in Compose | proposed |

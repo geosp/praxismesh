@@ -6,7 +6,7 @@ Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [P
 
 **Read first:** `PROJECT_PLAN.md`, then §4.13, §4.16 (precedence rule), §4.17.
 
-- [ ] Create `infra/docker-compose.yml` with Temporal OSS (verify supported release, target ≥1.28), PostgreSQL, Temporal UI, **SeaweedFS with S3-compatible endpoint**, and configurable vLLM. Maintain a separate application database/schema.
+- [ ] Create `infra/docker-compose.yml` with Temporal OSS (verify supported release, target ≥1.28), PostgreSQL, Temporal UI, **SeaweedFS with S3-compatible endpoint**, and configurable vLLM. Maintain a separate application database/schema. *(PostgreSQL server: ParadeDB `paradedb/paradedb:0.26.6-pg16`, shared by Temporal and the application as separate databases; see [ADR-0002](../../adr/0002-paradedb-as-postgresql-server.md).)*
 - [ ] Configure vLLM for supported local model, `--served-model-name` without `/`, and model-appropriate tool-choice/parser flags, after checking current vLLM docs and selected model.
 - [ ] Add `make up`, `make down`, `.env.example`, health checks, ports, volume persistence and no committed secrets.
 - [ ] Provide a hello-world Temporal Workflow smoke test and `curl` tests for vLLM `/v1/messages` and OpenAI chat endpoint.

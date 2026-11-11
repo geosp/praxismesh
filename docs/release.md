@@ -12,6 +12,7 @@ This document defines how PraxisMesh is versioned and released, and the compatib
 ## Changelog
 
 - `CHANGELOG.md` starts with the first release and follows [Keep a Changelog](https://keepachangelog.com/): Added, Changed, Deprecated, Removed, Fixed, Security, plus Breaking.
+- The license check lists third-party services the default deployment runs. ParadeDB (the PostgreSQL server, ADR-0002) is AGPL-3.0: it runs unmodified as a separate service, and a modified ParadeDB would carry AGPL obligations.
 - Each release entry links the phase evidence it closes (`docs/demos/phase-N.md`, `docs/reviews/phase-N/`) and records the dependency license-check result for anything distributed (phase-5.md).
 
 ## Release procedure (from the first release)
