@@ -2,7 +2,8 @@
 # Fork safety: only `pull_request` (never `pull_request_target`), a read-only
 # token, and no secrets referenced anywhere in this file.
 # Every action is pinned to a full commit SHA; Dependabot proposes updates.
-# The single required status check on main is `ci-ok`.
+# The single required status check on main is `ci-ok`; its rule is in
+# .github/scripts/ci_gate.py (tested in tests/test_ci_gate.py).
 # Model- and GPU-dependent suites run separately (scheduled / self-hosted, §8).
 
 name: ci
@@ -156,17 +157,19 @@ jobs:
           allow-dependencies-licenses: >-
             pkg:pypi/typing-extensions
 
+  # Every job must succeed; a skipped job fails the gate. The only exception is
+  # `licenses` on main itself (see .github/scripts/ci_gate.py and its tests).
   ci-ok:
     if: always()
     needs: [lint, types, tests, agents-sync, openspec, secrets, links, licenses]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: All required jobs passed
         env:
-          RESULTS: ${{ toJSON(needs.*.result) }}
-        run: |
-          echo "$RESULTS"
-          if echo "$RESULTS" | grep -qE '"(failure|cancelled)"'; then
-            echo "A required job failed or was cancelled." >&2
-            exit 1
-          fi
+          NEEDS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: python3 .github/scripts/ci_gate.py
