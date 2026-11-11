@@ -22,17 +22,21 @@ Evidence for the Phase 0 demo in [docs/plan/phases/phase-0.md](../plan/phases/ph
 | 3 | A real prompt to each vLLM endpoint | Both API styles answer | `/v1/models`: `['qwen3.8-flash-next', 'spark']`. `/v1/messages` (`stop_reason` `end_turn`): "Temporal is an open-source workflow orchestration platform used to build, run, and scale reliable applications and services by making complex distributed workflows fault-tolerant, observable, and easy to maintain." `/v1/chat/completions` (`finish_reason` `stop`): "Temporal is an open-source platform for building reliable, fault-tolerant applications by durably executing long-running workflows, ensuring they can recover and continue from their exact state after crashes, restarts, or infrastructure failures." The model tests (`test_model_listed`, `test_messages_endpoint`, `test_chat_endpoint`) passed against the same endpoint | Pass |
 | 4 | Workflow and object survive `make down` / `make up` | Same Workflow and object after restart; migrations unchanged | `make restart-check`: `seeded Workflow phase0-restart-b6df50dbc325 and s3://phase0-restart-b6df50dbc325/seed.txt` ... `PASS (revision 0002, Workflow and object survived)`, 33 s | Pass |
 | 5 | Failure cases | Each names what is wrong | See below | Pass |
-| 6 | `docker stats`; clean up | Under 6 GB | `temporal-ui` 12.6 MiB, `temporal` 110 MiB, `db` 70.9 MiB, `s3` 81.5 MiB: about 275 MB in total | Pass |
+| 6 | `docker stats`; clean up | Under 6 GB | `temporal-ui` 12.6 MiB, `temporal` 110 MiB, `db` 70.9 MiB, `s3` 81.5 MiB: about 275 MiB in total (other runs: 349-408 MiB; see the as-built overview) | Pass |
 
 ### Step 5: failure cases
 
 | Case | Command | Observed |
 |---|---|---|
-| `infra/.env` missing | `make up ENV_FILE=infra/.env.absent` | `error: infra/.env.absent is missing; create it with: cp infra/.env.example infra/.env.absent`, exit 1 |
-| Database stopped | `docker compose ... stop db`, then `make status` and `make smoke` | `make status`: `unhealthy or stopped: db`. `make smoke`: `RuntimeError: database server (service db) at 127.0.0.1:5432 is unreachable; check make status: [Errno 111] Connect call failed ('127.0.0.1', 5432)` |
+| `infra/.env` missing | `make up ENV_FILE=infra/.env.absent` | `error: infra/.env.absent is missing; create it with: cp infra/.env.example infra/.env.absent`; the script exits 1 and `make` exits 2 |
+| Database stopped | `docker compose -p praxismesh --env-file infra/.env -f infra/docker-compose.yml stop db`, then `make status` and `make smoke`. Automated since the gate fixes as `make unhealthy-check` | `make status`: `unhealthy or stopped: db`. `make smoke`: `RuntimeError: database server (service db) at 127.0.0.1:5432 is unreachable; check make status: [Errno 111] Connect call failed ('127.0.0.1', 5432)` |
 | Model endpoint unreachable | `make smoke VLLM_BASE_URL=http://127.0.0.1:9` | `EndpointUnreachableError: model endpoint http://127.0.0.1:9 is unreachable: ConnectError('[Errno 111] Connection refused')` for each model test; `3 failed, 12 passed` |
 
 Also covered by tests (`tests/integration/test_env_check.py`): an unset required variable (`error: APP_DB_PASSWORD is not set in ...`) and a model name containing `/`.
+
+Steps 3 and 4 were run with ad hoc commands; the README's "Trying the services by hand" now documents equivalent ones. The Temporal UI evidence in step 2 is the UI's own HTTP API, not a screenshot.
+
+The [verification run](../reviews/phase-0/verification.md) at `075791a` repeated every step with its own observed output.
 
 ## Findings during implementation
 

@@ -15,14 +15,25 @@ The local stack SHALL start with `make up` and stop with `make down`, from a cle
 
 #### Scenario: Repeat start
 - **WHEN** a developer runs `make up` a second time on a running or stopped stack
-- **THEN** it succeeds, and the schema and namespace jobs make no changes
+- **THEN** it succeeds, and the schema and namespace jobs make no changes (checked by `make restart-check`)
+
+#### Scenario: Changed retention
+- **WHEN** `TEMPORAL_RETENTION` in `infra/.env` differs from the existing namespace's retention and the developer runs `make up`
+- **THEN** the namespace job updates the namespace to the configured retention, or exits non-zero naming the failure
 
 #### Scenario: Stop
 - **WHEN** a developer runs `make down`
 - **THEN** all stack containers stop and named volumes remain
 
 ### Requirement: Health checks
-Every service in the stack SHALL define a health check. The database health check SHALL prove that its databases and roles exist, not only that the server accepts connections. `make up` SHALL wait until all services are healthy or exit non-zero naming the unhealthy service, and `make status` SHALL report each service's health. (Plan: Phase 0 task 3.)
+Every long-running service in the stack SHALL define a health check; the one-shot setup jobs count as healthy only by exiting 0, which `make up` checks. The database health check SHALL prove that its databases and roles exist, not only that the server accepts connections. (Plan: Phase 0 task 3.)
+
+#### Scenario: Healthy after start
+- **WHEN** `make up` succeeds
+- **THEN** every long-running service reports healthy and both setup jobs have exited 0
+
+### Requirement: Health reporting
+`make up` SHALL wait until all services are healthy or exit non-zero naming the unhealthy service. `make status` SHALL report each service's health and exit non-zero if any is unhealthy, checked by `make unhealthy-check`, which CI runs. (Plan: Phase 0 task 3.)
 
 #### Scenario: Unhealthy service
 - **WHEN** the `db` service is stopped while the rest of the stack runs
@@ -36,7 +47,7 @@ Database contents, Temporal history and stored objects SHALL be kept in named vo
 - **THEN** the Workflow is still visible in Temporal and the object can still be read
 
 ### Requirement: Configuration without committed secrets
-All endpoints, ports and credentials SHALL come from `infra/.env`. The repository SHALL contain only `infra/.env.example` with placeholder values (plan §6); CI copies it to `infra/.env`. (Plan: Phase 0 task 3; §2 no committed secrets.)
+All endpoints, ports and credentials SHALL come from `infra/.env`, written as plain `KEY=value` lines that Make and Docker Compose read identically; `make up` SHALL reject any other syntax, naming the line. The repository SHALL contain only `infra/.env.example` with placeholder values (plan §6); CI copies it to `infra/.env`. (Plan: Phase 0 task 3; §2 no committed secrets.)
 
 #### Scenario: No secrets in Git
 - **WHEN** the repository is scanned by CI's secret scan
