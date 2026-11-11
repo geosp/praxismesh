@@ -39,7 +39,7 @@ Each row needs a named human owner and a recorded answer. An unanswered row bloc
 
 ## 0. Prerequisite: GitHub repository, OpenSpec, and specialist skills
 
-**Gate:** This is a **project bootstrap stage before Phase 0**, not an additional application feature phase. **Status: in progress.** The repository `geosp/praxismesh` exists (public, Apache-2.0) and OpenSpec is initialized locally (see the decision log). CI, the remaining project files, branch protection and the specialist review skills remain pending.
+**Gate:** This is a **project bootstrap stage before Phase 0**, not an additional application feature phase. **Status: closed 2026-11-11 by owner decision** (§7.1, "review process costs more than it returns"). Every §0.1-§0.3 item is done, and every §0.4 demo item has recorded evidence in `docs/demos/bootstrap.md`. The gate-mode `verify-phase` run was stopped by the owner before it finished, so there is no gate verification report for §0. See the decision log.
 
 ### 0.1 Choose and create the shared repository
 
@@ -87,11 +87,11 @@ Each row needs a named human owner and a recorded answer. An unanswered row bloc
 **Demo checklist (required before Phase 0):**  
 **Audience-visible outcome:** A fresh checkout is ready for independent phase planning, implementation, review, and verification.
 
-- [ ] Show the actual GitHub repository, clone URL, default branch, protected change path, and clean clone.
-- [ ] Show `openspec --version`, generated configuration/skill files in the clone, and a working OpenSpec command supported by the chosen coding tool.
-- [ ] In separate fresh sessions, show that the installed design-review, implementation-review, and verification skills can be invoked or loaded against the same pinned commit (without exchanging conversation histories).
-- [ ] Demonstrate a blocked unauthorized write or branch-protection check and verify that no secrets or session transcripts were committed.
-- [ ] Open a PR with a deliberately failing check and show that merge is blocked; fix it and show the checks pass on the latest head.
-- [ ] Save the commands, versions, commit SHA, expected versus observed behavior, and demo evidence in `docs/demos/bootstrap.md`; mark pass/fail explicitly.
+- [x] Show the actual GitHub repository, clone URL, default branch, protected change path, and clean clone. *(Closed by owner decision 2026-11-11; evidence in `docs/demos/bootstrap.md`; no gate verification run.)*
+- [x] Show `openspec --version`, generated configuration/skill files in the clone, and a working OpenSpec command supported by the chosen coding tool. *(Closed by owner decision 2026-11-11; evidence in `docs/demos/bootstrap.md`; no gate verification run.)*
+- [x] In separate fresh sessions, show that the installed design-review, implementation-review, and verification skills can be invoked or loaded against the same pinned commit (without exchanging conversation histories). *(Closed by owner decision 2026-11-11; evidence in `docs/demos/bootstrap.md`; no gate verification run.)*
+- [x] Demonstrate a blocked unauthorized write or branch-protection check and verify that no secrets or session transcripts were committed. *(Closed by owner decision 2026-11-11; evidence in `docs/demos/bootstrap.md`; no gate verification run.)*
+- [x] Open a PR with a deliberately failing check and show that merge is blocked; fix it and show the checks pass on the latest head. *(Closed by owner decision 2026-11-11; evidence in `docs/demos/bootstrap.md`; no gate verification run.)*
+- [x] Save the commands, versions, commit SHA, expected versus observed behavior, and demo evidence in `docs/demos/bootstrap.md`; mark pass/fail explicitly. *(Closed by owner decision 2026-11-11; evidence in `docs/demos/bootstrap.md`; no gate verification run.)*
 
 **Boundary:** OpenSpec and the development-review skills are tools for **building this platform**, not necessarily runtime dependencies or worker skills of the platform being built. The worker-template skill security policy in Phase 1 remains a separate concern.
