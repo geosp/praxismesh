@@ -29,7 +29,7 @@ PR [#8](https://github.com/geosp/praxismesh/pull/8), branch `demo/failing-check`
 
 | Step | Commit | Command or action | Expected | Observed | Result |
 |---|---|---|---|---|---|
-| Add an unused import to `tests/conftest.py` | `b1685ee` | Push and open PR #8; CI run [42956226787](https://github.com/geosp/praxismesh/actions/runs/42956226787) | `lint` fails, so `ci-ok` fails, so merge is blocked | `lint`: fail (`F401 os imported but unused`); `ci-ok`: fail; all other jobs pass. `gh pr view 8 --json mergeStateStatus,mergeable`: `BLOCKED`, `MERGEABLE` (no conflicts, so the block is the failing required check) | Pass |
+| Add an unused import to `tests/conftest.py` | `b1685ee` | Push and open PR #8; CI run [42956226787](https://github.com/geosp/praxismesh/actions/runs/42956226787) | `lint` fails, so `ci-ok` fails, so merge is blocked | `lint`: fail (`F401 os imported but unused` and `E402 module level import not at top of file`, because the import follows code); `ci-ok`: fail; all other jobs pass. `gh pr view 8 --json mergeStateStatus,mergeable`: `BLOCKED`, `MERGEABLE` (no conflicts, so the block is the failing required check) | Pass |
 | Revert the change | `ac365bc` | Push; CI run [42956377332](https://github.com/geosp/praxismesh/actions/runs/42956377332) | All checks pass; merge allowed | All 8 jobs and `ci-ok` pass. `mergeStateStatus`: `CLEAN` | Pass |
 | Clean up | - | `gh pr close 8 --delete-branch` | PR closed unmerged, branch removed | `state: CLOSED`, `mergedAt: null` | Pass |
 
@@ -37,7 +37,7 @@ Not done by an agent: actually clicking merge on the blocked PR. An agent must n
 
 ## Item 4: direct push to main is rejected
 
-Run by the repository owner on 2026-11-10 from a throwaway local branch holding an empty commit (`81e6b10`), which was never pushed anywhere else.
+Run by the repository owner on 2026-11-10 from a throwaway local branch holding an empty commit (`81e6b10`). No branch contains that commit, but the rejected push uploaded it, so GitHub still serves it by SHA.
 
 | Step | Command | Expected | Observed | Result |
 |---|---|---|---|---|
@@ -49,7 +49,7 @@ Run by the repository owner on 2026-11-10 from a throwaway local branch holding 
 
 ```bash
 git switch -c demo/failing-check main
-printf 'import os\n' >> tests/conftest.py
+printf 'import os  # deliberate lint error for the bootstrap demo (unused import)\n' >> tests/conftest.py   # ruff: F401 and E402
 git commit -am "Demo: deliberate lint error (do not merge)" && git push -u origin HEAD
 gh pr create --title "Demo: failing check (do not merge)" --body "Demo"
 gh pr checks <pr> --watch; gh pr view <pr> --json mergeStateStatus   # BLOCKED
