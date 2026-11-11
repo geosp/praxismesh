@@ -1,10 +1,13 @@
-"""`make restart-check`: a repeat start changes nothing, and state survives a restart
-(local-stack spec: Repeat start, Persistent state).
+"""`make restart-check`: a repeat start changes nothing, a changed retention is
+applied, and state survives a restart (local-stack spec: Repeat start, Changed
+retention, Persistent state).
 
-    up, migrate -> snapshot Temporal's schema versions and namespace -> up again
-    -> snapshot unchanged -> seed (a Workflow and an object) -> down, up
-    -> migrate (no change) -> Workflow still listed, object reads back the same
-    -> clean up
+    up, migrate -> snapshot Temporal's schema versions and namespace
+    -> up again (running stack) -> unchanged
+    -> stop, up (stopped stack) -> unchanged
+    -> up with another retention -> applied -> up as configured -> restored
+    -> seed (a Workflow and an object) -> down, up -> migrate (no change)
+    -> Workflow still listed, object reads back the same -> clean up
 
 Run through make, which loads infra/.env: make restart-check
 """
@@ -13,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import subprocess
 import sys
 
@@ -24,6 +28,7 @@ from temporalio.api.workflowservice.v1 import DescribeNamespaceRequest
 from common.persistence.settings import app_database_url
 from tests.support.stack import (
     env,
+    retention_seconds,
     run_hello,
     run_id,
     s3_client,
@@ -35,9 +40,40 @@ BODY = b"praxismesh restart check"
 TEMPORAL_ROLE = {"user": "temporal", "password_var": "TEMPORAL_DB_PASSWORD"}
 
 
-def make(target: str) -> None:
-    print(f"restart-check: make {target}", flush=True)
-    subprocess.run(["make", "--no-print-directory", target], check=True)
+OTHER_RETENTION = "96h"
+COMPOSE = [
+    "docker",
+    "compose",
+    "--env-file",
+    os.environ.get("ENV_FILE", "infra/.env"),
+    "-f",
+    "infra/docker-compose.yml",
+]
+
+
+def make(target: str, **env_overrides: str) -> None:
+    shown = " ".join(f"{k}={v}" for k, v in env_overrides.items())
+    print(f"restart-check: {shown + ' ' if shown else ''}make {target}", flush=True)
+    subprocess.run(
+        ["make", "--no-print-directory", target], check=True, env={**os.environ, **env_overrides}
+    )
+
+
+def namespace_job_log() -> str:
+    return subprocess.run(
+        [*COMPOSE, "logs", "--no-log-prefix", "temporal-namespace"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+async def retention_now() -> int:
+    client = await temporal_client()
+    described = await client.workflow_service.describe_namespace(
+        DescribeNamespaceRequest(namespace=env("TEMPORAL_NAMESPACE", "default"))
+    )
+    return int(described.config.workflow_execution_retention_ttl.ToSeconds())
 
 
 async def query(sql: str, **url_args: str) -> list[tuple[object, ...]]:
@@ -75,19 +111,35 @@ async def temporal_snapshot() -> dict[str, object]:
     return snapshot
 
 
+def compare(label: str, before: dict[str, object], after: dict[str, object]) -> list[str]:
+    return [f"{label} changed {key}" for key in before if before[key] != after[key]]
+
+
 async def main() -> int:
     failures: list[str] = []
     make("up")
     make("migrate")
 
-    before_repeat = await temporal_snapshot()
+    baseline = await temporal_snapshot()
     make("up")
-    after_repeat = await temporal_snapshot()
-    failures += [
-        f"repeat make up changed {key}"
-        for key in before_repeat
-        if before_repeat[key] != after_repeat[key]
-    ]
+    failures += compare("repeat make up on a running stack", baseline, await temporal_snapshot())
+    # The API exposes no config version, so the job's own log shows that it ran
+    # and issued no update (an update would log "updating" instead).
+    if "exists with retention" not in namespace_job_log():
+        failures.append("the namespace job did not run, or updated the namespace, on repeat")
+
+    print("restart-check: stopping the stack (containers kept)", flush=True)
+    subprocess.run([*COMPOSE, "stop"], check=True, capture_output=True)
+    make("up")
+    failures += compare("repeat make up on a stopped stack", baseline, await temporal_snapshot())
+
+    configured = retention_seconds(env("TEMPORAL_RETENTION"))
+    make("up", TEMPORAL_RETENTION=OTHER_RETENTION)
+    if (got := await retention_now()) != retention_seconds(OTHER_RETENTION):
+        failures.append(f"retention {OTHER_RETENTION} was not applied (namespace has {got}s)")
+    make("up")
+    if (got := await retention_now()) != configured:
+        failures.append(f"configured retention was not restored (namespace has {got}s)")
 
     before = await revision()
     rid = run_id()
@@ -119,7 +171,8 @@ async def main() -> int:
         except ClientError as e:
             failures.append(f"object s3://{bucket}/seed.txt is gone after restart: {e}")
     finally:
-        with contextlib.suppress(ClientError):
+        # Best effort: never replace the real error (the stack may be down).
+        with contextlib.suppress(Exception):
             s3.delete_object(Bucket=bucket, Key="seed.txt")
             s3.delete_bucket(Bucket=bucket)
 
@@ -127,8 +180,8 @@ async def main() -> int:
         print(f"restart-check: FAIL {failure}", file=sys.stderr)
     if not failures:
         print(
-            f"restart-check: PASS (repeat start changed nothing; revision {before}; "
-            "Workflow and object survived)"
+            f"restart-check: PASS (repeat starts changed nothing; retention change applied "
+            f"and restored; revision {before}; Workflow and object survived)"
         )
     return 1 if failures else 0
 
