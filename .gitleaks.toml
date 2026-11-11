@@ -1,5 +1,8 @@
 # gitleaks configuration: all default rules, plus narrowly scoped allowlists for
-# reviewed false positives. Each allowlist names the rule, the matched text and why.
+# reviewed false positives. Each allowlist names the rule, the file, the matched
+# text and why. `condition = "AND"` makes an entry apply only when the path and
+# the line both match (the default, OR, would allowlist the whole file).
+# The `secrets` CI job runs a canary that checks this scoping.
 
 [extend]
 useDefault = true
@@ -7,5 +10,7 @@ useDefault = true
 [[allowlists]]
 description = "Plan prose in docs/plan/schemas.md: 'idempotency key, parent/previous response ID' is a field list, not a secret"
 targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^docs/plan/schemas\.md$''']
 regexTarget = "line"
 regexes = ['''request ID/idempotency key, parent/previous response ID''']

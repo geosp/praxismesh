@@ -21,6 +21,7 @@ from typing import Any
 
 REQUIRED_JOBS = (
     "lint",
+    "workflows",
     "types",
     "tests",
     "agents-sync",
