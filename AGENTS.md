@@ -47,4 +47,6 @@ Do not load all of `docs/plan/` by default.
 
 After editing anything in `.agents/agents/`, run `uv run .agents/sync_agents.py`. Never edit the generated agent files directly.
 
+**Reviews:** use `review-design` before implementing and `review-implementation` after. Phase-gate reviews follow `docs/reviews/README.md` (fresh session, pinned commit, saved report with verdict).
+
 **OpenSpec** (requirements and changes) lives in `openspec/`. Its `openspec-*` skills are generated in `.agents/skills/`; they need the `openspec` CLI (1.17.0, installed with npm under fnm-managed Node). Refresh them with `openspec update`; do not edit them or re-run `openspec init` with other tool IDs (see `.agents/skills/README.md`).
