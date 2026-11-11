@@ -148,6 +148,13 @@ jobs:
           allow-licenses: >-
             Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0, Python-2.0,
             MPL-2.0, Unlicense, 0BSD, CC0-1.0, Zlib
+          # Reviewed false positives: GitHub's license detection disagrees with
+          # the package's own metadata. Keep each entry justified here.
+          # - typing-extensions: declares License-Expression PSF-2.0; GitHub reads
+          #   its bundled Python license history as including GPL-1.0-or-later.
+          #   Dev-only (pulled in by mypy), never shipped.
+          allow-dependencies-licenses: >-
+            pkg:pypi/typing-extensions
 
   ci-ok:
     if: always()
