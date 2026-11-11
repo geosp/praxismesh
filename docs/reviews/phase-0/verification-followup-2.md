@@ -1,7 +1,7 @@
 ---
 review: verification
 phase: 0
-change: openspec/changes/phase-0-local-infrastructure
+change: openspec/changes/phase-0-local-infrastructure 
 rfc: docs/rfcs/phase-0-local-infrastructure.md
 adrs: [docs/adr/0002-paradedb-as-postgresql-server.md]
 commit_sha: f0337f1cdde68c104fecbf748739ca9b4cb72125
