@@ -63,12 +63,12 @@ Each row needs a named human owner and a recorded answer. An unanswered row bloc
 
 **Known as of 2026-11-10 (web check; re-verify against the installed version):** OpenSpec supports project-level custom schemas under `openspec/schemas/<name>/schema.yaml`, managed with `openspec schema fork|init|validate|which`. A schema declares artifacts and the dependencies between them, and validation covers syntax, template existence, circular dependencies and artifact IDs. That is artifact ordering, not gate enforcement. The evaluation below is therefore **timeboxed to half a day** and should concentrate on the two open points: session isolation and how CI enforces what the schema cannot.
 
-- [ ] Evaluate the custom workflow schema capabilities in the version of OpenSpec selected during bootstrap.
-- [ ] Assess representation of specification, design, independent design review, implementation, independent implementation review, and independent verification, including artifact prerequisites.
-- [ ] Define traceability from approved requirements to versioned artifacts, acceptance tests, review evidence and the exact Git commit or immutable artifact digest.
-- [ ] Check that fresh, independent sessions can access only their required inputs without inheriting another session's private conversation history.
-- [ ] Define how GitHub CI, protected branches, and required status checks enforce gates that OpenSpec artifact dependencies do not themselves enforce; a review verdict alone cannot authorize a merge.
-- [ ] Record a reasoned decision: adopt a custom OpenSpec schema, use the default schema, or introduce minimal compatible extensions. Document any unsupported requirements or integration limitations.
+- [x] Evaluate the custom workflow schema capabilities in the version of OpenSpec selected during bootstrap.
+- [x] Assess representation of specification, design, independent design review, implementation, independent implementation review, and independent verification, including artifact prerequisites.
+- [x] Define traceability from approved requirements to versioned artifacts, acceptance tests, review evidence and the exact Git commit or immutable artifact digest.
+- [x] Check that fresh, independent sessions can access only their required inputs without inheriting another session's private conversation history.
+- [x] Define how GitHub CI, protected branches, and required status checks enforce gates that OpenSpec artifact dependencies do not themselves enforce; a review verdict alone cannot authorize a merge.
+- [x] Record a reasoned decision: adopt a custom OpenSpec schema, use the default schema, or introduce minimal compatible extensions. Document any unsupported requirements or integration limitations. *(Done 2026-11-11: [ADR-0001](../adr/0001-keep-default-openspec-schema.md), keep the default `spec-driven` schema. Tested on OpenSpec 1.17.0: a custom schema tracks review artifacts in `openspec status` but does not enforce them; `apply.requires` did not block and `archive` ran with reviews missing. Gates stay in the review skills, `docs/reviews/README.md` and CI.)*
 
 **Accept:** A documented design decision demonstrates reproducible, isolated phase handoffs and independent verification using OpenSpec plus the existing specialist skills without adding a second orchestration or review framework. A schema is not considered adopted merely because the evaluation is written.
 

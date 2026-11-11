@@ -9,4 +9,4 @@ One record per consequential architecture decision, written when the decision is
 
 | ADR | Decision | Status |
 |---|---|---|
-| *(none yet)* | | |
+| [0001](0001-keep-default-openspec-schema.md) | Keep OpenSpec's default `spec-driven` schema; review gates live in the review skills and CI | proposed |
