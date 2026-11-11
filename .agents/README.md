@@ -54,7 +54,7 @@ Name every skill `<domain>-<capability>`:
 
 No sync step is needed: all three harnesses see the new folder immediately.
 
-**Project rule (plan §0.3):** the design-review, implementation-review and verification skills come from their original source with a pinned version and license. Do not write stand-ins here unless the §0.3 fallback has been approved and recorded in an ADR.
+**Review and verification skills:** `review-design` and `review-implementation` are project-owned adaptations of external skills, and `verify-phase` was written for this project. The owner chose this over plan §0.3's "use the original, pinned" rule; see [decision-log.md](../docs/plan/decision-log.md). Their upstream source and license are not yet recorded (tracked in issue #1). Change them like any other project file, through a reviewed pull request.
 
 ## Adding an agent
 
