@@ -22,5 +22,9 @@ updates:
     directory: /infra
     schedule:
       interval: weekly
+    # Server and admin tools must move to the same Temporal version together.
+    groups:
+      temporal:
+        patterns: ["temporalio/server", "temporalio/admin-tools"]
     commit-message:
       prefix: deps

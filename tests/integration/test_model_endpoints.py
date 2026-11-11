@@ -13,7 +13,7 @@ from tests.support.models import EndpointUnreachableError, request, served_model
 pytestmark = pytest.mark.integration
 
 BASE_URL = os.environ.get("VLLM_BASE_URL", "")
-MODEL = os.environ.get("VLLM_MODEL", "spark")
+MODEL = os.environ.get("VLLM_MODEL", "")
 API_KEY = os.environ.get("VLLM_API_KEY", "")
 PROMPT = "Reply with exactly one word: ready"
 
@@ -22,7 +22,9 @@ needs_endpoint = pytest.mark.skipif(
 )
 
 
-def test_model_name_has_no_slash() -> None:
+@needs_endpoint
+def test_model_name_configured() -> None:
+    assert MODEL, "VLLM_MODEL is empty; set the served model name in infra/.env"
     assert "/" not in MODEL, f"VLLM_MODEL must not contain '/': {MODEL!r}"
 
 
@@ -56,7 +58,8 @@ def test_chat_endpoint() -> None:
 
 
 def test_unreachable_endpoint_fails() -> None:
-    # Its own address (port 9, discard), not the configured one, so it also runs in CI.
+    # Checks the failure path, so it uses its own address (port 9, discard) rather
+    # than the configured endpoint, and also runs in CI (design follow-up 2, M2).
     unreachable = "http://127.0.0.1:9"
     with pytest.raises(EndpointUnreachableError, match=re.escape(unreachable)):
         served_models(unreachable)

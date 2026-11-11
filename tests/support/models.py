@@ -17,7 +17,9 @@ def request(
     url = base_url.rstrip("/") + path
     headers = {"Authorization": f"Bearer {api_key}", "x-api-key": api_key} if api_key else {}
     try:
-        response = httpx.request(method, url, headers=headers, timeout=120, **kwargs)
+        # Connect fails fast; generation may take a while.
+        timeout = httpx.Timeout(120, connect=5)
+        response = httpx.request(method, url, headers=headers, timeout=timeout, **kwargs)
     except httpx.TransportError as e:
         raise EndpointUnreachableError(f"model endpoint {base_url} is unreachable: {e!r}") from e
     response.raise_for_status()

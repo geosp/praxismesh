@@ -15,7 +15,7 @@ The stack SHALL reach vLLM through `VLLM_BASE_URL`, `VLLM_MODEL` and `VLLM_API_K
 
 #### Scenario: Endpoint from configuration
 - **WHEN** `VLLM_BASE_URL` is set in `infra/.env`
-- **THEN** the model smoke tests call that endpoint and no other
+- **THEN** the model smoke tests call that endpoint and no other, except the unreachable-endpoint test, which uses its own deliberately unreachable address
 
 ### Requirement: Both API styles answer
 The configured endpoint SHALL answer a real prompt on `/v1/messages` (Anthropic Messages) and on `/v1/chat/completions` (OpenAI chat). The served model name (`VLLM_MODEL`) SHALL NOT contain the `/` character. Phase 0 closes only with a recorded run in which these tests passed against the Sparks. (Plan: Phase 0 tasks 2 and 4.)

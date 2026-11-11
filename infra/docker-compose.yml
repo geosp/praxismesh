@@ -5,8 +5,7 @@
 # Images are pinned by tag and digest; Dependabot proposes updates. Host ports
 # bind to 127.0.0.1 only. The model endpoint (vLLM) is external, configured by
 # VLLM_BASE_URL; there is no vLLM service here (Phase 0 deviation, decision log).
-
-name: praxismesh
+# The project name comes from the Makefile (COMPOSE_PROJECT_NAME, default praxismesh).
 
 services:
   db:
