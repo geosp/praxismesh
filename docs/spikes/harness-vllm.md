@@ -62,6 +62,7 @@ Raw per-task records: `spikes/harness-vllm/results/claude-agent-sdk.jsonl` and `
 - **Phase 1 worker templates** pin reasoning effort per model (plan §2 already requires per-template limits and overrides). For this model the allowed values are `low`, `medium` and `xhigh`.
 - **Cost units and budgets (§4.5)** must account for the harness's per-turn overhead. Phase 1 should measure whether vLLM prefix caching takes effect for Claude Code's repeated prefix, since that decides most of the cost difference.
 - **Long sessions:** Phase 1's session and checkpoint tests should confirm how Claude Code behaves with a model it does not recognize (finding 2), especially near the context limit.
+- **Licensing (§2, still open):** CI's dependency review passes `claude-agent-sdk` because its package metadata is MIT, but it cannot see that the bundled Claude Code CLI is governed by Anthropic's terms. The spike installs it only locally and distributes nothing; the plan's rule (publish Dockerfiles, not images containing the harness) stands until the owner settles the question.
 - **Fallback:** the `openai_agents` harness is measured, not assumed. On these tasks it is as reliable, faster and far cheaper in tokens, which keeps it a credible default if the harness licensing question in plan §2 (still open) goes the other way.
 - **Benchmark suite:** these ten tasks and their checkers seed the Phase 1 agent benchmark suite.
 
