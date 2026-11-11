@@ -1,0 +1,38 @@
+name: Bug report
+description: Something does not behave as documented. For security problems, use private vulnerability reporting instead.
+title: "Bug: <short description>"
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security problems must not be reported here.** Use the repository's Security tab, "Report a vulnerability".
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The observed behavior, with exact output or error messages.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: The expected behavior, and where it is documented if it is.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Commit or version, OS, Python and Node versions, and the relevant configuration. Remove secrets, host names and IP addresses.
+    validations:
+      required: true
