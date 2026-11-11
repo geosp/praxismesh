@@ -21,7 +21,7 @@ known="COMPOSE_PROJECT_NAME POSTGRES_PASSWORD TEMPORAL_DB_PASSWORD APP_DB_PASSWO
 known="$known TEMPORAL_PORT TEMPORAL_UI_PORT TEMPORAL_NAMESPACE TEMPORAL_RETENTION"
 known="$known S3_PORT S3_ACCESS_KEY S3_SECRET_KEY VLLM_BASE_URL VLLM_MODEL VLLM_API_KEY"
 # Everything except the model endpoint and its key must be non-empty.
-required=$(echo "$known" | tr ' ' '\n' | grep -vE '^VLLM_(BASE_URL|API_KEY)$' | tr '\n' ' ')
+required=$(printf '%s\n' "$known" | tr ' ' '\n' | grep -vE '^VLLM_(BASE_URL|API_KEY)$' | tr '\n' ' ')
 
 value() {
     sed -n "s/^$1=//p" "$env_file" | tail -n 1
@@ -35,11 +35,11 @@ project_name() {
         echo "error: COMPOSE_PROJECT_NAME is not set (in ${env_file} or the shell); refusing to guess which stack to act on" >&2
         return 1
     fi
-    if ! echo "$name" | grep -qE '^[a-z0-9][a-z0-9_-]*$'; then
+    if ! printf '%s\n' "$name" | grep -qE '^[a-z0-9][a-z0-9_-]*$'; then
         echo "error: COMPOSE_PROJECT_NAME '${name}' must be lowercase letters, digits, '_' or '-'" >&2
         return 1
     fi
-    echo "$name"
+    printf '%s\n' "$name"
 }
 
 if [ "$project_only" = 1 ]; then
@@ -75,10 +75,10 @@ while IFS= read -r line || [ -n "$line" ]; do
     '' | '#'*) continue ;;
     esac
     key=${line%%=*}
-    if [ "$key" = "$line" ] || ! echo "$known" | tr ' ' '\n' | grep -qxF "$key"; then
+    if [ "$key" = "$line" ] || ! printf '%s\n' "$known" | tr ' ' '\n' | grep -qxF "$key"; then
         echo "error: ${env_file} line ${n}: expected KEY=value with a known KEY (see infra/.env.example)" >&2
         status=1
-    elif ! echo "${line#*=}" | grep -qE '^[A-Za-z0-9._:/@%+,=-]*$'; then
+    elif ! printf '%s\n' "${line#*=}" | grep -qE '^[A-Za-z0-9._:/@%+,=-]*$'; then
         echo "error: ${env_file} line ${n}: ${key}'s value may use only A-Z a-z 0-9 . _ : / @ % + , = -" >&2
         status=1
     fi
@@ -103,7 +103,7 @@ esac
 # Temporal rejects retention under one day; up to 5 digits avoids overflow.
 retention=$(value TEMPORAL_RETENTION)
 if [ -n "$retention" ]; then
-    if ! echo "$retention" | grep -qE '^[1-9][0-9]{0,4}[smhd]$'; then
+    if ! printf '%s\n' "$retention" | grep -qE '^[1-9][0-9]{0,4}[smhd]$'; then
         echo "error: TEMPORAL_RETENTION must be <number><s|m|h|d>, for example 72h (got '${retention}')" >&2
         status=1
     else
