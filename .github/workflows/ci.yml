@@ -159,6 +159,11 @@ jobs:
           persist-credentials: false
       # Checks dependencies added or changed by the PR: licenses must be
       # compatible with Apache-2.0, and no high-severity known vulnerabilities.
+      # Every entry in uv.lock and .github/tools/package-lock.json reaches main
+      # through a PR, so each was scanned when it was added or changed (all of
+      # uv.lock in PR #7). The sync script's own lock pins the same PyYAML as
+      # uv.lock (tests/test_tool_pins.py). gitleaks and lychee are CI-only
+      # binaries that are never shipped, so they are not scanned.
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
@@ -171,6 +176,9 @@ jobs:
           # - typing-extensions: declares License-Expression PSF-2.0; GitHub reads
           #   its bundled Python license history as including GPL-1.0-or-later.
           #   Dev-only (pulled in by mypy), never shipped.
+          # The action matches these entries by type and name only and ignores
+          # any @version (src/purl.ts purlsMatch), so each entry covers every
+          # version of the package. Re-check the license when it is bumped.
           allow-dependencies-licenses: >-
             pkg:pypi/typing-extensions
 
