@@ -10,12 +10,12 @@ Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [P
 
 **Question to answer:** Can a Claude harness (Claude Agent SDK, or `claude -p --output-format stream-json`) complete multi-step, tool-using work against a local model served through vLLM's Anthropic Messages-compatible endpoint, reliably enough to build on?
 
-- [ ] Pick one candidate local model and record model name, quantization, context length, GPU model/VRAM, vLLM version and the exact launch flags (served model name, tool-choice/parser settings).
-- [ ] Run a small scripted set of tasks (proposed: about 20) that each need several tool calls, including at least one file edit, one shell command and one MCP tool call. Record per-task success, malformed tool calls, stalls, turns and tokens.
-- [ ] Repeat the same set with the OpenAI-agents harness on vLLM's OpenAI-compatible endpoint, so the fallback is measured and not assumed.
-- [ ] Record a decision: **go** (Claude harness on vLLM is the primary path), **go with adapter** (name the adapter and its limits), or **no-go** (name the primary path instead: OpenAI-agents harness locally, or the optional Anthropic API tier). The pass threshold is set by the project owner before the run, not after.
+- [x] Pick one candidate local model and record model name, quantization, context length, GPU model/VRAM, vLLM version and the exact launch flags (served model name, tool-choice/parser settings). *(Done 2026-11-11: `qwen3.8-flash-next` (NVFP4, 262K context) on 2x DGX Spark, vLLM 0.32.0; launch flags recorded in [docs/spikes/harness-vllm.md](../spikes/harness-vllm.md).)*
+- [x] Run a small scripted set of tasks (proposed: about 20) that each need several tool calls, including at least one file edit, one shell command and one MCP tool call. Record per-task success, malformed tool calls, stalls, turns and tokens. *(Done 2026-11-11 with 10 tasks (owner's threshold: go at 7 of 10), each needing an MCP call, a shell command and a file edit: Claude Agent SDK 10/10, no malformed calls or stalls, after pinning reasoning effort to `low`; see the write-up.)*
+- [x] Repeat the same set with the OpenAI-agents harness on vLLM's OpenAI-compatible endpoint, so the fallback is measured and not assumed. *(Done 2026-11-11: OpenAI Agents SDK 10/10, fewer turns and about 1/14 of the input tokens.)*
+- [x] Record a decision: **go** (Claude harness on vLLM is the primary path), **go with adapter** (name the adapter and its limits), or **no-go** (name the primary path instead: OpenAI-agents harness locally, or the optional Anthropic API tier). The pass threshold is set by the project owner before the run, not after. *(Done 2026-11-11: **go**. Required configuration: reasoning effort pinned to a value the model accepts. Consequences for §4.1, §4.5 and Phase 1 are in the write-up.)*
 - *Preliminary probe, 2026-11-10 (not the spike):* against `qwen3.8-flash-next` on vLLM 0.32.0, OpenAI `/v1/chat/completions` answered, Anthropic `/v1/messages` answered with a `thinking` block then text, and `/v1/messages` with one tool returned a correct `tool_use` block (`stop_reason: tool_use`). Reasoning tokens count against `max_tokens` (a 30-token budget ended inside the thinking block). This shows the endpoint mechanics work; it says nothing yet about multi-step harness reliability, which the task set above must measure.
-- [ ] Keep the spike code out of the product tree. Store the write-up at `docs/spikes/harness-vllm.md` once the repository exists; until then keep it beside this plan.
+- [x] Keep the spike code out of the product tree. Store the write-up at `docs/spikes/harness-vllm.md` once the repository exists; until then keep it beside this plan. *(Done: code in `spikes/harness-vllm/` with its own `uv` project, excluded from root lint; write-up at `docs/spikes/harness-vllm.md`.)*
 
 **Accept:** A dated write-up with the environment, raw results, the decision and its consequences for §4.1 and Phase 1. A no-go result is a valid outcome that changes the plan through the decision log; it is not a failed task.
 
@@ -34,7 +34,7 @@ Each row needs a named human owner and a recorded answer. An unanswered row bloc
 | Sandbox mechanism for untrusted repository code | Phase 5 | Open |
 | Tenancy model (default proposed in §2: single-organization installation) | Phase 3A | Open |
 | Harness licensing: confirm against Anthropic's terms (with counsel if needed) that the intended use and distribution of the Claude Agent SDK / Claude Code CLI is permitted, including use with non-Anthropic local models and inclusion in published images (see §2) | Publishing worker images; choice of default harness in Phase 1 | Open |
-| Thresholds: spike pass rate, benchmark regression limit, routing accuracy, history-size bound | Pre-0.1, Phase 1, Phase 3A, Phase 3B | Open |
+| Thresholds: spike pass rate, benchmark regression limit, routing accuracy, history-size bound | Pre-0.1, Phase 1, Phase 3A, Phase 3B | Spike pass rate answered: go at 7 of 10 tasks with no manual help (set 2026-11-11, before the run). Others open |
 | Retention defaults (§4.13) and cost units (§4.5) | Phase 1, Phase 3A | Proposed; confirm |
 
 ## 0. Prerequisite: GitHub repository, OpenSpec, and specialist skills

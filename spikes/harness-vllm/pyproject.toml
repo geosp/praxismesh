@@ -1,0 +1,10 @@
+[project]
+name = "harness-vllm-spike"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "claude-agent-sdk>=0.2.180",
+    "mcp>=2.3.0",
+    "openai-agents>=0.24.0",
+    "python-dotenv>=1.2.4",
+]
