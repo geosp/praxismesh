@@ -24,6 +24,7 @@ REQUIRED_JOBS = (
     "workflows",
     "types",
     "tests",
+    "stack",
     "agents-sync",
     "openspec",
     "secrets",

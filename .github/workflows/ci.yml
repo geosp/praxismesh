@@ -88,9 +88,39 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
       - run: uv sync --locked
-      # Unit tests. Temporal Workflow replay and time-skipping tests join this
-      # job once Workflows exist (plan §8); model-dependent suites do not.
+      # Unit tests, including Workflow replay tests against committed histories
+      # (plan §8). Integration tests are excluded here (marker `integration`) and
+      # run in the `stack` job; model-dependent suites run in neither.
       - run: uv run pytest
+
+  # The Phase 0 local stack (infra/docker-compose.yml): start it, migrate, run the
+  # integration tests and the restart check. infra/.env comes from the committed
+  # example; its placeholder passwords are local to the runner, not secrets.
+  # VLLM_BASE_URL stays empty, so the model tests skip (the unreachable-endpoint
+  # test still runs). If Docker Hub pulls prove flaky, skip these steps (never the
+  # job: a skipped job fails ci-ok) on PRs that touch none of the stack paths.
+  stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked
+      - run: cp infra/.env.example infra/.env
+      - run: make up
+      - run: make migrate
+      - run: make smoke
+      - run: make restart-check
+      - name: Stack logs on failure
+        if: failure()
+        run: make status; docker compose --env-file infra/.env -f infra/docker-compose.yml logs --no-color --tail 200
+      - name: Clean up
+        if: always()
+        run: make reset
 
   agents-sync:
     runs-on: ubuntu-latest
@@ -250,7 +280,8 @@ jobs:
           # the package's own metadata. Keep each entry justified here.
           # - typing-extensions: declares License-Expression PSF-2.0; GitHub reads
           #   its bundled Python license history as including GPL-1.0-or-later.
-          #   Dev-only (pulled in by mypy), never shipped.
+          #   A runtime dependency since Phase 0 (via temporalio and sqlalchemy);
+          #   its own metadata declares PSF-2.0, which is on the allow-list.
           # The action matches these entries by type and name only and ignores
           # any @version (src/purl.ts purlsMatch), so each entry covers every
           # version of the package. Re-check the license when it is bumped.
@@ -261,7 +292,7 @@ jobs:
   # `licenses` on main itself (see .github/scripts/ci_gate.py and its tests).
   ci-ok:
     if: always()
-    needs: [lint, workflows, types, tests, agents-sync, openspec, secrets, links, licenses]
+    needs: [lint, workflows, types, tests, stack, agents-sync, openspec, secrets, links, licenses]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
