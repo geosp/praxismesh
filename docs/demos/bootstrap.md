@@ -19,7 +19,7 @@ Evidence for the bootstrap demo checklist in [docs/plan/bootstrap.md](../plan/bo
 | 1 | Show the GitHub repository, clone URL, default branch, protected change path and a clean clone | Pass | `gh repo view` shows the public repo and `main`. The ruleset above is active. A fresh clone of `https://github.com/geosp/praxismesh.git` was clean at `6cb4ad7` in the `verify-phase` dry run. |
 | 2 | Show `openspec --version`, generated configuration and skill files, and a working OpenSpec command | Pass | `openspec --version`: `1.17.0`. `openspec/config.yaml` and six `.agents/skills/openspec-*` skills are present. `openspec validate --all` and `openspec update --dry-run` ("No changes") run in CI on every PR. Setup steps are documented in the [README](../../README.md#getting-started). |
 | 3 | In separate fresh sessions, invoke `review-design`, `review-implementation` and `verify-phase` against the same pinned commit | **Open** | All three skills are installed (PRs #2 and #4). The `verify-phase` dry run executed its process at `6cb4ad7`. Each skill still has to be invoked in its own fresh session against one pinned commit. |
-| 4 | Demonstrate a blocked unauthorized write or branch-protection check; verify no secrets or session transcripts were committed | Partly shown | Branch protection: see item 5, where a failing required check blocked a merge. No secrets: gitleaks scans every PR (history scan clean, with one reviewed false positive allowlisted in `.gitleaks.toml`), and GitHub push protection is on. No transcripts: none in the tree (`verify-phase` dry run). **Open:** an actual rejected direct push to `main`. |
+| 4 | Demonstrate a blocked unauthorized write or branch-protection check; verify no secrets or session transcripts were committed | **Pass** | A direct push to `main` was rejected by the ruleset (see below). Secrets: gitleaks scans every PR (history scan clean, with one reviewed false positive allowlisted in `.gitleaks.toml`), and GitHub push protection is on. Transcripts: none in the tree (`verify-phase` dry run). |
 | 5 | Open a PR with a deliberately failing check, show merge is blocked, fix it and show checks pass on the latest head | **Pass** | See below. |
 | 6 | Save commands, versions, commit SHA, expected versus observed, and pass/fail here | In progress | This file. |
 
@@ -34,6 +34,16 @@ PR [#8](https://github.com/geosp/praxismesh/pull/8), branch `demo/failing-check`
 | Clean up | - | `gh pr close 8 --delete-branch` | PR closed unmerged, branch removed | `state: CLOSED`, `mergedAt: null` | Pass |
 
 Not done by an agent: actually clicking merge on the blocked PR. An agent must not attempt merges, and GitHub's `BLOCKED` merge state is the platform's own answer.
+
+## Item 4: direct push to main is rejected
+
+Run by the repository owner on 2026-11-10 from a throwaway local branch holding an empty commit (`81e6b10`), which was never pushed anywhere else.
+
+| Step | Command | Expected | Observed | Result |
+|---|---|---|---|---|
+| Push straight to `main` | `git push origin HEAD:main` | Rejected by ruleset `protect-main` | `remote: error: GH013: Repository rule violations found for refs/heads/main.` with `- Changes must be made through a pull request.` and `- Required status check "ci-ok" is expected.`, then `! [remote rejected] HEAD -> main (push declined due to repository rule violations)` | Pass |
+| Confirm `main` unchanged | `git ls-remote origin refs/heads/main` | Still `97e66f3` | `97e66f3...` | Pass |
+| Clean up | `git branch -D demo/direct-push` | Local branch removed | Deleted | Pass |
 
 ## Reproduce item 5
 
