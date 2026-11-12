@@ -32,11 +32,11 @@ Harness-turn Activities SHALL be retried for infrastructure failures (lost worke
 - **THEN** it replays without a non-determinism error
 
 ### Requirement: One run per task ID
-A task's Workflow ID SHALL be its `task_id`, minted by the CLI when the request gives none, and the Workflow SHALL be started so that any second start with the same ID is rejected, whether the first run is running or finished. (Plan: §4.2 idempotency; Phase 1 accept criterion "no duplicated external side effects".)
+A task's Workflow ID SHALL be its `task_id`, minted by the CLI when the request gives none. Temporal SHALL reject a second start while it remembers the first run, and the `tasks` table SHALL reject it permanently, before any harness turn runs. (Plan: §4.2 idempotency; Phase 1 accept criterion "no duplicated external side effects".)
 
 #### Scenario: Resubmitting a finished task
-- **WHEN** a task has completed and the same `task_id` is submitted again
-- **THEN** the start is rejected, and no new run executes
+- **WHEN** a task has completed and the same `task_id` is submitted again, including after Temporal's retention period
+- **THEN** it is rejected (by Temporal, or by `record_task` with `TaskAlreadyExists`), and no harness turn runs
 
 ### Requirement: Lost attempts count against the budget
 A harness turn's reported usage SHALL include the tokens and tool calls of earlier attempts of the same turn that were lost, taken from their last heartbeat details. `needs_input` SHALL end the task with status `needs_input`. (Plan: §4.1 token budget; §4.5 budgets; Phase 2 adds answering questions.)

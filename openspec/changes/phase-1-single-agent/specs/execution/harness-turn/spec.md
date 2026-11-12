@@ -17,19 +17,12 @@ One harness turn: a bounded harness invocation inside a Temporal Activity, confi
 - **WHEN** the scripted model keeps calling tools past `inner_max_turns`
 - **THEN** the harness turn stops at the limit and returns `continue`
 
-### Requirement: Both runners behind HarnessRunner, openai_agents by default
-Harness runners SHALL implement one `HarnessRunner` interface. The `openai_agents` runner SHALL be the default; the `claude_sdk` runner SHALL be selectable by template and installed only as an optional extra. (Plan: §4.1; §2 harness licensing; owner decision 2026-11-11.)
+### Requirement: One HarnessRunner interface
+`run_harness_turn` SHALL call harness runners only through the `HarnessRunner` interface, and a shared conformance suite SHALL check any runner against the fake model: configuration from the template only, heartbeat and checkpoint hooks, cumulative usage and structured final output. Phase 1 SHALL implement the `openai_agents` runner; the Claude Agent SDK runner is deferred to its own change. (Plan: §4.1 stable `HarnessRunner` interface; §2 harness licensing; owner decisions 2026-11-11.)
 
-#### Scenario: Default runner
-- **WHEN** the committed `local-default` template is loaded
-- **THEN** its harness is `openai_agents`, and the worker starts without the Claude extra installed
-
-### Requirement: Claude runner isolation
-The Claude runner SHALL restrict its tools (`tools`, exact `allowed_tools`, `permission_mode="dontAsk"`), load only the template's MCP servers (`strict_mcp_config`) and skills (a local plugin, no setting sources), and start the CLI with an explicit minimal environment. (Plan: §4.1 disable implicit discovery, verify prohibited capabilities.)
-
-#### Scenario: Claude runner discovers nothing implicitly
-- **WHEN** the Claude runner runs against the fake model in a workspace with its own `.claude/` settings, skills and `.mcp.json`, and the worker environment holds a canary credential
-- **THEN** the request it sends lists only the allowed tools and skills, and the canary is not visible to its commands
+#### Scenario: Conformance
+- **WHEN** the conformance suite runs the `openai_agents` runner against the fake model
+- **THEN** every contract case passes, and the request log shows only the template's tools and instructions
 
 ### Requirement: Heartbeats with bounded progress
 A harness turn SHALL heartbeat at an interval shorter than the template's `heartbeat_timeout`, with details limited to the latest checkpoint ID, the inner turn, and tool-call and token counts. (Plan: §4.1 heartbeat with bounded progress metadata.)

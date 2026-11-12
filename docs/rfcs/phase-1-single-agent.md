@@ -12,7 +12,7 @@ hardware: x86_64 workstation with Docker (no GPU); vLLM on the DGX Spark pair fo
 pre0_inputs: [harness decision (go, openai_agents default), model per tier (spark: qwen3.8-flash-next)]
 date: 2026-11-11
 authors: [owner, coding agent]
-revision: 2 (addresses the design review of e437d0f, docs/reviews/phase-1/design-review.md)
+revision: 3 (defers the Claude runner; addresses the design review of e437d0f and the targeted follow-up of 17b3d67, docs/reviews/phase-1/)
 ---
 
 # RFC: Phase 1 harness-in-Activity, single agent
@@ -28,7 +28,7 @@ Plan references:
 The Pre-0 spike, [docs/spikes/harness-vllm.md](../spikes/harness-vllm.md), ran both harnesses against the local model. Its 10 tasks seed the benchmark suite.
 
 Owner decisions (decision log, 2026-11-11):
-- Both harness runners sit behind one `HarnessRunner` interface, with **`openai_agents` as the default** while the Claude Agent SDK's licensing with local models is open (plan §2).
+- The harness sits behind one `HarnessRunner` interface. Phase 1 implements **only the `openai_agents` runner**. The Claude Agent SDK runner is **deferred to its own change**, to come after the owner decides its licensing with local models (plan §2). The owner first chose both runners with `openai_agents` as the default, then deferred the Claude runner after the design follow-up review.
 - The benchmark regression limit is **at most 1 task lost out of 10**.
 - Under Compose, "pod loss" means **stopping one worker container while a second one takes over**.
 
@@ -36,8 +36,7 @@ APIs checked on 2026-11-11 by reading the installed packages (plan §2: verify l
 
 | Package | Version | What this design relies on |
 |---|---|---|
-| `openai-agents` | 0.24.0 (MIT) | `Runner.run(..., max_turns, session=, run_config=, hooks=)` <br> `RunConfig(tracing_disabled, tool_not_found_behavior)`; the defaults are `False` and `"raise_error"` <br> `set_tracing_disabled()` <br> `RunHooks.on_llm_start/on_llm_end/on_tool_start/on_tool_end` <br> the `Session` protocol and `extensions.memory.SQLAlchemySession` <br> `MCPServerStdio` with `tool_filter` |
-| `claude-agent-sdk` | 0.2.180 (MIT; bundles the Claude Code CLI) | `ClaudeAgentOptions` fields: <br> `tools`, `allowed_tools`, `disallowed_tools` <br> `permission_mode` (including `"dontAsk"`) <br> `mcp_servers`, `strict_mcp_config`, `setting_sources`, `plugins`, `skills` <br> `resume`, `session_store`, `effort`, `cwd`, `env`, `cli_path`, `hooks` <br> the `SessionStore` protocol and `SessionKey(project_key, session_id, subpath)` <br> **`env` is merged over the parent process environment** |
+| `openai-agents` | 0.24.0 (MIT) | `Runner.run(..., max_turns, session=, run_config=, hooks=)`, raising `MaxTurnsExceeded` at the limit <br> `Agent(output_type=)` for structured final output <br> `RunConfig(tracing_disabled, tool_not_found_behavior)`; the defaults are `False` and `"raise_error"` <br> `set_tracing_disabled()` and `set_trace_processors([])`: the first alone leaves the default backend processor registered <br> `RunHooks.on_llm_start/on_llm_end/on_tool_start/on_tool_end` <br> the `Session` protocol and `extensions.memory.SQLAlchemySession` <br> `MCPServerStdio` with `tool_filter` |
 | `temporalio` | 1.36.0 (MIT) | `start_workflow(id_reuse_policy, id_conflict_policy)`; **the default reuse policy is `ALLOW_DUPLICATE`** <br> heartbeat details, which the next attempt reads from `activity.info().heartbeat_details` <br> `WorkflowEnvironment` (time-skipping) and `Replayer` <br> `contrib.opentelemetry.TracingInterceptor` <br> `contrib.pydantic` |
 | `opentelemetry-sdk`, `-exporter-otlp` | 1.45.2 (Apache-2.0) | Spans and OTLP export. Checked on PyPI only, not installed yet; PR 1 verifies the API in use |
 
@@ -53,6 +52,12 @@ APIs checked on 2026-11-11 by reading the installed packages (plan §2: verify l
 | **Checkpoint** | A committed `checkpoints` row recording a session position and a workspace snapshot `BlobRef`. It counts as **acknowledged** once its row is committed. |
 | **Budget** | Per-task limits on harness turns, tokens and wall time: the smaller of the profile's value and the template's cap. |
 | **`stack` job** | The CI job that runs the Compose stack and the integration tests (Phase 0). |
+| **Tier** | The profile's capability level (§4.4). Phase 1 has one tier, `local`. |
+| **`spark`** | The served model name on the Sparks' vLLM (Pre-0.1). Templates name it as `model`. |
+| **`sample-shop`** | The catalog name of the `McpServer` entry that runs `sample_mcp`. |
+| **`ExecutionAttempt`** | The schema of one `task_attempts` row. |
+| **System prompt** | Owned by the template: a prompt file in `registry/`, included in the template hash and recorded as the prompt hash. |
+| **`request_id`** | Minted by the CLI for each submission. A task has one, and logs carry it. |
 
 ## Plan
 
@@ -88,7 +93,7 @@ flowchart LR
 | `common/observability/` | JSON logging with context IDs, OpenTelemetry setup and Prometheus metrics |
 | `registry/` | `profiles/*.yaml`, `templates/*.yaml`, `mcp/*.yaml`, `skills/<bundle>/`, `registry.lock`, and the loaders |
 | `orchestrator/` | `TaskWorkflow`, its Activities, and the CLI (`python -m orchestrator.cli`, because `[tool.uv] package = false` allows no script entry points) |
-| `harness_activity/` | `run_harness_turn`, `HarnessRunner`, `OpenAIAgentsRunner`, `ClaudeSdkRunner`, the session stores, workspace snapshots and `run_command` |
+| `harness_activity/` | `run_harness_turn`, `HarnessRunner`, `OpenAIAgentsRunner`, the session store, workspace snapshots and `run_command` |
 | `sample_mcp/` | The sample MCP server (stdio) |
 | `comms_mcp/` | A stub; messaging arrives in Phase 2 |
 | `workers/` | The generic worker entry point and `Dockerfile` |
@@ -99,7 +104,7 @@ flowchart LR
 
 **`WorkerTemplate`**
 - `name`, `version`, `harness`
-- `model`, `base_url_env` (the name of the `infra/.env` variable that holds the base URL, for example `VLLM_BASE_URL`), `api_style` (`openai` or `anthropic`), `allowed_model_overrides[]`, `effort` (for the Claude runner; Pre-0.1 showed that the model rejects `high`)
+- `model`, `base_url_env` (the name of the `infra/.env` variable that holds the base URL, for example `VLLM_BASE_URL`), `api_style` (`openai` or `anthropic`), `allowed_model_overrides[]`
 - `mcp_servers[]` (names in the catalog), `skills_bundle`, `cli_tools[]`
 - `inner_max_turns`, `turn_timeout`, `heartbeat_timeout`
 - caps: `max_turns_cap`, `max_tokens_cap`, `max_wall_time_cap`
@@ -111,6 +116,7 @@ Derived `capabilities[]` (MCP tool names, skills, tools) are recorded with each 
 **`AgentProfile`**
 - `name`, `tier`, `harness`, `model_override?`
 - `allowed_templates[]` (the first entry is the default), `max_turns`, `max_tokens`, `max_wall_time`
+- `model_override` must be one of the template's `allowed_model_overrides`, or it is rejected.
 - **No MCP or skills fields.** Unknown fields are forbidden.
 
 **`McpServer`**
@@ -124,7 +130,7 @@ Derived `capabilities[]` (MCP tool names, skills, tools) are recorded with each 
 
 **Choosing the harness and the template.** The template's `harness` is authoritative. A profile whose `harness` differs from the chosen template's is rejected with `CapabilityError`.
 
-**Versions.** `registry/registry.lock` maps each template `name@version` to the sha256 of its file, and CI checks it. A file changed without a version bump fails to load, with a message that names the template. Each task records `template@version` and its hash in `TurnInput`. A worker whose loaded hash differs rejects the turn with a non-retryable `CapabilityError`. This stops a rolling change from mixing versions within one task.
+**Versions.** `registry/registry.lock` maps each template `name@version` to the sha256 of its file, and CI checks it. A file changed without a version bump fails to load, with a message that names the template. Each task records `template@version` and its hash in `TurnInput`. A worker whose loaded hash differs refuses the turn with a **retryable** `TemplateVersionUnavailable`. The turn waits, within its `schedule_to_close`, for a worker that has the task's version. This keeps one version within a task and preserves in-flight work (§4.10). Phase 1 deploys one version at a time; per-version queues arrive with rollouts in Phase 7.
 
 ### `BlobStore` contract (§4.13, §5)
 
@@ -143,7 +149,9 @@ Every blob and every stored row carries a `retention_class` from its first write
 |---|---|
 | Workspace snapshots | `task` (one class, so no mixed dedup) |
 | Input files and instructions | `task` |
-| Output artifacts, attempts, idempotency records, `TaskResult` | `audit` |
+| Output artifacts, `tasks`, attempts, idempotency records, `TaskResult` | `audit` |
+| `checkpoints` rows | `task` |
+| `blob_objects` rows | the class of their blob |
 
 ### Application database: migration `0003` (§5)
 
@@ -156,9 +164,8 @@ Every blob and every stored row carries a `retention_class` from its first write
 | `blob_objects` | `key` | `checksum`, `bytes`, `content_type`, `retention_class` |
 | `sample_orders` | `order_id` | Written only by the sample MCP server. `idempotency_key` is unique. |
 | `agent_sessions`, `agent_messages` | as defined by `SQLAlchemySession` | Created by the migration with the SDK's layout, never with `create_tables=True` |
-| `claude_session_entries` | (`project_key`, `session_id`, `subpath`, `seq`) | The Claude `SessionStore` adapter |
 
-Every table has `retention_class NOT NULL`. On the three session-store tables and `sample_orders` it also has `DEFAULT 'task'`, so rows that an SDK inserts without naming the column still get a class.
+Every table has `retention_class NOT NULL`. On the two session-store tables and `sample_orders` it also has `DEFAULT 'task'`, so rows that an SDK inserts without naming the column still get a class.
 
 `TaskWorkflow` never reads these tables as hidden replay state. All database access happens in Activities.
 
@@ -175,7 +182,7 @@ sequenceDiagram
   W->>A: resolve_capabilities -> template@version+hash, effective budget
   W->>A: record_task
   loop until done, needs_input, failed, or budget exhausted
-    W->>H: TurnInput(task_id, turn n, template hash, latest checkpoint, remaining budget)
+    W->>H: TurnInput(task_id, turn n, template hash, remaining budget)
     H-->>W: TurnOutcome(status, checkpoint, usage incl. lost attempts, summary)
     W->>W: account turns, tokens, wall time
   end
@@ -185,13 +192,17 @@ sequenceDiagram
 
 **Starting a task**
 - **Task ID:** the CLI mints `task_id` (`task-` plus a UUIDv4) unless the request gives one. The Workflow ID is the `task_id`.
-- **One task, one run:** the Workflow starts with `id_reuse_policy=REJECT_DUPLICATE` and `id_conflict_policy=FAIL`. A second start with the same ID is rejected, whether the first run is still running or has finished. That keeps idempotency keys from one run from leaking into another.
+- **One task, one run:**
+  - **Temporal:** the Workflow starts with `id_reuse_policy=REJECT_DUPLICATE` and `id_conflict_policy=FAIL`. Temporal only remembers closed runs during the namespace's retention (72h), so this alone is not enough.
+  - **The `tasks` table is the lasting authority.** `record_task` is the Workflow's first Activity. It inserts the task's row, keyed by `task_id`, with `audit` retention. If a row already exists with a different Workflow run ID, it fails with a non-retryable `TaskAlreadyExists` before any harness turn runs.
+  - **Effect:** a resubmitted `task_id` never reaches its old idempotency keys, however long after the first run.
 - **Instructions and input files** are uploaded as `task` blobs before the start. Workflow inputs carry only IDs and `BlobRef`s.
 
 **Each harness turn**
 - **Placement:** an Activity on `tpl.{template}`.
 - **Timeouts:** `start_to_close = turn_timeout`, the template's `heartbeat_timeout`, and `schedule_to_close = 6 × turn_timeout`. The last one bounds a turn's retries. A queue that has no worker at all waits until `schedule_to_close`; this is accepted for Phase 1 (§4.3 scales from zero later).
-- **Retries** cover infrastructure failures only, up to 5 attempts with backoff. These errors are non-retryable: `CapabilityError`, `BudgetExceeded`, `InvalidTaskInput` and `HarnessProtocolError` (for example a `ModelBehaviorError` from the SDK).
+- **Retries** cover infrastructure failures only, up to 5 attempts with backoff. These errors are non-retryable: `CapabilityError`, `BudgetExceeded`, `InvalidTaskInput` and `TaskAlreadyExists`.
+- **Model mistakes are not infrastructure failures.** A `ModelBehaviorError` from the SDK, such as malformed tool JSON from the local model, ends the harness turn with `continue`, the error recorded on its attempt row. The next harness turn resumes from the last checkpoint. Such turns count against `max_turns`, which bounds them.
 
 **Outcomes and budgets**
 - A turn returns `done`, `continue` (its inner-turn limit was reached and work remains) or `needs_input`.
@@ -205,20 +216,23 @@ sequenceDiagram
 ### `run_harness_turn` (§4.1)
 
 1. **Start.** Upsert the `task_attempts` row as started. Reject the turn if the template hash in `TurnInput` differs from the one this worker loaded.
-2. **Restore.** Find the newest checkpoint for the task by reading `checkpoints`, preferring the highest attempt and then the highest `seq`. Unpack its workspace snapshot into a fresh directory under the worker's scratch volume; turn 1 starts from the task's input files. Restore the session, then truncate it to the checkpoint's `session_position` (see Sessions).
+2. **Restore.** Find the newest checkpoint for the task by reading `checkpoints`, which is authoritative: order by `turn`, then `attempt`, then `seq`, all descending. Unpack its workspace snapshot into a fresh directory under the worker's scratch volume; turn 1 starts from the task's input files. Restore the session, then truncate it to the checkpoint's `session_position` (see Sessions).
 3. **Configure, from the template only.**
-   - **For both runners:**
      - the model client from `base_url_env`;
      - the MCP servers, spawned as stdio subprocesses with `tool_filter` set to `tools_allowed`, and an environment of their literal `env` plus `PRAXIS_TASK_ID` plus only their declared `secret_env`;
      - the skills bundle, copied read-only to `.skills/` and listed in the instructions;
      - the built-in tools `read_file`, `write_file` and `list_files`, plus `run_command` if `cli_tools` is non-empty.
-   - **The OpenAI runner also:**
+   - **The runner also:**
      - runs with `RunConfig(tracing_disabled=True, tool_not_found_behavior="return_error_to_model")`;
-     - has the worker call `set_tracing_disabled(True)` at startup, so nothing is ever sent to the SDK's default trace backend.
-   - **The Claude runner also** (see the Claude runner section).
+     - has the worker call `set_tracing_disabled(True)` and `set_trace_processors([])` at startup. The second call removes the SDK's default processor, which the first alone leaves registered, so nothing is ever sent to the SDK's trace backend;
+     - logs refusals in `on_llm_end`, by comparing the tool names the model requested with the allowed ones. No hook fires for a tool that was not found.
 4. **Run** for at most `inner_max_turns` inner turns.
-   - **Heartbeat** every `heartbeat_timeout / 3`. The details are the latest checkpoint ID, the inner turn, and tool-call and token counts so far.
-   - **Checkpoint** when an inner turn has changed the workspace or added session items. The hook point is the **next `on_llm_start`**: by then the SDK has saved the previous turn's items to the session. A final checkpoint is also taken after `Runner.run` returns. A checkpoint does three things:
+   - **Input to `Runner.run`:** on turn 1, the instructions. On later turns and on resumed attempts, the session already holds the conversation, so the input is a fixed message: "Continue the task from where it stopped."
+   - **Budget inside a turn:** at each `on_llm_start`, if the tokens used reach the `TurnInput`'s remaining budget, the turn ends with `continue`, and the Workflow then stops the task. A turn can therefore overrun its token budget by at most one model call.
+   - **Inner-turn limit:** `Runner.run` raises `MaxTurnsExceeded` at the limit. That path also takes the final checkpoint, and maps to `continue`.
+   - **Done or needs input:** the agent ends with structured output (`Agent(output_type=FinalReport)`: `status` `done` or `needs_input`, `summary`, `questions[]`), which decides the turn's status.
+   - **Heartbeat** every `heartbeat_timeout / 3`. The details are the latest checkpoint ID, the inner turn, and **cumulative** tool-call and token counts for the turn. An attempt seeds its counts from the previous attempt's last heartbeat details, so several lost attempts are all counted. A new attempt also marks the previous attempt's row `lost`, with `failure_category` `worker_lost` or `timeout`.
+   - **Checkpoint** after every inner turn. The hook point is the **next `on_llm_start`**: by then the SDK has saved the previous turn's items to the session. An unchanged workspace adds no new blob, because snapshots are content-addressed. A final checkpoint is also taken after `Runner.run` returns. A checkpoint does three things:
      1. packs the workspace deterministically: sorted entries, `mtime`, `uid` and `gid` set to 0, gzip `mtime=0`, `.skills/` excluded;
      2. `put`s it off the event loop;
      3. inserts the `checkpoints` row with the session's current item count.
@@ -227,48 +241,23 @@ sequenceDiagram
    - **Attempt row:** update it with the outcome and the counts.
    - **Return** a `TurnOutcome` with a summary of at most 2 KB.
 
-**Sessions**
-- **`openai_agents`:** an `SQLAlchemySession` on the `praxismesh` database (asyncpg), keyed by `task_id`.
+**Session:** an `SQLAlchemySession` on the `praxismesh` database (asyncpg), keyed by `task_id`.
   - **When the SDK writes:** it saves a turn's items once the turn's tool calls have finished, not item by item.
   - **Position:** `session_position` is the number of session items at the checkpoint. On restore, items beyond it are removed with `pop_item`. A test covers this ordering: a checkpoint's item count matches its workspace.
-- **`claude_sdk`:** a `SessionStore` adapter on `claude_session_entries`, with `SessionKey.project_key = task_id`. Using the task ID, not the working directory, means a restore into a new directory on another worker finds the session.
-  - **Position:** `session_position` is the entry count. On restore, the adapter deletes entries beyond it, then the runner starts with `resume=<session_id>`.
-  - **To verify in PR 3:** whether the CLI resumes from the store alone on another worker. If it can't, the plan's fallback applies (§7.1 risk table): restart the turn from the checkpoint's workspace with a transcript summary, recorded as a deviation.
 
-**Overlapping attempts.** An attempt that outlives its heartbeat timeout can run alongside its replacement. Checkpoints are keyed by attempt and restore prefers the highest attempt. A late write from an older attempt therefore never replaces the newer one's position. The older attempt's Activity result is discarded by Temporal.
+**Overlapping attempts.** An attempt that outlives its heartbeat timeout can run alongside its replacement.
+- **Checkpoints** are keyed by attempt, and restore prefers the newest, so a late checkpoint from an older attempt never wins.
+- **Self-fencing:** at every `on_llm_start`, an attempt checks `task_attempts` for a newer attempt of its turn and stops if it finds one. It also stops when its heartbeat call reports the attempt cancelled or timed out.
+- **Remaining window:** at most one in-flight model call and its tool calls from the old attempt can still reach the shared session or `record_order`. Idempotency keys cover the side effects, and the threat model lists the rest as an accepted risk.
+- **Results:** Temporal discards the older attempt's Activity result.
 
-### The Claude runner (optional extra)
+### `HarnessRunner` and the deferred Claude runner
 
-Configuration:
-
-| Option | Value |
-|---|---|
-| `tools` | the base set the template allows (`Read`, `Write`, `Edit`, `Glob`, `Grep`, plus `Bash` only if `cli_tools` is set) |
-| `allowed_tools` | the exact names: those base tools, plus `mcp__<server>__<tool>` for each allowed MCP tool |
-| `permission_mode` | `"dontAsk"`, so anything not allowed is refused instead of prompting |
-| `strict_mcp_config` | `True` |
-| `setting_sources` | `[]` |
-| `plugins` | one local plugin directory, generated from the skills bundle, so the bundle's skills load without user or project settings |
-| `effort` | from the template |
-| `session_store` and `resume` | as in Sessions |
-
-**Environment.** The SDK merges `env` over the worker's own environment, so the runner sets `cli_path` to a wrapper, `harness_activity/claude/clean-env-claude`. The wrapper runs `env -i` with an explicit list:
-- `PATH`;
-- `HOME`, set to a per-attempt scratch directory;
-- `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` and the `ANTHROPIC_DEFAULT_*_MODEL` variables from the template;
-- `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`;
-- `CLAUDE_CODE_EFFORT_LEVEL`.
-
-Neither the CLI nor its `Bash` tool sees the worker's credentials.
-
-**Counting.** The SDK's `PostToolUse` hook and its result messages provide the tool-call and token counts, the equivalent of `RunHooks`.
-
-**Test** (`test_claude_runner_isolation`): the workspace contains `.claude/settings.json`, `.claude/skills/rogue/` and an `.mcp.json`, and the worker environment carries a canary credential. The test runs the CLI against the fake model's Anthropic endpoint and checks the request the CLI sent:
-- the tool list holds only the allowed names;
-- no rogue skill appears;
-- a `Bash` call to `env` does not show the canary.
-
-The test runs in the `stack` job, which installs the `claude` extra. Installing it in CI is not publishing.
+`HarnessRunner` is the interface `run_harness_turn` calls: `run(turn_input, workspace, config, hooks) -> TurnOutcome`. Its contract is: configuration only from the template; heartbeat and checkpoint hooks; cumulative usage; structured final output. A shared conformance suite in `tests/` checks any runner against the fake model. The Claude Agent SDK runner will be a second implementation in its own change, with its own design review, once the owner decides its licensing. That review starts from the SDK facts the Phase 1 reviews established:
+- `allowed_tools` only auto-approves;
+- `env` is merged over the parent environment;
+- the session key comes from `cwd`;
+- plugin skills need `Skill(...)` permissions.
 
 ### Side effects and idempotency (§4.2)
 
@@ -300,7 +289,7 @@ The test runs in the `stack` job, which installs the `claude` extra. Installing 
   | `max_tokens_cap` | 2 M |
   | `max_wall_time_cap` | 1 h |
 
-- **Profile `default`:** `max_turns` 6. `allowed_templates` is `[local-default]`.
+- **Profile `default`:** `tier: local`, `max_turns: 6`, `max_tokens: 1M`, `max_wall_time: 30 min`, `allowed_templates: [local-default]`.
 
 ### Command tool and containment (Phase 1 level)
 
@@ -313,12 +302,12 @@ This is **not** a sandbox for untrusted code. Egress is not restricted, and a pi
 
 ### Deterministic fake model (`tests/support/fake_model/`)
 
-A small HTTP server that serves the OpenAI chat-completions and Anthropic Messages endpoints, reached through `base_url_env` like the real one. CI uses it instead of a real model: deterministic stubs, §8.
+A small HTTP server that serves the OpenAI chat-completions endpoint, reached through `base_url_env` like the real one. CI uses it instead of a real model: deterministic stubs, §8.
 
 - **Replies come from the conversation, not from its own state.** A script maps "the number of tool results in the request's message history" to the next reply (a tool call or a final answer). Any worker that resends the same history therefore gets the same next step.
 - **Proving the conversation survived.** The recovery check sends worker B the history recorded by worker A. A fresh session would restart at step 0, and the test would fail.
-- **A pause point.** A script step can be marked `pause`: the server holds that response until the test releases it through `POST /control/release`, and `GET /control/state` shows which steps were served.
-- **Request log.** The server records the requests it receives, for the Claude isolation test.
+- **A pause point.** A script step can be marked `pause`. The server holds that response until the test releases it through `POST /control/release`, and `GET /control/state` shows which steps were served. A pause is **one-shot**: once released, or once a second request for that step arrives, it is not applied again. The replacement worker is therefore not held.
+- **Request log.** The server records the requests it receives, so tests can check what the runner sent (tool list, instructions).
 
 ### Recovery check (`make recovery-check`, run in the `stack` job)
 
@@ -333,16 +322,19 @@ A small HTTP server that serves the OpenAI chat-completions and Anthropic Messag
    - the task completes.
 5. Restart the stopped worker and clean up.
 
-`test_side_effect_not_repeated_after_crash` runs the same check with the pause placed between `record_order` and the next checkpoint.
+`test_side_effect_not_repeated_after_crash` needs a different pause point, because a held model response always comes after the checkpoint that follows a tool call. In test mode only (`SAMPLE_MCP_PAUSE_AFTER_EFFECT=1`), the sample MCP server commits `record_order`'s effect and its key, then holds the tool response until the test releases it.
+- **The crash:** the test stops the worker while the response is held, so no checkpoint has recorded the call.
+- **On the other worker:** the restored session ends before the call. The fake model, answering from that history, issues the same `record_order` again.
+- **The check:** `sample_orders` has one row, and the second call returned the recorded result. The pause is one-shot, so it is not applied to the second call.
 
 ### Workers and Compose
 
-- **`workers/Dockerfile`:** a Python 3.11 image with the project installed through uv. The Claude extra and its CLI are installed **only when the image is built** with `INSTALL_CLAUDE_HARNESS=1`, on the installer's machine. No image is published (§2).
+- **`workers/Dockerfile`:** a Python 3.11 image with the project installed through uv. No image is published.
 - **Compose profile `workers`:**
   - `orchestrator` polls `orchestration`;
   - `worker-a` and `worker-b` poll `tpl.local-default`;
   - each worker has its own scratch volume, plus the database, S3 and model settings from `infra/.env`.
-- **New `infra/.env` keys:** `S3_BUCKET`, `PRAXIS_SAMPLE_DB_URL` and `OTEL_EXPORTER_OTLP_ENDPOINT`. They are added to `infra/.env.example` and to `check-prereqs.sh`'s list of known keys.
+- **New `infra/.env` keys:** `S3_BUCKET`, `PRAXIS_SAMPLE_DB_URL` and `OTEL_EXPORTER_OTLP_ENDPOINT`. They are added to `infra/.env.example` and to `check-prereqs.sh`'s list of known keys, and `OTEL_EXPORTER_OTLP_ENDPOINT` is optional. Compose passes `PRAXIS_SAMPLE_DB_URL` into the worker containers. The worker gives it only to the MCP servers whose `secret_env` names it.
 - **New targets:** `make workers-up`, `workers-down`, `task PROMPT=…`, `task-status ID=…` (status, turns, attempts and the latest checkpoint), `recovery-check` and `benchmark`.
 
 ### Observability baseline
@@ -374,14 +366,14 @@ A small HTTP server that serves the OpenAI chat-completions and Anthropic Messag
   - the template hash check;
   - the MCP tool filter with errors returned to the model;
   - the command allow-list and its credential-free environment;
-  - the Claude runner's clean environment and `dontAsk` mode;
   - idempotency keys;
   - no secrets in Temporal history;
   - SDK tracing off.
 - **Accepted Phase 1 risks:**
   - no egress control;
   - no sandbox for untrusted code;
-  - identical side-effect calls collapse into one.
+  - identical side-effect calls collapse into one;
+  - an attempt that outlives its heartbeat can finish one in-flight model call and its tool calls before it fences itself.
 
 ### Dependencies
 
@@ -397,7 +389,7 @@ New runtime dependencies, with their expected licenses. PR 1 confirms them throu
 | `opentelemetry-exporter-otlp` | Apache-2.0 |
 | `prometheus-client` | Apache-2.0 |
 
-`claude-agent-sdk` (MIT; it bundles the Claude Code CLI under Anthropic's terms) is the optional extra `praxismesh[claude]`. The mypy `files` list gains the new packages.
+The mypy `files` list gains the new packages. `claude-agent-sdk` is not a Phase 1 dependency.
 
 ### Implementation PRs
 
@@ -406,20 +398,19 @@ New runtime dependencies, with their expected licenses. PR 1 confirms them throu
    - `BlobStore` and its contract suite;
    - migration `0003` and the retention classes;
    - observability, with SDK tracing off;
-   - the CLI skeleton;
+   - the CLI skeleton (its duplicate-start test lands in PR 2, with `TaskWorkflow`);
    - the new `.env` keys.
 2. **Harness:**
-   - `HarnessRunner` and both runners;
+   - `HarnessRunner`, its conformance suite and the `openai_agents` runner;
    - the built-in tools and `run_command`;
    - `sample_mcp` and the skill;
    - the fake model;
    - `run_harness_turn` and `TaskWorkflow`, with replay and time-skipping tests;
    - the `workers` profile;
-   - a scripted end-to-end test;
-   - `test_claude_runner_isolation`.
+   - a scripted end-to-end test.
 3. **Durability:**
    - checkpoints and restore;
-   - both session stores, and the Claude cross-worker verification;
+   - the session store and truncation;
    - idempotency;
    - `make recovery-check` and the effect-then-crash test.
 4. **Evidence:**
@@ -439,33 +430,31 @@ New runtime dependencies, with their expected licenses. PR 1 confirms them throu
 | Baseline observability | `observability/baseline` | `test_trace_parentage`, `test_no_sdk_trace_export`, `test_log_context_ids`, `test_metrics_endpoint` |
 | Agent benchmark suite | `quality/agent-benchmarks` | `make benchmark`, with the baseline recorded |
 | Threat model | `security/threat-model` | the controls-to-tests table |
-| `run_harness_turn` | `execution/harness-turn` | `test_harness_turn_scripted`, `test_prohibited_tool_returns_error`, `test_claude_runner_isolation`, `test_heartbeat_details` |
+| `run_harness_turn` | `execution/harness-turn` | `test_harness_turn_scripted`, `test_prohibited_tool_returns_error`, `test_runner_conformance`, `test_heartbeat_details` |
 | Durable session, workspace snapshots, recovery on another worker | `execution/durability` | `make recovery-check`, `test_checkpoint_matches_session_position` |
-| `TaskWorkflow` | `execution/task-workflow` | `test_task_workflow_*` (time-skipping), `test_task_workflow_replay`, `test_duplicate_task_id_rejected` |
+| `TaskWorkflow` | `execution/task-workflow` | `test_task_workflow_*` (time-skipping), `test_task_workflow_replay`, `test_duplicate_task_id_rejected` (in Temporal and after retention, through `tasks`) |
 | Sample skill and MCP tool, negative capability test | `agents/capability-model` | `test_forbidden_skill_or_tool_rejected` |
 | No duplicated side effects | `execution/durability` | `test_side_effect_not_repeated_after_crash` |
 
 ## Alternatives
 
 - **`temporalio.contrib.openai_agents`.** It runs the agent loop in the Workflow, with each model call as an Activity, so per-step durability comes built in. Rejected:
-  - the Claude runner is a CLI subprocess and cannot run inside a Workflow, and one `HarnessRunner` interface needs both runners to run the same way;
+  - the deferred Claude runner is a CLI subprocess and cannot run inside a Workflow, and `HarnessRunner` keeps one shape for both;
   - plan §4.1 puts one bounded harness run in an Activity.
 
   It is the first option to revisit if mid-turn checkpoints prove fragile.
 - **Checkpoint only at the end of a turn.** A lost worker would lose up to `inner_max_turns` of edits, which fails the acceptance criterion.
 - **Sessions only as blobs.** This would need its own consistency logic, where the SDK stores already provide it.
-- **The SDK's sandbox agent for skills.** Its session model differs from the Claude runner's. A read-only bundle plus a plugin works for both.
+- **The SDK's sandbox agent for skills.** It brings its own sandbox session model. A read-only bundle listed in the instructions is enough for Phase 1, and works for any runner.
 - **An in-process `ScriptedModel` for the recovery check.** It restarts at step 0 on the replacement worker, so it cannot show that the conversation continued. The fake HTTP endpoint can.
-- **Claude as the default harness.** Rejected by the owner while licensing is open.
+- **The Claude runner in Phase 1.** Deferred by the owner: licensing is open, and its isolation and session restore need their own design.
 
 ## Risks
 
 | Risk | Handling | §7.1 trigger and action |
 |---|---|---|
-| The Claude session does not restore on another worker | Verified in PR 3; `openai_agents`, the default, does not depend on it | If it fails, apply the restart-from-checkpoint fallback and record the deviation |
 | Mid-turn checkpoint consistency | A crash between the blob `put` and the row insert leaves a harmless orphan blob. A crash after the insert is covered, because restore reads `checkpoints` itself. A crash between an effect and the next checkpoint is covered by idempotency keys. | If recovery tests are flaky, revisit `contrib.openai_agents` |
-| The local model's reliability over many turns | Measured by the benchmark | Below 7 of 10 on the baseline: tune the template (prompt, turn limits, effort), then re-run before Phase 2 |
-| Token use: the Claude runner used about 14× the input tokens in the spike | Not the default; tokens are recorded | — |
+| The local model's reliability over many turns | Measured by the benchmark | Below 7 of 10 on the baseline: tune the template (prompt, turn limits), then re-run before Phase 2 |
 | Shell access without a sandbox | Accepted for Phase 1; Phase 5 closes it | — |
 | Workspace size | Snapshots are whole tarballs | A checkpoint over 50 MB or 2 s on the sample tasks: switch to incremental snapshots |
 
@@ -483,7 +472,7 @@ New runtime dependencies, with their expected licenses. PR 1 confirms them throu
   - migration `0003`;
   - a scripted end-to-end task through the worker containers;
   - `test_prohibited_tool_returns_error`;
-  - `test_claude_runner_isolation`;
+  - `test_runner_conformance`;
   - `make recovery-check`;
   - the effect-then-crash test.
 
@@ -503,6 +492,7 @@ New runtime dependencies, with their expected licenses. PR 1 confirms them throu
 
 ## Future work
 
+- The Claude Agent SDK runner: its own change, after the licensing decision.
 - Live messaging, streaming, `comms_mcp`, conversation IDs, and answering `needs_input`: Phase 2.
 - Ceph and GCS adapters, presigned access, retention enforcement and garbage collection, Claim Check: Phase 3A.
 - Worker affinity queues: only if measurements call for them.

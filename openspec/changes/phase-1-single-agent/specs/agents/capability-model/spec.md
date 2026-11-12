@@ -18,7 +18,7 @@ What an agent may do comes from versioned worker templates, never from requests 
 - **THEN** loading fails naming the template, because its hash no longer matches `registry/registry.lock`
 
 ### Requirement: Capabilities come from templates only
-The harness configuration (model, MCP servers, skills, tools) SHALL come only from the worker template. Profiles and requests SHALL reject unknown fields; a request carries only a profile name, instructions and input files. One that names a skill, MCP server or tool SHALL be rejected before any Workflow starts, naming the field. (Plan: Phase 1 task 10; §4.1; §5 "No MCP/skills fields".)
+The harness configuration (model, MCP servers, skills, tools) SHALL come only from the worker template. Profiles and requests SHALL reject unknown fields; a request carries only an optional task ID, a profile, an optional template, instructions, input files and output paths. One that names a skill, MCP server or tool SHALL be rejected before any Workflow starts, naming the field. (Plan: Phase 1 task 10; §4.1; §5 "No MCP/skills fields".)
 
 #### Scenario: Request injects a capability
 - **WHEN** a task request includes a skill, an MCP server or a tool

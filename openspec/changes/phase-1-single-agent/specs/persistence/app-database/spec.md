@@ -7,7 +7,7 @@ The application's own PostgreSQL database, separate from Temporal's private pers
 ## ADDED Requirements
 
 ### Requirement: Phase 1 tables
-Migration `0003` SHALL add the tables Phase 1 needs: `tasks`, `task_attempts`, `checkpoints`, `idempotency_keys`, `blob_objects`, `sample_orders`, and the session-store tables for both runners. Session-store tables SHALL be created by the migration, never by an SDK at runtime. (Plan: Phase 1 task 2; §5 "checkpoint/attempt tables in Phase 1".)
+Migration `0003` SHALL add the tables Phase 1 needs: `tasks`, `task_attempts`, `checkpoints`, `idempotency_keys`, `blob_objects`, `sample_orders`, and the `openai_agents` session-store tables. Session-store tables SHALL be created by the migration, never by an SDK at runtime. (Plan: Phase 1 task 2; §5 "checkpoint/attempt tables in Phase 1".)
 
 #### Scenario: Migrate from the Phase 0 baseline
 - **WHEN** `make migrate` runs on a database at revision `0002`

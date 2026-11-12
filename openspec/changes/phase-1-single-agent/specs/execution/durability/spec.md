@@ -14,7 +14,11 @@ After each inner turn that changed the workspace or the session, a harness turn 
 - **THEN** a new checkpoint row exists whose workspace snapshot contains that file, and whose session position equals the number of session items saved for that turn
 
 ### Requirement: Recovery on another worker
-When a worker stops mid-turn, the next attempt SHALL run on any worker of the template's queue and restore the latest acknowledged checkpoint's workspace and session, discarding session items recorded after it. Worker affinity SHALL NOT be required. (Plan: Phase 1 task 8 and accept criteria; §4.2; owner decision 2026-11-11: under Compose, stop one worker container.)
+When a worker stops mid-turn, the next attempt SHALL run on any worker of the template's queue and restore the latest checkpoint (ordered by turn, attempt and sequence), discarding session items recorded after it. Worker affinity SHALL NOT be required. (Plan: Phase 1 task 8 and accept criteria; §4.2; owner decision 2026-11-11: under Compose, stop one worker container.)
+
+#### Scenario: Latest turn wins
+- **WHEN** turn 1 had three attempts and turn 2 has recorded its first checkpoint
+- **THEN** restore uses turn 2's checkpoint, not a later-numbered attempt of turn 1
 
 #### Scenario: Worker stopped after edits
 - **WHEN** worker A is stopped after an acknowledged checkpoint that includes workspace edits
@@ -24,7 +28,7 @@ When a worker stops mid-turn, the next attempt SHALL run on any worker of the te
 Every tool with an effect outside the workspace SHALL take an idempotency key derived from the task ID, the tool name and its canonical arguments, and SHALL apply its effect at most once per key, returning the recorded result on a repeat. (Plan: Phase 1 accept criteria; §4.2 idempotency keys, test pod termination between side effect and checkpoint.)
 
 #### Scenario: Crash between effect and checkpoint
-- **WHEN** a worker is stopped after `record_order` has taken effect but before the next checkpoint, and the resumed task calls it again with the same arguments
+- **WHEN** a worker is stopped while the sample server holds `record_order`'s response after committing its effect, and the resumed task calls it again with the same arguments
 - **THEN** the order exists once, and the second call returns the recorded result
 
 #### Scenario: Identical calls within one task

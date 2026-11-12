@@ -10,7 +10,7 @@ Phase 0 built the local platform stack. Phase 1 adds the first product code: one
 - **`BlobStore`:** a minimal contract (`put`, `get`/`stream`, `stat`, `delete`, typed errors), with a SeaweedFS S3 adapter and contract tests.
 - **Persistence:** migration `0003` (tasks, attempts, checkpoints, idempotency keys, blob metadata, session stores), with a retention class on every row and blob from the first write.
 - **Execution:**
-  - `run_harness_turn`: a bounded harness invocation behind `HarnessRunner`, with `openai_agents` as the default runner and the Claude Agent SDK runner as an option;
+  - `run_harness_turn`: a bounded harness invocation behind `HarnessRunner`, with the `openai_agents` runner (the Claude Agent SDK runner is deferred to its own change, after the licensing decision);
   - `TaskWorkflow`: turn and budget accounting, retrying infrastructure failures only;
   - mid-turn checkpoints of session and workspace, so a task recovers on another worker;
   - idempotency keys on side-effecting tools.
@@ -24,6 +24,7 @@ Not in scope:
 - Ceph and GCS adapters, presigned URLs, retention enforcement and garbage collection (Phase 3A);
 - worker affinity queues;
 - a sandbox for untrusted code and egress control (Phase 5);
+- the Claude Agent SDK runner (its own change, after the licensing decision);
 - Kubernetes (Phase 7).
 
 ## Capabilities
@@ -54,5 +55,5 @@ Not in scope:
   - `workers-up`, `workers-down`;
   - `task`, `task-status`;
   - `recovery-check`, `benchmark`.
-- **New runtime dependencies:** `openai-agents`, `pydantic`, `pyyaml`, `mcp`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp` and `prometheus-client`. `claude-agent-sdk` is an optional extra and never shipped in an image (§2).
+- **New runtime dependencies:** `openai-agents`, `pydantic`, `pyyaml`, `mcp`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp` and `prometheus-client`.
 - **Tracking issue:** #44. Design: [docs/rfcs/phase-1-single-agent.md](../../../docs/rfcs/phase-1-single-agent.md).
