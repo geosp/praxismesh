@@ -4,7 +4,7 @@
 
 PraxisMesh is an open-source, self-hosted platform that exposes an OpenAI-compatible API and runs agent work as durable [Temporal](https://temporal.io/) workflows. A request is triaged, planned as a task DAG when needed, dispatched to harness workers, verified, and delivered. Repository work arrives as a GitHub pull request.
 
-> **Status: Phase 0 complete.** The local platform stack (Temporal, database, object storage, model endpoints) runs with one command. No product code yet; Phase 1 is next. See the [project plan](PROJECT_PLAN.md).
+> **Status: Phase 1 in progress.** The local platform stack runs with one command (Phase 0), and a single agent can run a task on the local model as a durable Workflow (Phase 1, being built). See the [project plan](PROJECT_PLAN.md).
 
 ## Where to start
 
@@ -154,6 +154,22 @@ docker compose --env-file infra/.env -f infra/docker-compose.yml stop db
 Only SeaweedFS is run and tested in Phase 0.
 
 **License note.** ParadeDB is AGPL-3.0. The stack runs it unmodified as a separate service, which does not change PraxisMesh's Apache-2.0 license; distributing a modified ParadeDB would carry AGPL obligations. See [docs/release.md](docs/release.md) and [ADR-0002](docs/adr/0002-paradedb-as-postgresql-server.md).
+
+## Running an agent task
+
+Phase 1 runs one agent per task, as a durable Temporal Workflow, on the local model. Its design is in [docs/rfcs/phase-1-single-agent.md](docs/rfcs/phase-1-single-agent.md).
+
+```bash
+# In infra/.env: VLLM_BASE_URL (your model server) and VLLM_MODEL (served name)
+make up && make migrate
+make workers-up       # build the worker image; start the orchestrator and two template workers
+make task PROMPT="Order 3 units of SKU-1 and write order-summary.md." OUTPUT=order-summary.md
+make task-status ID=task-...
+make task-output ID=task-... FILE=order-summary.md
+make workers-down
+```
+
+`make task` prints the task ID, waits, and prints the `TaskResult`. What an agent may use (model, MCP servers, skills, commands) comes only from its worker template in `registry/`. A request that names a skill, an MCP server or a tool is rejected. `make workers-check` runs a scripted task through the worker containers against a deterministic fake model (CI does this); afterwards, run `make workers-up` to point the workers back at your model.
 
 ## Contributing
 

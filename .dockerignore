@@ -1,0 +1,7 @@
+.git
+.venv
+**/__pycache__
+infra/.env
+spikes
+docs
+candidate_skills

@@ -124,6 +124,76 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  # Phase 1 workers (profile `workers`): `make workers-up`. The image is built
+  # locally from workers/Dockerfile and never published. Each worker's scratch
+  # space is a private tmpfs: recovery never relies on a worker's local files.
+  orchestrator:
+    profiles: [workers]
+    image: praxismesh-worker:dev
+    build:
+      context: ..
+      dockerfile: workers/Dockerfile
+    command: ["orchestrator"]
+    environment: &worker-env
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+      DB_HOST: db
+      DB_PORT: "5432"
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in infra/.env}
+      S3_ENDPOINT: http://s3:8333
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY in infra/.env}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in infra/.env}
+      S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET in infra/.env}
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      PRAXIS_SAMPLE_DB_URL: postgresql+asyncpg://praxismesh:${APP_DB_PASSWORD}@db:5432/praxismesh
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      METRICS_PORT: "9100"
+      LOG_LEVEL: INFO
+    healthcheck: &worker-health
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9100/metrics')"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    depends_on: &worker-deps
+      db:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker-a:
+    profiles: [workers]
+    image: praxismesh-worker:dev
+    command: ["template", "local-default"]
+    environment: *worker-env
+    tmpfs:
+      - /scratch:uid=10001,gid=10001
+    healthcheck: *worker-health
+    depends_on: *worker-deps
+    restart: unless-stopped
+
+  worker-b:
+    profiles: [workers]
+    image: praxismesh-worker:dev
+    command: ["template", "local-default"]
+    environment: *worker-env
+    tmpfs:
+      - /scratch:uid=10001,gid=10001
+    healthcheck: *worker-health
+    depends_on: *worker-deps
+    restart: unless-stopped
+
+  # Deterministic fake model for CI (profile `fake-model`); workers reach it with
+  # VLLM_BASE_URL=http://fake-model:8765.
+  fake-model:
+    profiles: [fake-model]
+    image: praxismesh-worker:dev
+    entrypoint: ["python", "-m", "tests.support.fake_model"]
+    command: ["--script", "/app/tests/support/fake_model/order_script.json", "--port", "8765"]
+
 volumes:
   pgdata:
   seaweeddata:

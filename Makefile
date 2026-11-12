@@ -31,7 +31,7 @@ SERVICES := db temporal temporal-ui s3
 JOBS := temporal-schema temporal-namespace
 JOB_TIMEOUT := 120
 
-.PHONY: help check up down reset status migrate smoke restart-check unhealthy-check logs registry-lock
+.PHONY: help check up down reset status migrate smoke restart-check unhealthy-check logs registry-lock workers-up workers-down workers-check task task-status task-output
 
 help:
 	@echo "make up              start the stack and wait until it is healthy"
@@ -44,6 +44,12 @@ help:
 	@echo "make unhealthy-check check that a stopped database is reported by name"
 	@echo "make logs            follow the stack's logs"
 	@echo "make registry-lock   record new template versions in registry/registry.lock"
+	@echo "make workers-up      build and start the orchestrator and two template workers"
+	@echo "make workers-down    stop the workers"
+	@echo "make workers-check   run a scripted task through the worker containers (fake model)"
+	@echo "make task PROMPT=... [OUTPUT=path]  submit a task and wait for its result"
+	@echo "make task-status ID=...             show a task"
+	@echo "make task-output ID=... FILE=...    print one of a task's output files"
 
 check:
 	@sh infra/check-prereqs.sh $(ENV_FILE)
@@ -106,3 +112,31 @@ logs: check
 # Record new template versions; existing entries are never rewritten.
 registry-lock:
 	@uv run python -m registry.lock
+
+WORKERS := orchestrator worker-a worker-b
+
+workers-up: check
+	@$(COMPOSE) --profile workers up -d --build --wait --wait-timeout 180 $(WORKERS)
+
+# A scripted task through the worker containers, against the deterministic fake
+# model (CI). Afterwards the workers still point at the fake model: run
+# `make workers-up` to point them back at VLLM_BASE_URL.
+workers-check: check
+	@VLLM_BASE_URL=http://fake-model:8765 $(COMPOSE) --profile workers --profile fake-model \
+		up -d --build --wait --wait-timeout 180 fake-model $(WORKERS)
+	@$(MAKE) --no-print-directory task \
+		PROMPT="Order 3 units of SKU-1 and write order-summary.md." OUTPUT=order-summary.md
+
+workers-down: check
+	@$(COMPOSE) --profile workers --profile fake-model rm -sf $(WORKERS) fake-model
+
+task: check
+	@test -n "$(PROMPT)" || { echo "error: set PROMPT=..." >&2; exit 1; }
+	@$(UV) python -m orchestrator.cli task submit --wait --instructions "$(PROMPT)" \
+		$(if $(OUTPUT),--output $(OUTPUT)) $(if $(PROFILE),--profile $(PROFILE))
+
+task-status: check
+	@$(UV) python -m orchestrator.cli task status $(ID)
+
+task-output: check
+	@$(UV) python -m orchestrator.cli task output $(ID) $(FILE)

@@ -3,6 +3,7 @@
     uv run --env-file infra/.env python -m orchestrator.cli task submit \\
         --profile default --instructions "..." [--input FILE] [--output PATH] [--task-id ID]
     uv run --env-file infra/.env python -m orchestrator.cli task status TASK_ID
+    uv run --env-file infra/.env python -m orchestrator.cli task output TASK_ID PATH [--to FILE]
 """
 
 from __future__ import annotations
@@ -19,9 +20,10 @@ from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 
 from common.blob_store.s3 import S3BlobStore
-from common.errors import PraxisError
+from common.errors import InvalidTaskInput, PraxisError
 from common.observability import configure_tracing, log_context, tracing_interceptor
 from common.persistence.repositories import RecordingBlobStore, TaskRepository, make_engine
+from common.schemas import TaskResult
 from orchestrator.submit import prepare_task, start_task
 from registry.loader import load_registry
 
@@ -54,10 +56,37 @@ async def submit(args: argparse.Namespace) -> int:
             data, load_registry(), RecordingBlobStore(s3, engine), base_dir=Path.cwd()
         )
         with log_context(task_id=start.task_id, request_id=start.request_id):
-            await start_task(await connect(), start)
+            handle = await start_task(await connect(), start)
     finally:
         await engine.dispose()
-    print(json.dumps({"task_id": start.task_id, "request_id": start.request_id}))
+    print(json.dumps({"task_id": start.task_id, "request_id": start.request_id}), flush=True)
+    if args.wait:
+        result = TaskResult.model_validate(await handle.result())
+        print(result.model_dump_json(indent=2))
+        return 0 if result.status == "succeeded" else 1
+    return 0
+
+
+async def output(args: argparse.Namespace) -> int:
+    engine = make_engine()
+    try:
+        row = await TaskRepository(engine).get(args.task_id)
+    finally:
+        await engine.dispose()
+    if row is None or not row.get("result"):
+        raise InvalidTaskInput(f"task {args.task_id} has no result yet")
+    result = TaskResult.model_validate(row["result"])
+    artifact = next((a for a in result.artifacts if a.path == args.path), None)
+    if artifact is None:
+        names = ", ".join(a.path for a in result.artifacts) or "none"
+        raise InvalidTaskInput(
+            f"task {args.task_id} has no output {args.path!r} (outputs: {names})"
+        )
+    data = await S3BlobStore.from_env().get(artifact.ref)
+    if args.to:
+        Path(args.to).write_bytes(data)
+    else:
+        sys.stdout.buffer.write(data)
     return 0
 
 
@@ -91,14 +120,19 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--input", action="append", help="input file, repeatable")
     s.add_argument("--output", action="append", help="workspace path to return, repeatable")
     s.add_argument("--task-id")
+    s.add_argument("--wait", action="store_true", help="wait for and print the TaskResult")
     st = task.add_parser("status", help="show a task")
     st.add_argument("task_id")
+    o = task.add_parser("output", help="download one of a task's output files")
+    o.add_argument("task_id")
+    o.add_argument("path")
+    o.add_argument("--to", help="write to this file instead of stdout")
     return p
 
 
 def main(argv: list[str]) -> int:
     args = parser().parse_args(argv)
-    handler = {"submit": submit, "status": status}[args.command]
+    handler = {"submit": submit, "status": status, "output": output}[args.command]
     try:
         return asyncio.run(handler(args))
     except PraxisError as e:

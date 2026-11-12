@@ -252,7 +252,7 @@ sequenceDiagram
      2. `put`s it off the event loop;
      3. inserts the `checkpoints` row with the session's current item count.
 5. **Finish.**
-   - **Outputs:** on `done`, upload the request's `outputs[]` as `audit` blobs. Their `BlobRef`s, and the `finish_task` summary and questions, go into the `TurnOutcome`, from which `complete_task` builds the `TaskResult`. `make task-output ID=… PATH=…` downloads an output.
+   - **Outputs:** on `done`, upload the request's `outputs[]` as `audit` blobs. Their `BlobRef`s, and the `finish_task` summary and questions, go into the `TurnOutcome`, from which `complete_task` builds the `TaskResult`. `make task-output ID=… FILE=…` downloads an output.
    - **Attempt row:** update it with the outcome and the counts.
    - **Return** a `TurnOutcome` with a summary of at most 2 KB.
 
@@ -350,7 +350,7 @@ A small HTTP server that serves the OpenAI chat-completions endpoint, reached th
   - `worker-a` and `worker-b` poll `tpl.local-default`;
   - each worker has its own scratch volume, plus the database, S3 and model settings from `infra/.env`.
 - **New `infra/.env` keys:** `S3_BUCKET`, `PRAXIS_SAMPLE_DB_URL` and `OTEL_EXPORTER_OTLP_ENDPOINT`. They are added to `infra/.env.example` and to `check-prereqs.sh`'s list of known keys, and `OTEL_EXPORTER_OTLP_ENDPOINT` is optional. Compose passes `PRAXIS_SAMPLE_DB_URL` into the worker containers. The worker gives it only to the MCP servers whose `secret_env` names it.
-- **New targets:** `make workers-up`, `workers-down`, `task PROMPT=…`, `task-status ID=…` (status, turns, attempts and the latest checkpoint), `task-output ID=… PATH=…`, `registry-lock`, `recovery-check` and `benchmark`.
+- **New targets:** `make workers-up`, `workers-down`, `task PROMPT=…`, `task-status ID=…` (status, turns, attempts and the latest checkpoint), `task-output ID=… FILE=…`, `registry-lock`, `recovery-check` and `benchmark`.
 
 ### Observability baseline
 
@@ -471,6 +471,7 @@ The mypy `files` list gains the new packages. `claude-agent-sdk` is not a Phase 
 | Mid-turn checkpoint consistency | A crash between the blob `put` and the row insert leaves a harmless orphan blob. A crash after the insert is covered, because restore reads `checkpoints` itself. A crash between an effect and the next checkpoint is covered by idempotency keys. | If recovery tests are flaky, revisit `contrib.openai_agents` |
 | The local model's reliability over many turns | Measured by the benchmark | Below 7 of 10 on the baseline: tune the template (prompt, turn limits), then re-run before Phase 2 |
 | Shell access without a sandbox | Accepted for Phase 1; Phase 5 closes it | — |
+| A model that answers in plain text instead of calling `finish_task` loops as `continue` until the turn budget runs out (the measurement: `spikes/harness-vllm/finish_tool_check.py`) | The benchmark records turns per task; the prompt tells the model to call `finish_task` | A benchmark task that ends `failed` with "turn budget exhausted" although its files are correct: strengthen the prompt, or answer a plain-text ending with a reminder |
 | Workspace size | Snapshots are whole tarballs | A checkpoint over 50 MB or 2 s on the sample tasks: switch to incremental snapshots |
 
 ## Testing and demo
@@ -495,7 +496,7 @@ The mypy `files` list gains the new packages. `claude-agent-sdk` is not a Phase 
 **Real model, on request** (linked from the evidence): the end-to-end sample task and `make benchmark`, both against the Sparks. Phase 1 cannot close on stubbed results alone (§8).
 
 **Demo** (`docs/demos/phase-1.md`). Entry point: `make workers-up`, then `make task`.
-1. **Sample task:** `make task PROMPT=… OUTPUT=order-summary.md` submits it with `outputs: [order-summary.md]`, which the CLI stores in the `tasks` row's `outputs`. It uses the `order-desk` skill and the `sample-shop` MCP tool, and produces `order-summary.md` plus a validated `TaskResult`. Show the file (`make task-output ID=… PATH=order-summary.md`), the `TaskResult`, and the task in the Temporal UI.
+1. **Sample task:** `make task PROMPT=… OUTPUT=order-summary.md` submits it with `outputs: [order-summary.md]`, which the CLI stores in the `tasks` row's `outputs`. It uses the `order-desk` skill and the `sample-shop` MCP tool, and produces `order-summary.md` plus a validated `TaskResult`. Show the file (`make task-output ID=… FILE=order-summary.md`), the `TaskResult`, and the task in the Temporal UI.
 2. **Worker loss:** during a second task, wait for an acknowledged checkpoint (in `make task-status`), then stop the worker that holds the attempt. The other worker resumes and finishes. Show:
    - the same `task_id` and Workflow ID;
    - the edits kept;

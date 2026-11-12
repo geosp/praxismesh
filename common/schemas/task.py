@@ -25,6 +25,14 @@ def _relative_path(value: str) -> str:
 WorkspacePath = Annotated[str, AfterValidator(_relative_path)]
 
 
+class Artifact(Strict):
+    """An output file of a task: its workspace path and stored bytes."""
+
+    schema_version: Literal[1] = 1
+    path: WorkspacePath
+    ref: BlobRef
+
+
 class TaskRequest(Strict):
     """What a client may ask for. Capabilities are not part of it (plan §4.10)."""
 
@@ -72,7 +80,7 @@ class TurnOutcome(Strict):
     attempts: int = Field(default=1, ge=1)
     summary: str = Field(default="", max_length=SUMMARY_MAX)
     questions: list[str] = []
-    outputs: list[BlobRef] = []
+    outputs: list[Artifact] = []
     error: str | None = None
 
 
@@ -81,7 +89,7 @@ class TaskResult(Strict):
     task_id: str
     status: Literal["succeeded", "failed", "needs_input"]
     summary: str = Field(default="", max_length=SUMMARY_MAX)
-    artifacts: list[BlobRef] = []
+    artifacts: list[Artifact] = []
     questions: list[str] = []
     failure_reason: str | None = None
     tier_used: str
@@ -112,3 +120,40 @@ class ExecutionAttempt(Strict):
     tool_calls: int = 0
     started_at: datetime
     ended_at: datetime | None = None
+
+
+class ResolvedTask(Strict):
+    """The template and effective budget for a task, fixed when it starts."""
+
+    schema_version: Literal[1] = 1
+    template: str
+    template_version: int
+    template_hash: str
+    task_queue: str
+    tier: str
+    max_turns: int = Field(ge=1)
+    max_tokens: int = Field(ge=1)
+    max_wall_time: timedelta
+    turn_timeout: timedelta
+    heartbeat_timeout: timedelta
+
+
+class RecordTaskInput(Strict):
+    schema_version: Literal[1] = 1
+    start: TaskStart
+    resolved: ResolvedTask
+
+
+class CompleteTaskInput(Strict):
+    schema_version: Literal[1] = 1
+    task_id: str
+    status: Literal["succeeded", "failed", "needs_input"]
+    summary: str = Field(default="", max_length=SUMMARY_MAX)
+    artifacts: list[Artifact] = []
+    questions: list[str] = []
+    failure_reason: str | None = None
+    resolved: ResolvedTask
+    turns: int = Field(ge=0)
+    attempts: int = Field(ge=0)
+    tokens_in: int = Field(ge=0)
+    tokens_out: int = Field(ge=0)

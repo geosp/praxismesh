@@ -116,6 +116,7 @@ jobs:
       - run: make smoke
       - run: make restart-check
       - run: make unhealthy-check
+      - run: make workers-check
       - name: Stack logs on failure
         if: failure()
         run: |
