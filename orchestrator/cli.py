@@ -1,0 +1,110 @@
+"""The PraxisMesh CLI (RFC Phase 1). Run through make, which loads infra/.env:
+
+    uv run --env-file infra/.env python -m orchestrator.cli task submit \\
+        --profile default --instructions "..." [--input FILE] [--output PATH] [--task-id ID]
+    uv run --env-file infra/.env python -m orchestrator.cli task status TASK_ID
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+from temporalio.client import Client
+from temporalio.contrib.pydantic import pydantic_data_converter
+
+from common.blob_store.s3 import S3BlobStore
+from common.errors import PraxisError
+from common.observability import configure_tracing, log_context, tracing_interceptor
+from common.persistence.repositories import RecordingBlobStore, TaskRepository, make_engine
+from orchestrator.submit import prepare_task, start_task
+from registry.loader import load_registry
+
+
+async def connect() -> Client:
+    provider = configure_tracing("praxis-cli")
+    return await Client.connect(
+        f"127.0.0.1:{os.environ.get('TEMPORAL_PORT', '7233')}",
+        namespace=os.environ.get("TEMPORAL_NAMESPACE", "default"),
+        data_converter=pydantic_data_converter,
+        interceptors=[tracing_interceptor(provider)],
+    )
+
+
+async def submit(args: argparse.Namespace) -> int:
+    data: dict[str, Any] = {"profile": args.profile, "instructions": args.instructions}
+    if args.instructions_file:
+        data["instructions"] = Path(args.instructions_file).read_text()
+    if args.task_id:
+        data["task_id"] = args.task_id
+    if args.template:
+        data["template"] = args.template
+    data["input_files"] = args.input or []
+    data["outputs"] = args.output or []
+    engine = make_engine()
+    try:
+        s3 = S3BlobStore.from_env()
+        await s3.ensure_bucket()
+        start = await prepare_task(
+            data, load_registry(), RecordingBlobStore(s3, engine), base_dir=Path.cwd()
+        )
+        with log_context(task_id=start.task_id, request_id=start.request_id):
+            await start_task(await connect(), start)
+    finally:
+        await engine.dispose()
+    print(json.dumps({"task_id": start.task_id, "request_id": start.request_id}))
+    return 0
+
+
+async def status(args: argparse.Namespace) -> int:
+    engine = make_engine()
+    try:
+        row = await TaskRepository(engine).get(args.task_id)
+    finally:
+        await engine.dispose()
+    client = await connect()
+    try:
+        description = await client.get_workflow_handle(args.task_id).describe()
+        workflow_status = description.status.name if description.status else "UNKNOWN"
+    except Exception as e:  # the Workflow may be outside Temporal's retention
+        workflow_status = f"unavailable ({type(e).__name__})"
+    print(
+        json.dumps({"task_id": args.task_id, "workflow": workflow_status, "task": row}, default=str)
+    )
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="praxis")
+    commands = p.add_subparsers(dest="group", required=True)
+    task = commands.add_parser("task").add_subparsers(dest="command", required=True)
+    s = task.add_parser("submit", help="submit a task")
+    s.add_argument("--profile", default="default")
+    s.add_argument("--template")
+    s.add_argument("--instructions", default="")
+    s.add_argument("--instructions-file")
+    s.add_argument("--input", action="append", help="input file, repeatable")
+    s.add_argument("--output", action="append", help="workspace path to return, repeatable")
+    s.add_argument("--task-id")
+    st = task.add_parser("status", help="show a task")
+    st.add_argument("task_id")
+    return p
+
+
+def main(argv: list[str]) -> int:
+    args = parser().parse_args(argv)
+    handler = {"submit": submit, "status": status}[args.command]
+    try:
+        return asyncio.run(handler(args))
+    except PraxisError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
