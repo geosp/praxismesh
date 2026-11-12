@@ -147,7 +147,9 @@ services:
       VLLM_BASE_URL: ${VLLM_BASE_URL:-}
       VLLM_API_KEY: ${VLLM_API_KEY:-}
       PRAXIS_SAMPLE_DB_URL: postgresql+asyncpg://praxismesh:${APP_DB_PASSWORD}@db:5432/praxismesh
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # Set OTEL_EXPORTER_OTLP_ENDPOINT in infra/.env (any value) to send worker
+      # traces to the Jaeger service of the observability profile.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:+http://jaeger:4318}
       METRICS_PORT: "9100"
       LOG_LEVEL: INFO
     healthcheck: &worker-health
@@ -193,6 +195,25 @@ services:
     image: praxismesh-worker:dev
     entrypoint: ["python", "-m", "tests.support.fake_model"]
     command: ["--script", "/app/tests/support/fake_model/order_script.json", "--port", "8765"]
+
+  # Optional observability (profile `observability`): `make observability-up`.
+  prometheus:
+    profiles: [observability]
+    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    restart: unless-stopped
+
+  jaeger:
+    profiles: [observability]
+    image: jaegertracing/jaeger:2.23.0@sha256:3823829974ccfc2485d2e48b165579091f32295022ae80ca49704e2f4834116e
+    ports:
+      - "127.0.0.1:${JAEGER_UI_PORT:-16686}:16686"
+      - "127.0.0.1:${OTLP_HTTP_PORT:-4318}:4318"
+    restart: unless-stopped
 
 volumes:
   pgdata:

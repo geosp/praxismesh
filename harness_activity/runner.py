@@ -28,6 +28,8 @@ from agents import (
 from agents.mcp import MCPServerStdio, create_static_tool_filter
 from agents.memory import Session
 from openai import AsyncOpenAI
+from opentelemetry import trace
+from opentelemetry.trace import Span, Tracer
 
 from harness_activity import skills
 from harness_activity.config import HarnessConfig
@@ -89,21 +91,40 @@ def _looks_failed(result: str) -> bool:
 
 
 class _Hooks(RunHooks[Any]):
+    """Counts usage, logs refusals, and adds trace spans for model and tool calls
+    under the Activity's span (RFC: Observability baseline)."""
+
     def __init__(
-        self, usage: Usage, allowed: set[str], state: TurnState, before: BeforeModelCall
+        self,
+        usage: Usage,
+        allowed: set[str],
+        state: TurnState,
+        before: BeforeModelCall,
+        tracer: Tracer,
     ) -> None:
         self.usage, self.allowed, self.state, self.before = usage, allowed, state, before
+        self.tracer = tracer
+        self.model_span: Span | None = None
+        self.tool_spans: dict[str, Span] = {}
 
     async def on_llm_start(
         self, context: Any, agent: Any, system_prompt: Any, input_items: Any
     ) -> None:
         await self.before(self.usage)
         self.usage.inner_turns += 1
+        self.model_span = self.tracer.start_span(
+            "model call", attributes={"praxis.inner_turn": self.usage.inner_turns}
+        )
 
     async def on_llm_end(self, context: RunContextWrapper[Any], agent: Any, response: Any) -> None:
         self.state.failed_in_step.clear()  # a new step: track its own tool failures
         self.usage.tokens_in += response.usage.input_tokens
         self.usage.tokens_out += response.usage.output_tokens
+        if self.model_span is not None:
+            self.model_span.set_attribute("praxis.tokens_in", response.usage.input_tokens)
+            self.model_span.set_attribute("praxis.tokens_out", response.usage.output_tokens)
+            self.model_span.end()
+            self.model_span = None
         for item in response.output:
             name = getattr(item, "name", None)
             if getattr(item, "type", None) == "function_call" and name not in self.allowed:
@@ -114,13 +135,24 @@ class _Hooks(RunHooks[Any]):
 
     async def on_tool_start(self, context: Any, agent: Any, tool: Tool) -> None:
         self.usage.tool_calls += 1
+        self.tool_spans[tool.name] = self.tracer.start_span(
+            "tool call", attributes={"praxis.tool": tool.name}
+        )
 
     async def on_tool_end(self, context: Any, agent: Any, tool: Tool, result: object) -> None:
-        if tool.name != FINISH_TOOL and _looks_failed(str(result)):
+        failed = tool.name != FINISH_TOOL and _looks_failed(str(result))
+        if failed:
             self.state.failed_in_step.append(tool.name)
+        span = self.tool_spans.pop(tool.name, None)
+        if span is not None:
+            span.set_attribute("praxis.tool_failed", failed)
+            span.end()
 
 
 class OpenAIAgentsRunner:
+    def __init__(self, tracer: Tracer | None = None) -> None:
+        self.tracer = tracer or trace.get_tracer("praxismesh.harness")
+
     async def run(
         self,
         config: HarnessConfig,
@@ -165,7 +197,7 @@ class OpenAIAgentsRunner:
                     input_text,
                     max_turns=config.inner_max_turns,
                     session=session,
-                    hooks=_Hooks(usage, allowed, state, before_model_call),
+                    hooks=_Hooks(usage, allowed, state, before_model_call, self.tracer),
                     run_config=RunConfig(
                         tracing_disabled=True, tool_not_found_behavior="return_error_to_model"
                     ),

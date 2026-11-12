@@ -42,6 +42,14 @@ SHORT_RETRY = RetryPolicy(maximum_attempts=5, non_retryable_error_types=NON_RETR
 TURN_ATTEMPTS = 0
 
 
+def heartbeated_tokens(cause: BaseException | None) -> tuple[int, int]:
+    """Tokens the last attempt heartbeated before it timed out (review F10)."""
+    details = getattr(cause, "last_heartbeat_details", None) or []
+    if details and isinstance(details[0], dict):
+        return int(details[0].get("tokens_in", 0)), int(details[0].get("tokens_out", 0))
+    return 0, 0
+
+
 def failure_category(error: ActivityError) -> str:
     cause = error.cause
     if isinstance(cause, ApplicationError) and cause.type:
@@ -110,6 +118,12 @@ class TaskWorkflow:
                     ),
                 )
             except ActivityError as e:
+                # Count what the lost attempts heartbeated before the turn failed
+                # for good (informal review F10).
+                lost_in, lost_out = heartbeated_tokens(e.cause)
+                tokens_in += lost_in
+                tokens_out += lost_out
+                attempts += 1
                 reason = f"harness turn {turns} failed: {failure_category(e)}"
                 break
             attempts += outcome.attempts

@@ -176,6 +176,7 @@ class HarnessActivities:
         attempt = info.attempt
         real_attempt = attempt - prior.refusals
         if real_attempt > MAX_REAL_ATTEMPTS:
+            await self.attempts.close_unfinished(turn.task_id, turn.turn, "attempts_exhausted")
             raise AttemptsExhausted(f"turn {turn.turn} was lost {MAX_REAL_ATTEMPTS} times")
         with log_context(
             task_id=turn.task_id,
@@ -191,8 +192,10 @@ class HarnessActivities:
                     await self.attempts.start(turn.task_id, turn.turn, attempt, self.identity)
                     return await self._run(turn, attempt, real_attempt, heartbeat, workdir)
             except (BlobCorrupt, BlobNotFound) as e:
+                await self.attempts.close_unfinished(turn.task_id, turn.turn, "input_unreadable")
                 raise HarnessInputError(f"checkpoint or input unreadable: {e}") from e
             except BadRequestError as e:
+                await self.attempts.close_unfinished(turn.task_id, turn.turn, "model_rejected")
                 raise HarnessInputError(f"the model server rejected the request: {e}") from e
             finally:
                 shutil.rmtree(workdir, ignore_errors=True)

@@ -17,6 +17,7 @@ from typing import Any
 from temporalio import activity
 from temporalio.client import Client, WorkflowHistory
 from temporalio.contrib.pydantic import pydantic_data_converter
+from temporalio.exceptions import TimeoutError, TimeoutType
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Replayer, Worker
 
@@ -31,7 +32,7 @@ from common.schemas import (
     TurnInput,
     TurnOutcome,
 )
-from orchestrator.workflow import TaskWorkflow
+from orchestrator.workflow import TaskWorkflow, heartbeated_tokens
 
 FIXTURE = Path(__file__).parent / "fixtures" / "task_workflow_history.json"
 QUEUE = "orchestration-test"
@@ -106,11 +107,14 @@ def activities(behavior: TurnBehavior) -> list[Callable[..., Any]]:
 
 
 async def run_task(behavior: TurnBehavior, task_id: str | None = None) -> tuple[TaskResult, str]:
+    return await _run(activities(behavior), task_id)
+
+
+async def _run(acts: list[Callable[..., Any]], task_id: str | None) -> tuple[TaskResult, str]:
     task_id = task_id or f"task-wf-{uuid.uuid4()}"
     async with await WorkflowEnvironment.start_time_skipping(
         data_converter=pydantic_data_converter
     ) as env:
-        acts = activities(behavior)
         # A client with a fixed identity, so recorded histories carry no hostname;
         # results are read through env.client, which keeps time-skipping.
         client = await Client.connect(
@@ -212,3 +216,15 @@ async def test_task_workflow_replay() -> None:
     replayer = Replayer(workflows=[TaskWorkflow], data_converter=pydantic_data_converter)
     result = await replayer.replay_workflow(history)
     assert result.replay_failure is None
+
+
+def test_failed_turn_counts_heartbeated_tokens() -> None:
+    """A turn that failed for good still counts what its last attempt heartbeated
+    (informal review F10)."""
+    timed_out = TimeoutError(
+        "heartbeat timeout",
+        type=TimeoutType.HEARTBEAT,
+        last_heartbeat_details=[{"tokens_in": 50, "tokens_out": 5, "tool_calls": 1}],
+    )
+    assert heartbeated_tokens(timed_out) == (50, 5)
+    assert heartbeated_tokens(RuntimeError("other")) == (0, 0)

@@ -1,0 +1,8 @@
+# Prometheus for the local stack (Compose profile `observability`). Scrapes the
+# workers' /metrics endpoints on the Compose network.
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: praxis-workers
+    static_configs:
+      - targets: ["orchestrator:9100", "worker-a:9100", "worker-b:9100"]

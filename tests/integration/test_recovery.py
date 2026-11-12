@@ -70,7 +70,8 @@ async def submit(registry: Path, outputs: list[str], env: dict[str, str]) -> tup
 
 async def holder(workers: WorkerProcs, task_id: str) -> str:
     rows = await query(
-        "SELECT worker_identity FROM task_attempts WHERE task_id = :t ORDER BY attempt DESC",
+        "SELECT worker_identity FROM task_attempts WHERE task_id = :t "
+        "ORDER BY turn DESC, attempt DESC",
         t=task_id,
     )
     return workers.name_of(workers.pid_of(rows[0][0]))
@@ -253,3 +254,53 @@ async def test_superseded_attempt_comes_back_and_writes_nothing(
     assert result.status == "succeeded" and result.attempts == 2
     assert after == old  # no late checkpoint from the superseded attempt
     assert rows == [(1, "lost"), (2, "done")]
+
+
+async def test_recovery_in_a_later_turn_with_edit_and_effect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two inner turns per harness turn, so the task spans three turns. Turn 1 edits
+    a file and records an order; the worker is lost in turn 2. The other worker
+    restores turn 2's checkpoint: the edit and the order survive, and the order is
+    recorded once (informal review F15)."""
+    pause = tmp_path / "pause"
+    registry = make_test_registry(tmp_path / "registry", pause, inner_max_turns=2)
+    steps: list[dict[str, Any]] = [
+        {"tool": "write_file", "args": {"path": "a.txt", "content": "turn one\n"}},
+        {"tool": "record_order", "args": {"sku": "SKU-4", "qty": 2}},
+        {"tool": "lookup_price", "args": {"sku": "SKU-4"}, "pause": True},
+        {"tool": "write_file", "args": {"path": "b.txt", "content": "turn two\n"}},
+        {"tool": "finish_task", "args": {"status": "done", "summary": "Three turns."}},
+    ]
+    # The sample server's own pause stays off: the fake model's pause holds turn 2.
+    Path(f"{pause}.done").touch()
+    with (
+        FakeModel(steps) as fake,
+        worker_processes(tmp_path / "scratch", fake.base_url, registry) as workers,
+    ):
+        monkeypatch.setenv("PRAXIS_QUEUE_PREFIX", workers.env["PRAXIS_QUEUE_PREFIX"])
+        task_id, handle = await submit(registry, ["a.txt", "b.txt"], workers.env)
+
+        async def paused_in_turn_two() -> bool:
+            rows = await query(
+                "SELECT count(*) FROM checkpoints WHERE task_id = :t AND turn = 2", t=task_id
+            )
+            return fake.state.paused_step == 2 and rows[0][0] > 0
+
+        await wait_for(paused_in_turn_two, "the pause in turn 2")
+        workers.kill(await holder(workers, task_id))
+        fake.state.release.set()
+        result = TaskResult.model_validate(await asyncio.wait_for(handle.result(), 180))
+
+    assert result.status == "succeeded" and result.turns == 3
+    s3 = S3BlobStore.from_env()
+    files = {a.path: (await s3.get(a.ref)).decode() for a in result.artifacts}
+    assert files == {"a.txt": "turn one\n", "b.txt": "turn two\n"}
+    orders = await query("SELECT count(*) FROM sample_orders WHERE task_id = :t", t=task_id)
+    assert orders[0][0] == 1
+    attempts = await query(
+        "SELECT turn, attempt, outcome FROM task_attempts WHERE task_id = :t "
+        "ORDER BY turn, attempt",
+        t=task_id,
+    )
+    assert attempts == [(1, 1, "continue"), (2, 1, "lost"), (2, 2, "continue"), (3, 1, "done")]

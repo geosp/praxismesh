@@ -27,9 +27,11 @@ from common.schemas import TaskResult
 from orchestrator.submit import prepare_task, start_task
 from registry.loader import load_registry
 
+PROVIDER = configure_tracing("praxis-cli")
+
 
 async def connect() -> Client:
-    provider = configure_tracing("praxis-cli")
+    provider = PROVIDER
     return await Client.connect(
         f"127.0.0.1:{os.environ.get('TEMPORAL_PORT', '7233')}",
         namespace=os.environ.get("TEMPORAL_NAMESPACE", "default"),
@@ -39,7 +41,10 @@ async def connect() -> Client:
 
 
 async def submit(args: argparse.Namespace) -> int:
-    data: dict[str, Any] = {"profile": args.profile, "instructions": args.instructions}
+    if args.request:  # a raw JSON request, as a client would send it
+        data: dict[str, Any] = json.loads(Path(args.request).read_text())
+        return await _submit(data, args.wait)
+    data = {"profile": args.profile, "instructions": args.instructions}
     if args.instructions_file:
         data["instructions"] = Path(args.instructions_file).read_text()
     if args.task_id:
@@ -48,6 +53,10 @@ async def submit(args: argparse.Namespace) -> int:
         data["template"] = args.template
     data["input_files"] = args.input or []
     data["outputs"] = args.output or []
+    return await _submit(data, args.wait)
+
+
+async def _submit(data: dict[str, Any], wait: bool) -> int:
     engine = make_engine()
     try:
         s3 = S3BlobStore.from_env()
@@ -55,12 +64,18 @@ async def submit(args: argparse.Namespace) -> int:
         start = await prepare_task(
             data, load_registry(), RecordingBlobStore(s3, engine), base_dir=Path.cwd()
         )
-        with log_context(task_id=start.task_id, request_id=start.request_id):
+        tracer = PROVIDER.get_tracer("praxismesh.cli")
+        with (
+            log_context(task_id=start.task_id, request_id=start.request_id),
+            tracer.start_as_current_span(
+                "praxis.task.submit", attributes={"praxis.task_id": start.task_id}
+            ),
+        ):
             handle = await start_task(await connect(), start)
     finally:
         await engine.dispose()
     print(json.dumps({"task_id": start.task_id, "request_id": start.request_id}), flush=True)
-    if args.wait:
+    if wait:
         result = TaskResult.model_validate(await handle.result())
         print(result.model_dump_json(indent=2))
         return 0 if result.status == "succeeded" else 1
@@ -121,6 +136,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--output", action="append", help="workspace path to return, repeatable")
     s.add_argument("--task-id")
     s.add_argument("--wait", action="store_true", help="wait for and print the TaskResult")
+    s.add_argument("--request", help="submit this JSON request file instead of the flags")
     st = task.add_parser("status", help="show a task")
     st.add_argument("task_id")
     o = task.add_parser("output", help="download one of a task's output files")
@@ -138,6 +154,8 @@ def main(argv: list[str]) -> int:
     except PraxisError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
+    finally:
+        PROVIDER.shutdown()  # flush spans before exiting
 
 
 if __name__ == "__main__":

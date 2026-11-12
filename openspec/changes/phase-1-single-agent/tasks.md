@@ -40,14 +40,14 @@ Nits from `docs/reviews/phase-1/design-review-followup-3.md` to resolve in the P
 
 ## Carried from the informal durability review (PR 3)
 
-- [ ] R.1 F10: when a harness turn fails for good, add its last heartbeated tokens and attempts to the `TaskResult` (PR 4).
-- [ ] R.2 F12: close the last attempt's row on a terminal failure, with its real category (PR 4).
-- [ ] R.3 F15: a recovery case with an edit and an effect in one task, and a loss in turn 2 or later (PR 4).
+- [x] R.1 F10: when a harness turn fails for good, add its last heartbeated tokens and attempts to the `TaskResult` (PR 4).
+- [x] R.2 F12: close the last attempt's row on a terminal failure, with its real category (PR 4).
+- [x] R.3 F15: a recovery case with an edit and an effect in one task, and a loss in turn 2 or later (PR 4).
 
 ## 4. Evidence (PR 4)
 
-- [ ] 4.1 Benchmark suite in `tests/benchmarks/agent_tasks/`, `make benchmark`, the baseline on the Sparks in `docs/benchmarks/`, and the regression check.
-- [ ] 4.2 `docs/security/threat-model.md` with controls mapped to tests.
-- [ ] 4.3 Compose profile `observability` (Prometheus, Jaeger, pinned by digest); the trace demo.
-- [ ] 4.4 Run the demo against the Sparks and record `docs/demos/phase-1.md`.
-- [ ] 4.5 The Phase 1 section of `docs/architecture/overview.md`; decision-log rows for any deviations.
+- [x] 4.1 Benchmark suite in `tests/benchmarks/agent_tasks/`, `make benchmark`, the baseline on the Sparks in `docs/benchmarks/`, and the regression check.
+- [x] 4.2 `docs/security/threat-model.md` with controls mapped to tests.
+- [x] 4.3 Compose profile `observability` (Prometheus, Jaeger, pinned by digest); the trace demo.
+- [x] 4.4 Run the demo against the Sparks and record `docs/demos/phase-1.md`.
+- [x] 4.5 The Phase 1 section of `docs/architecture/overview.md`; decision-log rows for any deviations.

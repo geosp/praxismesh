@@ -60,3 +60,61 @@ Observed idle memory for the four long-running services (`docker stats`, sum of 
 - Database init runs only on a fresh volume; changed passwords or a failed init need `make reset`.
 - GCS and Ceph RGW are documented in the README, not run or tested.
 - Model tests run only where `VLLM_BASE_URL` is set; CI skips them.
+
+## Phase 1: harness-in-Activity, single agent
+
+**Describes:** branch `feat/44-evidence` (issue #44), the last of four implementation PRs (#46 foundations, #47 harness, #48 durability, this one). **Design:** [RFC](../rfcs/phase-1-single-agent.md) (accepted, with as-built notes), OpenSpec change `phase-1-single-agent`. **Evidence:** [docs/demos/phase-1.md](../demos/phase-1.md), [docs/benchmarks/](../benchmarks/), [docs/security/threat-model.md](../security/threat-model.md).
+
+### Components
+
+| Component | Where | What it does |
+|---|---|---|
+| Registry | `registry/` | Profile `default`, template `local-default@1` with its system prompt, MCP entry `sample-shop`, skill `order-desk`; `registry.lock` pins each template's hash. `PRAXIS_REGISTRY` points to another directory (the recovery tests) |
+| CLI | `python -m orchestrator.cli task submit\|status\|output`; `make task`, `task-status`, `task-output` | Validates a request (capability fields rejected by name), mints task and request IDs, stores instructions and inputs as `task` blobs, starts `TaskWorkflow` with `REJECT_DUPLICATE` inside a `praxis.task.submit` span; `--request FILE` submits a raw JSON request |
+| `TaskWorkflow` | `orchestrator/workflow.py`, queue `orchestration` | `resolve_capabilities` (template, effective budget = min of profile and template cap, template queue), `record_task` (the lasting duplicate guard), then harness turns until `done`, `needs_input`, a failure or an exhausted turn, token or wall-time budget; `complete_task` writes the `TaskResult` |
+| `run_harness_turn` | `harness_activity/activity.py`, queue `tpl.local-default` | Refuses another template version (retryable, not counted); records the attempt; restores the newest checkpoint (turn, attempt, seq), truncating the session, or starts fresh; runs the harness; finishes with outputs as `audit` artifacts |
+| Runner | `harness_activity/runner.py` (`OpenAIAgentsRunner`, the only runner; the Claude runner is deferred) | Template-only configuration; workspace tools, allow-listed `run_command`, read-only skills listed in the instructions, the sample MCP server (stdio, `tool_filter`); ends on `finish_task`; refused tools are returned to the model; spans for each model and tool call |
+| Sample MCP server | `sample_mcp/` | Four read-only shop tools; `record_order` idempotent per task in one transaction; a test-only pause after an effect (`SAMPLE_MCP_PAUSE_FILE`) |
+| Workers | `workers/main.py`, `workers/Dockerfile` (built locally, never published, non-root) | `make workers-up`: orchestrator, `worker-a`, `worker-b`. A template worker without a model URL refuses to start |
+| Observability | `common/observability/`; profile `observability` | JSON logs with task, workflow, turn, attempt and worker IDs; OpenTelemetry through Temporal's interceptor, exported over OTLP only when configured; openai-agents tracing off; Prometheus metrics on port 9100; Prometheus v3.16.0 and Jaeger 2.23.0 |
+
+### Durability as built
+
+- **Checkpoints:** before every model call (seq 0 holds the instructions), and a final one carrying the `finish_task` report. Each holds a deterministic workspace snapshot (content-addressed, so an unchanged workspace adds no blob) and the session's item count. Observed positions for a two-step task: 1, 3, 5.
+- **Heartbeats:** from the attempt row to the outcome, every `heartbeat_timeout / 3`, carrying the turn's live, cumulative usage (lost attempts included) and the latest checkpoint ID.
+- **Recovery:** a lost worker's attempt times out after `heartbeat_timeout` (30 s; 5 s in the recovery tests), and the next attempt runs on any worker of the template queue. Observed on the Sparks: a killed `worker-b` container's task finished on `worker-a`, with each order recorded once and the conversation continued (4 session items at the stop, 40 at the end).
+- **Fencing:** an attempt checks for a newer attempt before every model call and stops without writing anything; Temporal also cancels a resumed attempt whose heartbeat timed out.
+- **Budgets:** the in-turn token check counts lost attempts' heartbeated usage, so a turn overruns by at most one model call.
+- **Attempts:** at most 5 real attempts per turn, checked by the Activity; template-version refusals are not counted. Temporal's own attempts are unlimited within `schedule_to_close` (6 x `turn_timeout`).
+- **Idempotency:** `record_order`'s key is the task ID, the tool and the canonical arguments; the `tasks` table rejects a reused task ID after Temporal's retention.
+
+### Tests
+
+| Suite | Where | Runs in |
+|---|---|---|
+| Unit (141) | `tests/test_*.py`: schemas and registry, `BlobStore` fake, observability, runner conformance with the real MCP subprocess and the fake model, `TaskWorkflow` time-skipping and replay | every PR (`tests`) |
+| Integration | `tests/integration/`: `BlobStore` contract on SeaweedFS, persistence, traces down to model and tool calls, end-to-end tasks with in-process workers, `run_harness_turn` restore, budget, heartbeat and fencing tests | every PR (`stack`, `make smoke`) |
+| Recovery (5) | `tests/integration/test_recovery.py`: SIGKILL or SIGSTOP of worker processes | every PR (`stack`, `make recovery-check`) |
+| Containers | `make workers-check`: a scripted task through the worker containers | every PR (`stack`) |
+| Benchmark (10 tasks) | `tests/benchmarks/`, `make benchmark` | on request, real model; baseline 10 of 10 (2026-11-12) |
+
+### Deviations from the RFC
+
+| RFC | As built | Record |
+|---|---|---|
+| Both harness runners | `openai_agents` only; the Claude runner is deferred | decision log 2026-11-11 |
+| Structured `output_type` ends a turn | the `finish_task` tool ends it (0 of 3 against 3 of 3 on the Sparks) | decision log 2026-11-11 |
+| Recovery check kills worker containers | kills worker processes (SIGKILL or SIGSTOP); the demo kills a container with `docker kill` | decision log 2026-11-12 |
+| A template queue named in Workflow code | the queue (with `PRAXIS_QUEUE_PREFIX`) is resolved by `resolve_capabilities` into `ResolvedTask` | this section |
+| Up to 5 Temporal attempts per turn | unlimited within `schedule_to_close`, with 5 real attempts enforced by the Activity | informal durability review, F7 |
+
+### Resource use
+
+`docker stats` on 2026-11-12, with the stack, three workers, Prometheus and Jaeger running: about 940 MiB in total. Each worker uses 165-180 MiB.
+
+### Known limitations
+
+- No sandbox or egress control for `run_command` (threat model R1, R2; Phase 5).
+- `needs_input` is terminal; answering questions arrives in Phase 2.
+- Metrics counters reset when a worker restarts.
+- The Claude Agent SDK runner is not implemented.

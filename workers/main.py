@@ -17,6 +17,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from opentelemetry.sdk.trace import TracerProvider
 from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Worker
@@ -39,7 +40,7 @@ from orchestrator.workflow import TaskWorkflow
 from registry.loader import load_registry
 
 
-async def connect(service: str) -> Client:
+async def connect(service: str, provider: TracerProvider | None = None) -> Client:
     address = os.environ.get("TEMPORAL_ADDRESS") or (
         f"127.0.0.1:{os.environ.get('TEMPORAL_PORT', '7233')}"
     )
@@ -47,11 +48,13 @@ async def connect(service: str) -> Client:
         address,
         namespace=os.environ.get("TEMPORAL_NAMESPACE", "default"),
         data_converter=pydantic_data_converter,
-        interceptors=[tracing_interceptor(configure_tracing(service))],
+        interceptors=[tracing_interceptor(provider or configure_tracing(service))],
     )
 
 
-async def build_worker(client: Client, role: str, template: str | None) -> Worker:
+async def build_worker(
+    client: Client, role: str, template: str | None, provider: TracerProvider | None = None
+) -> Worker:
     registry = load_registry()
     engine = make_engine()
     if role == "orchestrator":
@@ -78,7 +81,7 @@ async def build_worker(client: Client, role: str, template: str | None) -> Worke
         registry,
         engine,
         RecordingBlobStore(s3, engine),
-        OpenAIAgentsRunner(),
+        OpenAIAgentsRunner(provider.get_tracer("praxismesh.harness") if provider else None),
         Path(os.environ.get("PRAXIS_SCRATCH", "/tmp/praxis-scratch")),
         identity,
     )
@@ -102,8 +105,9 @@ async def main(argv: Sequence[str]) -> int:
     disable_sdk_tracing()
     if os.environ.get("METRICS_PORT"):
         serve_metrics(int(os.environ["METRICS_PORT"]))
-    client = await connect(f"praxis-{args.role}")
-    worker = await build_worker(client, args.role, args.template)
+    provider = configure_tracing(f"praxis-{args.role}")
+    client = await connect(f"praxis-{args.role}", provider)
+    worker = await build_worker(client, args.role, args.template, provider)
     await worker.run()
     return 0
 

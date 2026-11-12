@@ -1,0 +1,10 @@
+{
+  "date": "2026-11-12",
+  "template": "local-default@1",
+  "template_hash": "sha256:6122e8de71a551797b991d7ce87c701c366623076a63135b2f40e3f4b6e7f7ee",
+  "model": "spark",
+  "harness": "openai-agents 0.24.0",
+  "prompt_hash": "sha256:9de242aeec2e5ed13fe20e67ef1975e2bb05c4b9ab32b7e3fbfe202b479dab15",
+  "passed": 10,
+  "results": "2026-11-12-local-default.json"
+}
