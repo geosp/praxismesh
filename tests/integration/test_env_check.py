@@ -5,6 +5,7 @@ with a temporary env file, so the check must stop it before Compose starts."""
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -17,14 +18,19 @@ EXAMPLE = ROOT / "infra" / ".env.example"
 EXAMPLE_TEXT = EXAMPLE.read_text()
 
 
-def make(target: str, env_file: Path, **env: str) -> subprocess.CompletedProcess[str]:
+# Point Docker at a socket that does not exist, so that even if a check
+# regressed, these tests could never start, stop or reset a real stack.
+NO_DOCKER = {"DOCKER_HOST": "unix:///nonexistent/docker.sock"}
+
+
+def make(target: str, env_file: Path, *flags: str, **env: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["make", "--no-print-directory", target, f"ENV_FILE={env_file}"],
+        ["make", "--no-print-directory", *flags, target, f"ENV_FILE={env_file}"],
         cwd=ROOT,
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, **env},
+        env={**os.environ, **NO_DOCKER, **env},
     )
 
 
@@ -134,12 +140,29 @@ def test_reset_refuses_without_project_name(tmp_path: Path) -> None:
     assert "refusing to guess which stack to act on" in result.stderr
 
 
-def test_shell_project_name_wins(tmp_path: Path) -> None:
-    result = subprocess.run(
-        ["sh", "infra/check-prereqs.sh", "--project-only", str(EXAMPLE)],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "COMPOSE_PROJECT_NAME": "other-checkout"},
-    )
-    assert result.stdout.strip() == "other-checkout"
+def test_duplicate_key_rejected(tmp_path: Path) -> None:
+    """Compose keeps the last value and uv the first, so a repeat is an error."""
+    path = env_file_with(tmp_path, "DB_PORT=5432", "DB_PORT=5432\nDB_PORT=6543")
+    result = make("up", path)
+    assert result.returncode != 0
+    lines = path.read_text().splitlines()
+    n = len(lines) - lines[::-1].index("DB_PORT=6543")
+    assert f"line {n}: DB_PORT is already set on an earlier line" in result.stderr
+
+
+def project_flags(target: str, env_file: Path, **env: str) -> set[str]:
+    """The project names `make -n <target>` would pass to Compose with `-p`."""
+    return set(re.findall(r'-p "([^"]*)"', make(target, env_file, "-n", **env).stdout))
+
+
+def test_shell_project_name_ignored(tmp_path: Path) -> None:
+    """A COMPOSE_PROJECT_NAME left in the shell (for example by sourcing another
+    checkout's infra/.env) must not redirect up, status, down or reset."""
+    path = env_file_with(tmp_path, "COMPOSE_PROJECT_NAME=praxismesh", "COMPOSE_PROJECT_NAME=mine")
+    for target in ("up", "down", "reset", "logs"):
+        assert project_flags(target, path, COMPOSE_PROJECT_NAME="other") == {"mine"}, target
+
+
+def test_up_and_reset_resolve_the_same_project(tmp_path: Path) -> None:
+    path = env_file_with(tmp_path, "COMPOSE_PROJECT_NAME=praxismesh", "COMPOSE_PROJECT_NAME=mine")
+    assert project_flags("up", path) == project_flags("reset", path) == {"mine"}

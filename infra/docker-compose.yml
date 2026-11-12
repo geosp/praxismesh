@@ -5,7 +5,8 @@
 # Images are pinned by tag and digest; Dependabot proposes updates. Host ports
 # bind to 127.0.0.1 only. The model endpoint (vLLM) is external, configured by
 # VLLM_BASE_URL; there is no vLLM service here (Phase 0 deviation, decision log).
-# The project name comes from the Makefile (COMPOSE_PROJECT_NAME, default praxismesh).
+# The project name is COMPOSE_PROJECT_NAME in infra/.env; the Makefile passes it
+# with -p and ignores any value in the shell.
 
 services:
   db:

@@ -40,7 +40,6 @@ BODY = b"praxismesh restart check"
 TEMPORAL_ROLE = {"user": "temporal", "password_var": "TEMPORAL_DB_PASSWORD"}
 
 
-OTHER_RETENTION = "96h"
 COMPOSE = [
     "docker",
     "compose",
@@ -134,9 +133,11 @@ async def main() -> int:
     failures += compare("repeat make up on a stopped stack", baseline, await temporal_snapshot())
 
     configured = retention_seconds(env("TEMPORAL_RETENTION"))
-    make("up", TEMPORAL_RETENTION=OTHER_RETENTION)
-    if (got := await retention_now()) != retention_seconds(OTHER_RETENTION):
-        failures.append(f"retention {OTHER_RETENTION} was not applied (namespace has {got}s)")
+    # Always differs from the configured value, so an update must happen.
+    other = "96h" if configured != retention_seconds("96h") else "120h"
+    make("up", TEMPORAL_RETENTION=other)
+    if (got := await retention_now()) != retention_seconds(other):
+        failures.append(f"retention {other} was not applied (namespace has {got}s)")
     make("up")
     if (got := await retention_now()) != configured:
         failures.append(f"configured retention was not restored (namespace has {got}s)")

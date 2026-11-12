@@ -108,20 +108,20 @@ make down                          # stop, keep data
 make reset                         # stop and delete all data volumes
 ```
 
-`infra/.env` is git-ignored; keep hosts, passwords and keys there, never in the repository. Make never reads it: Docker Compose reads it with `--env-file`, and the tests and migrations get it through `uv run --env-file`. Write it as plain `KEY=value` lines using the names in `infra/.env.example`; values may use only `A-Z a-z 0-9 . _ : / @ % + , = -`. `make up` names whatever is wrong: Docker not running, `infra/.env` absent, a line that breaks these rules, or a required variable unset. A variable set in your shell overrides the file.
+`infra/.env` is git-ignored; keep hosts, passwords and keys there, never in the repository. Make never reads it: Docker Compose reads it with `--env-file`, and the tests and migrations get it through `uv run --env-file`. Write it as plain `KEY=value` lines using the names in `infra/.env.example`; values may use only `A-Z a-z 0-9 . _ : / @ % + , = -`. `make up` names whatever is wrong: Docker not running, `infra/.env` absent, a line that breaks these rules, or a required variable unset. A variable set in your shell overrides the file, except `COMPOSE_PROJECT_NAME`, which comes only from the file.
 
-**Several checkouts.** Each checkout that runs its own stack needs its own `COMPOSE_PROJECT_NAME` (and its own ports) in its `infra/.env`, or set in the shell. Otherwise `make reset` in one deletes the other's data. `make down` and `make reset` act only on the named project, and refuse when no name is set rather than fall back to a default.
+**Several checkouts.** Each checkout that runs its own stack needs its own `COMPOSE_PROJECT_NAME` (and its own ports) in its own `infra/.env`. `make` takes the name only from that file, never from your shell, so `make reset` in one checkout cannot reach another's stack; with no name in the file, every target refuses.
 
 **Model endpoint.** Set `VLLM_BASE_URL` to the server's base URL without `/v1` (for example `http://<host>:8000`) and `VLLM_MODEL` to its served model name, which must not contain `/`. The model tests use both API styles at that URL: Anthropic Messages (`/v1/messages`) and OpenAI chat (`/v1/chat/completions`). With `VLLM_BASE_URL` empty they are skipped; set but unreachable, they fail and name the endpoint.
 
 **When things go wrong.**
 
 - `db` never becomes healthy after a first start: database init failed, or you changed a database password after the volume was created. Init runs only on a fresh volume, so run `make reset` (this deletes all data) and `make up`.
-- A database volume created before the gate fixes (PR #38) is still accepted as initialised; no reset is needed after updating.
+- A database volume created before the Phase 0 gate fixes is upgraded in place the first time its health check runs (marker and access revokes); no reset is needed.
 - `TEMPORAL_RETENTION` takes `<number><s|m|h|d>`, for example `72h`. After you change it, `make up` updates the existing namespace.
 - `make logs` follows every service's logs; `make status` exits 1 and names any unhealthy service.
 
-**Trying the services by hand.** With `infra/.env` loaded into your shell (`set -a; . infra/.env; set +a`):
+**Trying the services by hand.** Load `infra/.env` in a throwaway shell, so its values do not linger in your usual one: run `bash`, then `set -a; . infra/.env; set +a`, then the commands below, then `exit`.
 
 ```bash
 # Ask the model in each API style
