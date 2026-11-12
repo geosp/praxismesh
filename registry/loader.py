@@ -9,6 +9,7 @@ under an existing version, or a template missing from the lock, fails to load.
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar
@@ -19,7 +20,9 @@ from pydantic import BaseModel, ValidationError
 from common.errors import CapabilityError, RegistryError
 from common.schemas import AgentProfile, McpServer, WorkerTemplate
 
-REGISTRY_ROOT = Path(__file__).resolve().parent
+# `PRAXIS_REGISTRY` points workers and the CLI at another registry directory (the
+# recovery tests use a generated copy with a short heartbeat timeout).
+REGISTRY_ROOT = Path(os.environ.get("PRAXIS_REGISTRY") or Path(__file__).resolve().parent)
 LOCK_FILE = "registry.lock"
 # Harnesses with a runner in this phase (Phase 1: openai_agents only; the Claude
 # Agent SDK runner is deferred, decision log 2026-11-11).
