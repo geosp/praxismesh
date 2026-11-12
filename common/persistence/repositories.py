@@ -85,6 +85,16 @@ class TaskRepository:
         if existing != run_id:
             raise TaskAlreadyExists(f"task {start.task_id} was already run (run {existing})")
 
+    async def complete(self, task_id: str, status: str, result: dict[str, Any]) -> None:
+        async with self.engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE tasks SET status = :s, result = :r, updated_at = CURRENT_TIMESTAMP "
+                    "WHERE task_id = :t"
+                ),
+                {"t": task_id, "s": status, "r": json.dumps(result)},
+            )
+
     async def get(self, task_id: str) -> dict[str, Any] | None:
         async with self.engine.connect() as conn:
             row = (
