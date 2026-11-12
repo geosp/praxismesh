@@ -67,6 +67,7 @@ class TurnInput(Strict):
     template_hash: str
     remaining_tokens: int = Field(ge=0)
     remaining_wall_time: timedelta
+    request_id: str = ""
 
 
 class TurnOutcome(Strict):
@@ -100,6 +101,7 @@ class TaskResult(Strict):
     attempts: int = Field(ge=0)
     tokens_in: int = Field(ge=0)
     tokens_out: int = Field(ge=0)
+    inner_turns: int = Field(default=0, ge=0)
 
 
 AttemptOutcome = Literal["started", "done", "continue", "needs_input", "failed", "lost"]
@@ -157,3 +159,4 @@ class CompleteTaskInput(Strict):
     attempts: int = Field(ge=0)
     tokens_in: int = Field(ge=0)
     tokens_out: int = Field(ge=0)
+    inner_turns: int = Field(default=0, ge=0)
