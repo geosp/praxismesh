@@ -7,7 +7,7 @@ One harness turn: a bounded harness invocation inside a Temporal Activity, confi
 ## ADDED Requirements
 
 ### Requirement: Bounded, template-configured harness turn
-`run_harness_turn` SHALL run one harness invocation of at most the template's `inner_max_turns` inner turns, within the template's `turn_timeout`, using the template's model, endpoint, MCP servers, skills bundle and tools. It SHALL return a structured `TurnOutcome` (status `done`, `continue` or `needs_input`, the latest checkpoint, usage and a summary of at most 2 KB), with large content referenced as `BlobRef`s. (Plan: Phase 1 task 7; §4.1; §5 `TaskResult`.)
+`run_harness_turn` SHALL run one harness invocation of at most the template's `inner_max_turns` inner turns, within the template's `turn_timeout`, using the template's model, endpoint, MCP servers, skills bundle and tools. It SHALL return a structured `TurnOutcome` (status, latest checkpoint, usage, a summary of at most 2 KB, questions, and output `BlobRef`s). (Plan: Phase 1 task 7; §4.1; §5 `TaskResult`.)
 
 #### Scenario: Scripted harness turn
 - **WHEN** a harness turn runs with a scripted model that calls a tool and then calls `finish_task` with status `done`

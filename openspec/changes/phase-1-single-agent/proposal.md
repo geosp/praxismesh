@@ -8,7 +8,7 @@ Phase 0 built the local platform stack. Phase 1 adds the first product code: one
 
 - **Capability model:** versioned `AgentProfile`, `WorkerTemplate` and `McpServer` schemas with YAML loaders. Harness configuration comes from templates only, and requests or profiles that name skills, MCP servers or tools are rejected.
 - **`BlobStore`:** a minimal contract (`put`, `get`/`stream`, `stat`, `delete`, typed errors), with a SeaweedFS S3 adapter and contract tests.
-- **Persistence:** migration `0003` (tasks, attempts, checkpoints, idempotency keys, blob metadata, session stores), with a retention class on every row and blob from the first write.
+- **Persistence:** migration `0003` (tasks, attempts, checkpoints, idempotency keys, blob metadata, sample orders, session stores), with a retention class on every row and blob from the first write.
 - **Execution:**
   - `run_harness_turn`: a bounded harness invocation behind `HarnessRunner`, with the `openai_agents` runner (the Claude Agent SDK runner is deferred to its own change, after the licensing decision);
   - `TaskWorkflow`: turn and budget accounting, retrying infrastructure failures only;

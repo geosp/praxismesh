@@ -32,7 +32,7 @@
 Nits from `docs/reviews/phase-1/design-review-followup-3.md` to resolve in the PR that touches them. J1, J3, J7, J10, J11 and J13 are already applied to the RFC.
 
 - [ ] D.1 J2: name the `McpServer` field and the test catalog entry for the sample server's timeout and pause flag (PR 3).
-- [ ] D.2 J4, J5, J6, J8, J9, J14, J16: wording and field-list alignment in the RFC and specs (PR 1).
+- [x] D.2 J4, J5, J6, J8, J9, J14, J16: wording and field-list alignment in the RFC and specs (PR 1). *(J4: no "both runners" wording remains.)*
 - [ ] D.3 J12: state the status when a sibling tool call in the same step fails alongside `finish_task` (PR 2).
 - [ ] D.4 J15: assert the `seq` 0 checkpoint in `test_checkpoint_matches_session_position` (PR 3).
 - [ ] D.5 J17: add the unit check named in the report to task 2.5 (PR 2).
