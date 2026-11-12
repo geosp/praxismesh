@@ -185,6 +185,18 @@ class AttemptRepository:
                 },
             )
 
+    async def close_unfinished(self, task_id: str, turn: int, category: str) -> None:
+        """Close the turn's open attempt rows when it fails for good."""
+        async with self.engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE task_attempts SET outcome = 'failed', failure_category = :c, "
+                    "ended_at = CURRENT_TIMESTAMP "
+                    "WHERE task_id = :t AND turn = :turn AND outcome = 'started'"
+                ),
+                {"t": task_id, "turn": turn, "c": category},
+            )
+
     async def newer_attempt_exists(self, task_id: str, turn: int, attempt: int) -> bool:
         async with self.engine.connect() as conn:
             found = await conn.execute(

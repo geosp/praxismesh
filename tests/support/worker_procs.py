@@ -30,7 +30,7 @@ from registry.lock import update
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def make_test_registry(target: Path, pause_file: Path) -> Path:
+def make_test_registry(target: Path, pause_file: Path, inner_max_turns: int | None = None) -> Path:
     """A registry copy: 5 s heartbeat timeout, and the sample server's test pause
     (`SAMPLE_MCP_PAUSE_FILE`, through its literal `env`) with a session timeout
     longer than any hold."""
@@ -38,6 +38,8 @@ def make_test_registry(target: Path, pause_file: Path) -> Path:
     template = target / "templates" / "local-default.yaml"
     data = yaml.safe_load(template.read_text())
     data["heartbeat_timeout"] = "PT5S"
+    if inner_max_turns is not None:  # to force a task across several harness turns
+        data["inner_max_turns"] = inner_max_turns
     template.write_text(yaml.safe_dump(data, sort_keys=False))
     server = target / "mcp" / "sample-shop.yaml"
     entry = yaml.safe_load(server.read_text())
