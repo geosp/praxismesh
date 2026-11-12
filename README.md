@@ -4,7 +4,7 @@
 
 PraxisMesh is an open-source, self-hosted platform that exposes an OpenAI-compatible API and runs agent work as durable [Temporal](https://temporal.io/) workflows. A request is triaged, planned as a task DAG when needed, dispatched to harness workers, verified, and delivered. Repository work arrives as a GitHub pull request.
 
-> **Status: Phase 0.** The local platform stack (Temporal, database, object storage, model endpoints) runs with one command. No product code yet. See the [project plan](PROJECT_PLAN.md).
+> **Status: Phase 0 complete.** The local platform stack (Temporal, database, object storage, model endpoints) runs with one command. No product code yet; Phase 1 is next. See the [project plan](PROJECT_PLAN.md).
 
 ## Where to start
 
