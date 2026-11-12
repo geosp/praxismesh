@@ -169,7 +169,7 @@ make task-output ID=task-... FILE=order-summary.md
 make workers-down
 ```
 
-`make task` prints the task ID, waits, and prints the `TaskResult`. What an agent may use (model, MCP servers, skills, commands) comes only from its worker template in `registry/`. A request that names a skill, an MCP server or a tool is rejected. `make workers-check` runs a scripted task through the worker containers against a deterministic fake model (CI does this); afterwards, run `make workers-up` to point the workers back at your model.
+`make task` prints the task ID, waits, and prints the `TaskResult`. `make benchmark` runs the agent benchmark (10 tasks) on your model. `make observability-up` starts Prometheus (<http://127.0.0.1:9090>) and Jaeger (<http://127.0.0.1:16686>); set `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` in `infra/.env` before `make workers-up` to send traces there. What an agent may use (model, MCP servers, skills, commands) comes only from its worker template in `registry/`. A request that names a skill, an MCP server or a tool is rejected. `make workers-check` runs a scripted task through the worker containers against a deterministic fake model (CI does this); afterwards, run `make workers-up` to point the workers back at your model.
 
 ## Contributing
 

@@ -498,6 +498,8 @@ The mypy `files` list gains the new packages. `claude-agent-sdk` is not a Phase 
 **Real model, on request** (linked from the evidence): the end-to-end sample task and `make benchmark`, both against the Sparks. Phase 1 cannot close on stubbed results alone (§8).
 
 **Demo** (`docs/demos/phase-1.md`). Entry point: `make workers-up`, then `make task`.
+
+> **As built** (decision log 2026-11-12): the worker container is stopped with `docker kill`. `docker stop`'s grace period lets the Temporal worker finish its attempt, which does not show a lost worker.
 1. **Sample task:** `make task PROMPT=… OUTPUT=order-summary.md` submits it with `outputs: [order-summary.md]`, which the CLI stores in the `tasks` row's `outputs`. It uses the `order-desk` skill and the `sample-shop` MCP tool, and produces `order-summary.md` plus a validated `TaskResult`. Show the file (`make task-output ID=… FILE=order-summary.md`), the `TaskResult`, and the task in the Temporal UI.
 2. **Worker loss:** during a second task, wait for an acknowledged checkpoint (in `make task-status`), then stop the worker that holds the attempt. The other worker resumes and finishes. Show:
    - the same `task_id` and Workflow ID;
