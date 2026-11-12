@@ -14,7 +14,7 @@
 ## 2. Harness (PR 2)
 
 - [ ] 2.1 `HarnessRunner` interface and its conformance suite; `OpenAIAgentsRunner` (`tool_not_found_behavior="return_error_to_model"`, tracing and trace processors off, the `finish_task` tool with `stop_at_tool_names`, `MaxTurnsExceeded` mapped to `continue`, `ModelBehaviorError` mapped to `continue`).
-- [ ] 2.1a `tests/support/fake_model/`: a deterministic OpenAI-compatible endpoint that answers from the message history, with a one-shot pause point and a request log.
+- [ ] 2.1a `tests/support/fake_model/`: a deterministic OpenAI-compatible endpoint that answers from the message history (scripts end by calling `finish_task`), with a one-shot pause point and a request log.
 - [ ] 2.2 Built-in workspace tools and `run_command` (allow-list, credential-free environment, timeout, output cap).
 - [ ] 2.3 `sample_mcp` server and the `order-desk` skill bundle; MCP tool filter; skills mounted read-only and listed.
 - [ ] 2.4 `run_harness_turn` (without mid-turn recovery) and `TaskWorkflow` with turn and budget accounting and the retry policy; replay and time-skipping tests.
@@ -26,6 +26,17 @@
 - [ ] 3.2 `SQLAlchemySession` on the app database; truncation to the session position; self-fencing of overlapping attempts; cumulative usage and `lost` attempt rows.
 - [ ] 3.3 Idempotency keys and `record_order`; the sample server's test-only pause after the effect; `test_side_effect_not_repeated_after_crash`.
 - [ ] 3.4 `make recovery-check` with the fake model's pause point (stop the worker holding the attempt after an acknowledged checkpoint; the other finishes with the full history), run in the `stack` job.
+
+## Carried from the design review
+
+Nits from `docs/reviews/phase-1/design-review-followup-3.md` to resolve in the PR that touches them. J1, J3, J7, J10, J11 and J13 are already applied to the RFC.
+
+- [ ] D.1 J2: name the `McpServer` field and the test catalog entry for the sample server's timeout and pause flag (PR 3).
+- [ ] D.2 J4, J5, J6, J8, J9, J14, J16: wording and field-list alignment in the RFC and specs (PR 1).
+- [ ] D.3 J12: state the status when a sibling tool call in the same step fails alongside `finish_task` (PR 2).
+- [ ] D.4 J15: assert the `seq` 0 checkpoint in `test_checkpoint_matches_session_position` (PR 3).
+- [ ] D.5 J17: add the unit check named in the report to task 2.5 (PR 2).
+- [ ] D.6 J18: link the `finish_task`/`output_type` run from the RFC, add its decision-log row and a Risks row (PR 2).
 
 ## 4. Evidence (PR 4)
 

@@ -2,7 +2,7 @@
 title: Phase 1 harness-in-Activity, single agent
 type: rfc
 tier: light
-status: draft
+status: accepted
 phase: 1
 issue: "#44"
 openspec_change: openspec/changes/phase-1-single-agent
@@ -159,7 +159,7 @@ Every blob and every stored row carries a `retention_class` from its first write
 
 | Table | Unique / upsert key | Notes |
 |---|---|---|
-| `tasks` | `task_id` | `workflow_id`, `run_id`, `profile`, `template`, `template_version`, `template_hash`, `instructions_ref`, `status`, `result_ref`, timestamps, `retention_class` |
+| `tasks` | `task_id` | `workflow_id`, `run_id`, `profile`, `template`, `template_version`, `template_hash`, `instructions_ref`, `input_refs`, `outputs`, `status`, `result_ref`, timestamps, `retention_class` |
 | `task_attempts` | (`task_id`, `turn`, `attempt`) | Inserted when an attempt **starts**, updated when it ends: `worker_identity`, `outcome`, `failure_category`, `tokens_in`, `tokens_out`, `tool_calls` |
 | `checkpoints` | (`task_id`, `turn`, `attempt`, `seq`) | `session_id` (the `SQLAlchemySession` key, which is the `task_id`), `session_position`, `workspace_ref` |
 | `idempotency_keys` | `key` | `task_id`, `tool`, `result` (small JSON) |
@@ -212,17 +212,17 @@ sequenceDiagram
 - **Usage** in a `TurnOutcome` includes the tokens and tool calls of earlier lost attempts of the same turn, read from their last heartbeat details. Budgets therefore count work done by a worker that was later lost, up to its last heartbeat.
 - **Wall time** is checked between turns. A single turn can overrun it by at most its own `schedule_to_close`.
 - **Exhausted budget:** the task ends `failed` with the reason, and the last checkpoint is kept.
-- **A turn that fails for good** (retries exhausted, `schedule_to_close` passed, or a non-retryable error): the Workflow still runs `complete_task`. The task ends `failed`, with the error's category as the reason, and the last checkpoint is kept.
+- **A harness turn that fails for good** (retries exhausted, `schedule_to_close` passed, or a non-retryable error from the turn): the Workflow still runs `complete_task`. A run stopped by `TaskAlreadyExists` ends without `complete_task`, and the original task's row is untouched (J1). The task ends `failed`, with the error's category as the reason, and the last checkpoint is kept.
 - **Usage after the last heartbeat:** a lost attempt's usage after its last heartbeat is not counted. That is at most `heartbeat_timeout / 3` of work.
 
 **Tests:** replay tests against committed histories, using the same pattern as `tests/test_hello_replay.py`, and time-skipping tests with mocked Activities: retry, timeout, budget exhaustion, `needs_input`, and a non-retryable error (§8).
 
 ### `run_harness_turn` (§4.1)
 
-1. **Start.** Upsert the `task_attempts` row as started. Reject the turn if the template hash in `TurnInput` differs from the one this worker loaded.
+1. **Start.** First reject the turn, with the retryable `TemplateVersionUnavailable`, if the template hash in `TurnInput` differs from the one this worker loaded. Only then upsert the `task_attempts` row as started (J3).
 2. **Restore.** Find the newest checkpoint for the task by reading `checkpoints`, which is authoritative: order by `turn`, then `attempt`, then `seq`, all descending.
    - **A checkpoint exists:** unpack its workspace snapshot into a fresh directory under the worker's scratch volume. Restore the session, then truncate it to the checkpoint's `session_position` (see Session).
-   - **No checkpoint exists for the task** (the first attempt of turn 1, or an attempt lost before its first checkpoint): start fresh. Clear the session, download the input files from the `tasks` row's blob refs into the workspace root, and read the instructions from `instructions_ref`. The attempt then behaves as the first attempt of turn 1, whatever its own turn and attempt numbers.
+   - **No checkpoint exists for the task** (the first attempt of turn 1, or an attempt lost before its first checkpoint): start fresh. Clear the session, download the input files from the `tasks` row's `input_refs` into the workspace root (J7), and read the instructions from `instructions_ref`. The attempt then behaves as the first attempt of turn 1, whatever its own turn and attempt numbers.
 3. **Configure, from the template only.**
      - the model client from `base_url_env`;
      - the MCP servers, spawned as stdio subprocesses with `tool_filter` set to `tools_allowed`, and an environment of their literal `env` plus `PRAXIS_TASK_ID` plus only their declared `secret_env`;
@@ -236,7 +236,7 @@ sequenceDiagram
    - **Input to `Runner.run`:** when starting fresh, the instructions. Otherwise the restored session already holds the instructions and the conversation, so the input is a fixed message: "Continue the task from where it stopped."
    - **Budget inside a turn:** at each `on_llm_start`, if the tokens used reach the `TurnInput`'s remaining budget, the turn ends with `continue`, and the Workflow then stops the task. A turn can therefore overrun its token budget by at most one model call.
    - **Inner-turn limit:** `Runner.run` raises `MaxTurnsExceeded` at the limit. That path also takes the final checkpoint, and maps to `continue`.
-   - **Done or needs input:** the agent ends by calling the built-in `finish_task(status, summary, questions[])` tool, with `status` `done` or `needs_input`. The run stops on that call (`tool_use_behavior={"stop_at_tool_names": ["finish_task"]}`), and its arguments decide the turn's status. A run that ends without calling it counts as `continue`.
+   - **Done or needs input:** the agent ends by calling the built-in `finish_task(status, summary, questions[])` tool, with `status` `done` or `needs_input`. The run stops on that call (`tool_use_behavior={"stop_at_tool_names": ["finish_task"]}`), and its arguments decide the turn's status. A run that ends without calling it counts as `continue`. The runner records the **validated** `finish_task` arguments itself, in the run context, because the SDK also stops the run on a call with invalid arguments and then returns only a generic error string. A stop without valid arguments counts as `continue` (J11). The arguments are stored with the final checkpoint, so an attempt lost after `finish_task` goes straight to Finish on restore (J13).
    - **Heartbeat** (`activity.heartbeat()`, which returns nothing) every `heartbeat_timeout / 3`. The details are the latest checkpoint ID, the inner turn, and **cumulative** tool-call and token counts for the turn. An attempt seeds its counts from the previous attempt's last heartbeat details, so several lost attempts are all counted. A new attempt also marks the previous attempt's row `lost`, with `failure_category` `worker_lost` or `timeout`.
    - **Checkpoint at every `on_llm_start`, including the first.** The first one (`seq` 0) records the starting point: the SDK saves the run's input to the session before the first model call, so the instructions are already in it. Later ones record each previous inner turn, whose items the SDK has saved by then. An unchanged workspace adds no new blob, because snapshots are content-addressed. A final checkpoint is also taken after `Runner.run` returns. A checkpoint does three things:
      1. packs the workspace deterministically: sorted entries, `mtime`, `uid` and `gid` set to 0, gzip `mtime=0`, `.skills/` excluded;
@@ -310,7 +310,7 @@ This is **not** a sandbox for untrusted code. Egress is not restricted, and a pi
 
 A small HTTP server that serves the OpenAI chat-completions endpoint, reached through `base_url_env` like the real one. CI uses it instead of a real model: deterministic stubs, §8.
 
-- **Replies come from the conversation, not from its own state.** A script maps "the number of tool results in the request's message history" to the next reply (a tool call or a final answer). Any worker that resends the same history therefore gets the same next step.
+- **Replies come from the conversation, not from its own state.** A script maps "the number of tool results in the request's message history" to the next reply, which is a tool call. A script's last step calls `finish_task` (J10). Any worker that resends the same history therefore gets the same next step.
 - **Proving the conversation survived.** The recovery check sends worker B the history recorded by worker A. A fresh session would restart at step 0, and the test would fail.
 - **A pause point.** A script step can be marked `pause`. The server holds that response until the test releases it through `POST /control/release`, and `GET /control/state` shows which steps were served. A pause is **one-shot**: once released, or once a second request for that step arrives, it is not applied again. The replacement worker is therefore not held.
 - **Request log.** The server records the requests it receives, so tests can check what the runner sent (tool list, instructions).
