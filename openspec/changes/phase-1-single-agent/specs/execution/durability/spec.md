@@ -7,7 +7,7 @@ A task survives the loss of its worker: session and workspace are checkpointed d
 ## ADDED Requirements
 
 ### Requirement: Mid-turn checkpoints
-After each inner turn that changed the workspace or the session, a harness turn SHALL record a checkpoint: a workspace snapshot stored through `BlobStore` and the session position, committed in `checkpoints`. A checkpoint SHALL count as acknowledged once its row is committed. (Plan: Phase 1 task 8; §4.2 separate workspace checkpoints, a transcript alone cannot restore files.)
+At the start of every inner turn, including the first, a harness turn SHALL record a checkpoint: a workspace snapshot stored through `BlobStore` and the session position, committed in `checkpoints`. A checkpoint SHALL count as acknowledged once its row is committed. (Plan: Phase 1 task 8; §4.2 separate workspace checkpoints, a transcript alone cannot restore files.)
 
 #### Scenario: Checkpoint after an edit
 - **WHEN** an inner turn writes a file in the workspace
@@ -15,6 +15,10 @@ After each inner turn that changed the workspace or the session, a harness turn 
 
 ### Requirement: Recovery on another worker
 When a worker stops mid-turn, the next attempt SHALL run on any worker of the template's queue and restore the latest checkpoint (ordered by turn, attempt and sequence), discarding session items recorded after it. Worker affinity SHALL NOT be required. (Plan: Phase 1 task 8 and accept criteria; §4.2; owner decision 2026-11-11: under Compose, stop one worker container.)
+
+#### Scenario: Lost before the first checkpoint
+- **WHEN** an attempt is lost before it records any checkpoint for the task
+- **THEN** the next attempt starts fresh from the input files and the instructions, with an empty session
 
 #### Scenario: Latest turn wins
 - **WHEN** turn 1 had three attempts and turn 2 has recorded its first checkpoint

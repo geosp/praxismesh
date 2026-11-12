@@ -18,7 +18,7 @@ One harness turn: a bounded harness invocation inside a Temporal Activity, confi
 - **THEN** the harness turn stops at the limit and returns `continue`
 
 ### Requirement: One HarnessRunner interface
-`run_harness_turn` SHALL call harness runners only through the `HarnessRunner` interface, and a shared conformance suite SHALL check any runner against the fake model: configuration from the template only, heartbeat and checkpoint hooks, cumulative usage and structured final output. Phase 1 SHALL implement the `openai_agents` runner; the Claude Agent SDK runner is deferred to its own change. (Plan: §4.1 stable `HarnessRunner` interface; §2 harness licensing; owner decisions 2026-11-11.)
+`run_harness_turn` SHALL call runners only through `HarnessRunner`, and a conformance suite SHALL check any runner against the fake model: template-only configuration, heartbeat and checkpoint hooks, cumulative usage, and ending through `finish_task`. Phase 1 SHALL implement only the `openai_agents` runner. (Plan: §4.1 stable `HarnessRunner` interface; §2 harness licensing; owner decisions 2026-11-11.)
 
 #### Scenario: Conformance
 - **WHEN** the conformance suite runs the `openai_agents` runner against the fake model

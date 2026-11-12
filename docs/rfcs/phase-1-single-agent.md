@@ -12,7 +12,7 @@ hardware: x86_64 workstation with Docker (no GPU); vLLM on the DGX Spark pair fo
 pre0_inputs: [harness decision (go, openai_agents default), model per tier (spark: qwen3.8-flash-next)]
 date: 2026-11-11
 authors: [owner, coding agent]
-revision: 3 (defers the Claude runner; addresses the design review of e437d0f and the targeted follow-up of 17b3d67, docs/reviews/phase-1/)
+revision: 4 (defers the Claude runner; addresses the design review of e437d0f and the targeted follow-ups of 17b3d67 and e138063, docs/reviews/phase-1/)
 ---
 
 # RFC: Phase 1 harness-in-Activity, single agent
@@ -36,11 +36,13 @@ APIs checked on 2026-11-11 by reading the installed packages (plan §2: verify l
 
 | Package | Version | What this design relies on |
 |---|---|---|
-| `openai-agents` | 0.24.0 (MIT) | `Runner.run(..., max_turns, session=, run_config=, hooks=)`, raising `MaxTurnsExceeded` at the limit <br> `Agent(output_type=)` for structured final output <br> `RunConfig(tracing_disabled, tool_not_found_behavior)`; the defaults are `False` and `"raise_error"` <br> `set_tracing_disabled()` and `set_trace_processors([])`: the first alone leaves the default backend processor registered <br> `RunHooks.on_llm_start/on_llm_end/on_tool_start/on_tool_end` <br> the `Session` protocol and `extensions.memory.SQLAlchemySession` <br> `MCPServerStdio` with `tool_filter` |
-| `temporalio` | 1.36.0 (MIT) | `start_workflow(id_reuse_policy, id_conflict_policy)`; **the default reuse policy is `ALLOW_DUPLICATE`** <br> heartbeat details, which the next attempt reads from `activity.info().heartbeat_details` <br> `WorkflowEnvironment` (time-skipping) and `Replayer` <br> `contrib.opentelemetry.TracingInterceptor` <br> `contrib.pydantic` |
+| `openai-agents` | 0.24.0 (MIT) | `Runner.run(..., max_turns, session=, run_config=, hooks=)`, raising `MaxTurnsExceeded` at the limit <br> `Agent(tool_use_behavior={"stop_at_tool_names": [...]})`, which ends the run when a named tool is called. **Not `Agent(output_type=)`:** it sends a JSON-schema `response_format` with every request, and on the Sparks the model then never finishes (0 of 3 runs, checked 2026-11-11; with a `finish_task` tool, 3 of 3) <br> `MCPServerStdio(client_session_timeout_seconds=)`, default 5 s <br> `RunConfig(tracing_disabled, tool_not_found_behavior)`; the defaults are `False` and `"raise_error"` <br> `set_tracing_disabled()` and `set_trace_processors([])`: the first alone leaves the default backend processor registered <br> `RunHooks.on_llm_start/on_llm_end/on_tool_start/on_tool_end` <br> the `Session` protocol and `extensions.memory.SQLAlchemySession` <br> `MCPServerStdio` with `tool_filter` |
+| `temporalio` | 1.36.0 (MIT) | `start_workflow(id_reuse_policy, id_conflict_policy)`; **the default reuse policy is `ALLOW_DUPLICATE`** <br> `activity.heartbeat()` returns `None`; a timeout or cancellation arrives as cancellation, with `activity.cancellation_details()` <br> heartbeat details, which the next attempt reads from `activity.info().heartbeat_details` <br> `WorkflowEnvironment` (time-skipping) and `Replayer` <br> `contrib.opentelemetry.TracingInterceptor` <br> `contrib.pydantic` |
 | `opentelemetry-sdk`, `-exporter-otlp` | 1.45.2 (Apache-2.0) | Spans and OTLP export. Checked on PyPI only, not installed yet; PR 1 verifies the API in use |
 
 ### Terms
+
+Section numbers such as §4.1 refer to the plan's sections, listed in the document map of [PROJECT_PLAN.md](../../PROJECT_PLAN.md). In the front matter, `tier: light` is the plan's lighter review process for Phases 0-2 (§7.0), `size` is a rough estimate, and `pre0_inputs` are the decisions made before Phase 0. "Phase closure" is the final gate of §8.
 
 | Term | Meaning |
 |---|---|
@@ -68,7 +70,7 @@ flowchart LR
   cli[praxis CLI] -->|start TaskWorkflow| t[(Temporal)]
   subgraph orch [orchestrator worker: queue orchestration]
     wf[TaskWorkflow]
-    acts[resolve_capabilities<br/>record_task / finish_task]
+    acts[resolve_capabilities<br/>record_task / complete_task]
   end
   subgraph w1 [worker container A: queue tpl.local-default]
     h1[run_harness_turn<br/>HarnessRunner]
@@ -104,12 +106,12 @@ flowchart LR
 
 **`WorkerTemplate`**
 - `name`, `version`, `harness`
-- `model`, `base_url_env` (the name of the `infra/.env` variable that holds the base URL, for example `VLLM_BASE_URL`), `api_style` (`openai` or `anthropic`), `allowed_model_overrides[]`
+- `model`, `base_url_env` (the name of the `infra/.env` variable that holds the base URL, for example `VLLM_BASE_URL`), `api_style` (`openai` in Phase 1), `allowed_model_overrides[]`
 - `mcp_servers[]` (names in the catalog), `skills_bundle`, `cli_tools[]`
 - `inner_max_turns`, `turn_timeout`, `heartbeat_timeout`
 - caps: `max_turns_cap`, `max_tokens_cap`, `max_wall_time_cap`
 - `secret_refs[]` (names of `infra/.env` variables that the worker may pass to named MCP servers)
-- `concurrency_per_pod`, and the resource and scaling fields of §5, which are stored but unused until Phase 7
+- `concurrency_per_pod` (used: the worker's maximum concurrent harness turns), and the resource and scaling fields of §5, which are stored but unused until Phase 7
 
 Derived `capabilities[]` (MCP tool names, skills, tools) are recorded with each task for audit. Nothing in Phase 1 schedules by them.
 
@@ -128,9 +130,9 @@ Derived `capabilities[]` (MCP tool names, skills, tools) are recorded with each 
 - Unknown fields are forbidden.
 - A request that names skills, MCP servers or tools is rejected. The CLI checks this, and `resolve_capabilities` checks it again.
 
-**Choosing the harness and the template.** The template's `harness` is authoritative. A profile whose `harness` differs from the chosen template's is rejected with `CapabilityError`.
+**Choosing the harness and the template.** The template's `harness` is authoritative. A profile whose `harness` differs from the chosen template's is rejected with `CapabilityError`. The schema keeps the §5 values (`claude_sdk`, `claude_cli`, `openai_agents`), but Phase 1 has a runner only for `openai_agents`. A template naming another harness is rejected when loaded.
 
-**Versions.** `registry/registry.lock` maps each template `name@version` to the sha256 of its file, and CI checks it. A file changed without a version bump fails to load, with a message that names the template. Each task records `template@version` and its hash in `TurnInput`. A worker whose loaded hash differs refuses the turn with a **retryable** `TemplateVersionUnavailable`. The turn waits, within its `schedule_to_close`, for a worker that has the task's version. This keeps one version within a task and preserves in-flight work (§4.10). Phase 1 deploys one version at a time; per-version queues arrive with rollouts in Phase 7.
+**Versions.** `registry/registry.lock` maps each template `name@version` to the sha256 of its file. It is updated by `make registry-lock`, and CI checks it. A changed file with a new version gets a new lock entry; a changed file under an existing version fails; a template missing from the lock fails. A file changed without a version bump fails to load, with a message that names the template. Each task records `template@version` and its hash in `TurnInput`. A worker whose loaded hash differs refuses the turn with a **retryable** `TemplateVersionUnavailable`. The turn waits, within its `schedule_to_close`, for a worker that has the task's version. This keeps one version within a task. Phase 1 deploys one version at a time, so a task whose version is no longer deployed fails once its `schedule_to_close` passes, with the reason `template version unavailable`. Preserving in-flight work across rollouts (§4.10) needs per-version queues, which arrive in Phase 7. The hash check runs before the attempt row is written, so these refusals are not counted as attempts.
 
 ### `BlobStore` contract (§4.13, §5)
 
@@ -157,9 +159,9 @@ Every blob and every stored row carries a `retention_class` from its first write
 
 | Table | Unique / upsert key | Notes |
 |---|---|---|
-| `tasks` | `task_id` | `workflow_id`, `profile`, `template`, `template_version`, `template_hash`, `instructions_ref`, `status`, `result_ref`, timestamps, `retention_class` |
+| `tasks` | `task_id` | `workflow_id`, `run_id`, `profile`, `template`, `template_version`, `template_hash`, `instructions_ref`, `status`, `result_ref`, timestamps, `retention_class` |
 | `task_attempts` | (`task_id`, `turn`, `attempt`) | Inserted when an attempt **starts**, updated when it ends: `worker_identity`, `outcome`, `failure_category`, `tokens_in`, `tokens_out`, `tool_calls` |
-| `checkpoints` | (`task_id`, `turn`, `attempt`, `seq`) | `session_id`, `session_position`, `workspace_ref` |
+| `checkpoints` | (`task_id`, `turn`, `attempt`, `seq`) | `session_id` (the `SQLAlchemySession` key, which is the `task_id`), `session_position`, `workspace_ref` |
 | `idempotency_keys` | `key` | `task_id`, `tool`, `result` (small JSON) |
 | `blob_objects` | `key` | `checksum`, `bytes`, `content_type`, `retention_class` |
 | `sample_orders` | `order_id` | Written only by the sample MCP server. `idempotency_key` is unique. |
@@ -186,7 +188,7 @@ sequenceDiagram
     H-->>W: TurnOutcome(status, checkpoint, usage incl. lost attempts, summary)
     W->>W: account turns, tokens, wall time
   end
-  W->>A: finish_task -> TaskResult (outputs as BlobRefs)
+  W->>A: complete_task -> TaskResult (outputs as BlobRefs)
   W-->>C: TaskResult
 ```
 
@@ -194,7 +196,7 @@ sequenceDiagram
 - **Task ID:** the CLI mints `task_id` (`task-` plus a UUIDv4) unless the request gives one. The Workflow ID is the `task_id`.
 - **One task, one run:**
   - **Temporal:** the Workflow starts with `id_reuse_policy=REJECT_DUPLICATE` and `id_conflict_policy=FAIL`. Temporal only remembers closed runs during the namespace's retention (72h), so this alone is not enough.
-  - **The `tasks` table is the lasting authority.** `record_task` is the Workflow's first Activity. It inserts the task's row, keyed by `task_id`, with `audit` retention. If a row already exists with a different Workflow run ID, it fails with a non-retryable `TaskAlreadyExists` before any harness turn runs.
+  - **The `tasks` table is the lasting authority.** `record_task` runs right after `resolve_capabilities` and before any harness turn. It inserts the task's row, keyed by `task_id`, with the Workflow's `run_id` and `audit` retention. If a row already exists with a different `run_id`, it fails with a non-retryable `TaskAlreadyExists`. A retry of `record_task` within the same run finds its own `run_id` and succeeds.
   - **Effect:** a resubmitted `task_id` never reaches its old idempotency keys, however long after the first run.
 - **Instructions and input files** are uploaded as `task` blobs before the start. Workflow inputs carry only IDs and `BlobRef`s.
 
@@ -207,16 +209,20 @@ sequenceDiagram
 **Outcomes and budgets**
 - A turn returns `done`, `continue` (its inner-turn limit was reached and work remains) or `needs_input`.
 - `needs_input` ends the task with status `needs_input`. That status is terminal in Phase 1; answering questions arrives in Phase 2.
-- **Usage** in a `TurnOutcome` includes the tokens and tool calls of earlier lost attempts of the same turn, read from their last heartbeat details. Budgets therefore count work done by a worker that was later lost.
+- **Usage** in a `TurnOutcome` includes the tokens and tool calls of earlier lost attempts of the same turn, read from their last heartbeat details. Budgets therefore count work done by a worker that was later lost, up to its last heartbeat.
 - **Wall time** is checked between turns. A single turn can overrun it by at most its own `schedule_to_close`.
 - **Exhausted budget:** the task ends `failed` with the reason, and the last checkpoint is kept.
+- **A turn that fails for good** (retries exhausted, `schedule_to_close` passed, or a non-retryable error): the Workflow still runs `complete_task`. The task ends `failed`, with the error's category as the reason, and the last checkpoint is kept.
+- **Usage after the last heartbeat:** a lost attempt's usage after its last heartbeat is not counted. That is at most `heartbeat_timeout / 3` of work.
 
 **Tests:** replay tests against committed histories, using the same pattern as `tests/test_hello_replay.py`, and time-skipping tests with mocked Activities: retry, timeout, budget exhaustion, `needs_input`, and a non-retryable error (§8).
 
 ### `run_harness_turn` (§4.1)
 
 1. **Start.** Upsert the `task_attempts` row as started. Reject the turn if the template hash in `TurnInput` differs from the one this worker loaded.
-2. **Restore.** Find the newest checkpoint for the task by reading `checkpoints`, which is authoritative: order by `turn`, then `attempt`, then `seq`, all descending. Unpack its workspace snapshot into a fresh directory under the worker's scratch volume; turn 1 starts from the task's input files. Restore the session, then truncate it to the checkpoint's `session_position` (see Sessions).
+2. **Restore.** Find the newest checkpoint for the task by reading `checkpoints`, which is authoritative: order by `turn`, then `attempt`, then `seq`, all descending.
+   - **A checkpoint exists:** unpack its workspace snapshot into a fresh directory under the worker's scratch volume. Restore the session, then truncate it to the checkpoint's `session_position` (see Session).
+   - **No checkpoint exists for the task** (the first attempt of turn 1, or an attempt lost before its first checkpoint): start fresh. Clear the session, download the input files from the `tasks` row's blob refs into the workspace root, and read the instructions from `instructions_ref`. The attempt then behaves as the first attempt of turn 1, whatever its own turn and attempt numbers.
 3. **Configure, from the template only.**
      - the model client from `base_url_env`;
      - the MCP servers, spawned as stdio subprocesses with `tool_filter` set to `tools_allowed`, and an environment of their literal `env` plus `PRAXIS_TASK_ID` plus only their declared `secret_env`;
@@ -227,17 +233,17 @@ sequenceDiagram
      - has the worker call `set_tracing_disabled(True)` and `set_trace_processors([])` at startup. The second call removes the SDK's default processor, which the first alone leaves registered, so nothing is ever sent to the SDK's trace backend;
      - logs refusals in `on_llm_end`, by comparing the tool names the model requested with the allowed ones. No hook fires for a tool that was not found.
 4. **Run** for at most `inner_max_turns` inner turns.
-   - **Input to `Runner.run`:** on turn 1, the instructions. On later turns and on resumed attempts, the session already holds the conversation, so the input is a fixed message: "Continue the task from where it stopped."
+   - **Input to `Runner.run`:** when starting fresh, the instructions. Otherwise the restored session already holds the instructions and the conversation, so the input is a fixed message: "Continue the task from where it stopped."
    - **Budget inside a turn:** at each `on_llm_start`, if the tokens used reach the `TurnInput`'s remaining budget, the turn ends with `continue`, and the Workflow then stops the task. A turn can therefore overrun its token budget by at most one model call.
    - **Inner-turn limit:** `Runner.run` raises `MaxTurnsExceeded` at the limit. That path also takes the final checkpoint, and maps to `continue`.
-   - **Done or needs input:** the agent ends with structured output (`Agent(output_type=FinalReport)`: `status` `done` or `needs_input`, `summary`, `questions[]`), which decides the turn's status.
-   - **Heartbeat** every `heartbeat_timeout / 3`. The details are the latest checkpoint ID, the inner turn, and **cumulative** tool-call and token counts for the turn. An attempt seeds its counts from the previous attempt's last heartbeat details, so several lost attempts are all counted. A new attempt also marks the previous attempt's row `lost`, with `failure_category` `worker_lost` or `timeout`.
-   - **Checkpoint** after every inner turn. The hook point is the **next `on_llm_start`**: by then the SDK has saved the previous turn's items to the session. An unchanged workspace adds no new blob, because snapshots are content-addressed. A final checkpoint is also taken after `Runner.run` returns. A checkpoint does three things:
+   - **Done or needs input:** the agent ends by calling the built-in `finish_task(status, summary, questions[])` tool, with `status` `done` or `needs_input`. The run stops on that call (`tool_use_behavior={"stop_at_tool_names": ["finish_task"]}`), and its arguments decide the turn's status. A run that ends without calling it counts as `continue`.
+   - **Heartbeat** (`activity.heartbeat()`, which returns nothing) every `heartbeat_timeout / 3`. The details are the latest checkpoint ID, the inner turn, and **cumulative** tool-call and token counts for the turn. An attempt seeds its counts from the previous attempt's last heartbeat details, so several lost attempts are all counted. A new attempt also marks the previous attempt's row `lost`, with `failure_category` `worker_lost` or `timeout`.
+   - **Checkpoint at every `on_llm_start`, including the first.** The first one (`seq` 0) records the starting point: the SDK saves the run's input to the session before the first model call, so the instructions are already in it. Later ones record each previous inner turn, whose items the SDK has saved by then. An unchanged workspace adds no new blob, because snapshots are content-addressed. A final checkpoint is also taken after `Runner.run` returns. A checkpoint does three things:
      1. packs the workspace deterministically: sorted entries, `mtime`, `uid` and `gid` set to 0, gzip `mtime=0`, `.skills/` excluded;
      2. `put`s it off the event loop;
      3. inserts the `checkpoints` row with the session's current item count.
 5. **Finish.**
-   - **Outputs:** upload the request's `outputs[]` as `audit` blobs on `done`.
+   - **Outputs:** on `done`, upload the request's `outputs[]` as `audit` blobs. Their `BlobRef`s, and the `finish_task` summary and questions, go into the `TurnOutcome`, from which `complete_task` builds the `TaskResult`. `make task-output ID=… PATH=…` downloads an output.
    - **Attempt row:** update it with the outcome and the counts.
    - **Return** a `TurnOutcome` with a summary of at most 2 KB.
 
@@ -247,7 +253,7 @@ sequenceDiagram
 
 **Overlapping attempts.** An attempt that outlives its heartbeat timeout can run alongside its replacement.
 - **Checkpoints** are keyed by attempt, and restore prefers the newest, so a late checkpoint from an older attempt never wins.
-- **Self-fencing:** at every `on_llm_start`, an attempt checks `task_attempts` for a newer attempt of its turn and stops if it finds one. It also stops when its heartbeat call reports the attempt cancelled or timed out.
+- **Self-fencing:** at every `on_llm_start`, an attempt checks `task_attempts` for a newer attempt of its turn and stops if it finds one. It also stops when it receives cancellation, which is how Temporal delivers a heartbeat timeout (`activity.cancellation_details().timed_out`).
 - **Remaining window:** at most one in-flight model call and its tool calls from the old attempt can still reach the shared session or `record_order`. Idempotency keys cover the side effects, and the threat model lists the rest as an accepted risk.
 - **Results:** Temporal discards the older attempt's Activity result.
 
@@ -323,7 +329,7 @@ A small HTTP server that serves the OpenAI chat-completions endpoint, reached th
 5. Restart the stopped worker and clean up.
 
 `test_side_effect_not_repeated_after_crash` needs a different pause point, because a held model response always comes after the checkpoint that follows a tool call. In test mode only (`SAMPLE_MCP_PAUSE_AFTER_EFFECT=1`), the sample MCP server commits `record_order`'s effect and its key, then holds the tool response until the test releases it.
-- **The crash:** the test stops the worker while the response is held, so no checkpoint has recorded the call.
+- **The crash:** the test kills the worker with `docker kill` (SIGKILL) while the response is held, so no checkpoint has recorded the call and no graceful shutdown runs. The test template sets the sample server's `client_session_timeout_seconds` above the hold time, so the held call is not turned into a timeout error first. The pause applies only to the first call that commits an effect.
 - **On the other worker:** the restored session ends before the call. The fake model, answering from that history, issues the same `record_order` again.
 - **The check:** `sample_orders` has one row, and the second call returned the recorded result. The pause is one-shot, so it is not applied to the second call.
 
@@ -335,7 +341,7 @@ A small HTTP server that serves the OpenAI chat-completions endpoint, reached th
   - `worker-a` and `worker-b` poll `tpl.local-default`;
   - each worker has its own scratch volume, plus the database, S3 and model settings from `infra/.env`.
 - **New `infra/.env` keys:** `S3_BUCKET`, `PRAXIS_SAMPLE_DB_URL` and `OTEL_EXPORTER_OTLP_ENDPOINT`. They are added to `infra/.env.example` and to `check-prereqs.sh`'s list of known keys, and `OTEL_EXPORTER_OTLP_ENDPOINT` is optional. Compose passes `PRAXIS_SAMPLE_DB_URL` into the worker containers. The worker gives it only to the MCP servers whose `secret_env` names it.
-- **New targets:** `make workers-up`, `workers-down`, `task PROMPT=…`, `task-status ID=…` (status, turns, attempts and the latest checkpoint), `recovery-check` and `benchmark`.
+- **New targets:** `make workers-up`, `workers-down`, `task PROMPT=…`, `task-status ID=…` (status, turns, attempts and the latest checkpoint), `task-output ID=… PATH=…`, `registry-lock`, `recovery-check` and `benchmark`.
 
 ### Observability baseline
 
@@ -431,7 +437,7 @@ The mypy `files` list gains the new packages. `claude-agent-sdk` is not a Phase 
 | Agent benchmark suite | `quality/agent-benchmarks` | `make benchmark`, with the baseline recorded |
 | Threat model | `security/threat-model` | the controls-to-tests table |
 | `run_harness_turn` | `execution/harness-turn` | `test_harness_turn_scripted`, `test_prohibited_tool_returns_error`, `test_runner_conformance`, `test_heartbeat_details` |
-| Durable session, workspace snapshots, recovery on another worker | `execution/durability` | `make recovery-check`, `test_checkpoint_matches_session_position` |
+| Durable session, workspace snapshots, recovery on another worker | `execution/durability` | `make recovery-check`, `test_checkpoint_matches_session_position`, `test_restore_prefers_latest_turn`, `test_restore_without_checkpoint` |
 | `TaskWorkflow` | `execution/task-workflow` | `test_task_workflow_*` (time-skipping), `test_task_workflow_replay`, `test_duplicate_task_id_rejected` (in Temporal and after retention, through `tasks`) |
 | Sample skill and MCP tool, negative capability test | `agents/capability-model` | `test_forbidden_skill_or_tool_rejected` |
 | No duplicated side effects | `execution/durability` | `test_side_effect_not_repeated_after_crash` |
@@ -465,6 +471,7 @@ The mypy `files` list gains the new packages. `claude-agent-sdk` is not a Phase 
   - schemas and loaders, the lock file, negative capability;
   - `BlobStore` against the fake;
   - idempotency, session truncation;
+  - restore order (`test_restore_prefers_latest_turn`) and starting fresh (`test_restore_without_checkpoint`);
   - logs and traces, and SDK tracing off.
 - **Workflow tests:** `TaskWorkflow` replay and time-skipping tests.
 - **`stack` job:**
