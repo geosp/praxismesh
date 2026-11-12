@@ -27,12 +27,15 @@ value() {
     sed -n "s/^$1=//p" "$env_file" | tail -n 1
 }
 
-# A Compose project name: what Compose accepts (lowercase), never empty.
+# The Compose project name, from this env file only: a value in the shell (for
+# example exported by sourcing another checkout's infra/.env) is ignored, so a
+# checkout never acts on another checkout's stack. Never empty; lowercase, as
+# Compose requires.
 project_name() {
-    name=${COMPOSE_PROJECT_NAME:-}
-    [ -n "$name" ] || { [ -f "$env_file" ] && name=$(value COMPOSE_PROJECT_NAME); }
+    name=""
+    [ -f "$env_file" ] && name=$(value COMPOSE_PROJECT_NAME)
     if [ -z "$name" ]; then
-        echo "error: COMPOSE_PROJECT_NAME is not set (in ${env_file} or the shell); refusing to guess which stack to act on" >&2
+        echo "error: COMPOSE_PROJECT_NAME is not set in ${env_file}; refusing to guess which stack to act on" >&2
         return 1
     fi
     if ! printf '%s\n' "$name" | grep -qE '^[a-z0-9][a-z0-9_-]*$'; then
@@ -68,6 +71,7 @@ if [ ! -f "$env_file" ]; then
 fi
 
 n=0
+seen=" "
 while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
     case "$line" in
@@ -78,10 +82,15 @@ while IFS= read -r line || [ -n "$line" ]; do
     if [ "$key" = "$line" ] || ! printf '%s\n' "$known" | tr ' ' '\n' | grep -qxF "$key"; then
         echo "error: ${env_file} line ${n}: expected KEY=value with a known KEY (see infra/.env.example)" >&2
         status=1
+    elif case "$seen" in *" $key "*) true ;; *) false ;; esac then
+        # Compose keeps the last value and uv the first, so a repeat would split them.
+        echo "error: ${env_file} line ${n}: ${key} is already set on an earlier line" >&2
+        status=1
     elif ! printf '%s\n' "${line#*=}" | grep -qE '^[A-Za-z0-9._:/@%+,=-]*$'; then
         echo "error: ${env_file} line ${n}: ${key}'s value may use only A-Z a-z 0-9 . _ : / @ % + , = -" >&2
         status=1
     fi
+    case "$line" in *=*) seen="$seen${line%%=*} " ;; esac
 done <"$env_file"
 
 for var in $required; do

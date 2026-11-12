@@ -4,11 +4,27 @@
 # Make never reads infra/.env itself. Docker Compose reads it with --env-file
 # (including COMPOSE_PROJECT_NAME), and the tests and migrations get it through
 # `uv run --env-file`. infra/check-prereqs.sh keeps it to a syntax both read the
-# same way. A variable set in your shell overrides the file for both.
+# same way. Other variables set in your shell override the file for both, but the
+# project name never does (below).
 
-ENV_FILE ?= infra/.env
+# `make <target> ENV_FILE=...` selects another env file; an ENV_FILE exported in
+# the shell is ignored, like COMPOSE_PROJECT_NAME.
+ENV_FILE := infra/.env
 export ENV_FILE
-COMPOSE := docker compose --env-file $(ENV_FILE) -f infra/docker-compose.yml
+
+# The Compose project name comes only from this checkout's env file. A value in
+# the shell (for example from sourcing another checkout's infra/.env) is
+# replaced for every command make runs, so no target can act on another
+# checkout's stack. Without a valid name, every target refuses.
+PROJECT_NAME := $(shell sh infra/check-prereqs.sh --project-only $(ENV_FILE) 2>/dev/null)
+ifneq ($(PROJECT_NAME),)
+export COMPOSE_PROJECT_NAME := $(PROJECT_NAME)
+else
+unexport COMPOSE_PROJECT_NAME
+endif
+COMPOSE := docker compose -p "$(PROJECT_NAME)" --env-file $(ENV_FILE) -f infra/docker-compose.yml
+# Prints why there is no project name, then fails.
+REQUIRE_PROJECT := [ -n "$(PROJECT_NAME)" ] || { sh infra/check-prereqs.sh --project-only $(ENV_FILE) >/dev/null; exit 1; }
 UV := uv run --env-file $(ENV_FILE)
 # Long-running services; the one-shot jobs are checked separately.
 SERVICES := db temporal temporal-ui s3
@@ -30,11 +46,6 @@ help:
 
 check:
 	@sh infra/check-prereqs.sh $(ENV_FILE)
-
-# down and reset need only the project name (from the shell, else infra/.env),
-# so they still run when other settings are invalid. Without a valid name they
-# refuse rather than guess, so they never act on another checkout's stack.
-PROJECT = $$(sh infra/check-prereqs.sh --project-only $(ENV_FILE))
 
 # `docker compose up --wait` reports a one-shot job that exited 0 as a failure,
 # so wait on the long-running services, then run the namespace job and check
@@ -62,12 +73,16 @@ up: check
 	done
 	@echo "stack is up; run 'make status' for addresses and health"
 
+# down and reset need only the project name, so they still run when other
+# settings are invalid.
 down:
-	@name=$(PROJECT) && docker compose -p "$$name" down
+	@$(REQUIRE_PROJECT)
+	@docker compose -p "$(PROJECT_NAME)" down
 
 reset:
-	@name=$(PROJECT) && echo "deleting the stack and data volumes of project $$name" && \
-		docker compose -p "$$name" down --volumes --remove-orphans
+	@$(REQUIRE_PROJECT)
+	@echo "deleting the stack and data volumes of project $(PROJECT_NAME)"
+	@docker compose -p "$(PROJECT_NAME)" down --volumes --remove-orphans
 
 status: check
 	@$(UV) python -m tests.support.status
