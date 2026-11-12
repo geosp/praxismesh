@@ -29,7 +29,7 @@ When a worker stops mid-turn, the next attempt SHALL run on any worker of the te
 - **THEN** worker B resumes the same task (same task and Workflow IDs), the edits are present, the conversation continues, and the task completes
 
 ### Requirement: No duplicated side effects
-Every tool with an effect outside the workspace SHALL take an idempotency key derived from the task ID, the tool name and its canonical arguments, and SHALL apply its effect at most once per key, returning the recorded result on a repeat. (Plan: Phase 1 accept criteria; §4.2 idempotency keys, test pod termination between side effect and checkpoint.)
+Every MCP tool with an effect outside the workspace SHALL take an idempotency key derived from the task ID, the tool name and its canonical arguments, and SHALL apply its effect at most once per key, returning the recorded result on a repeat. `run_command` is treated as workspace-only in Phase 1; its effects outside the workspace are an accepted risk until the Phase 5 sandbox. (Plan: Phase 1 accept criteria; §4.2 idempotency keys, test pod termination between side effect and checkpoint.)
 
 #### Scenario: Crash between effect and checkpoint
 - **WHEN** a worker is stopped while the sample server holds `record_order`'s response after committing its effect, and the resumed task calls it again with the same arguments

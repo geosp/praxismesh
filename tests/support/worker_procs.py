@@ -1,13 +1,15 @@
 """Workers as real host processes, for the recovery tests (RFC: Recovery check).
 
-Each worker runs `python -m workers.main` in its own process group, so a test can
-SIGKILL a worker and its MCP subprocesses, which is what a lost container looks
-like to Temporal: the heartbeats stop. The tests use a generated registry (a copy
+Each worker runs `python -m workers.main`. A test can SIGKILL a worker and every
+process below it (MCP servers included), which is what a lost container looks
+like to Temporal: the heartbeats stop. It can also SIGSTOP and SIGCONT one, to
+bring a superseded attempt back. The tests use a generated registry (a copy
 of registry/ with a short heartbeat timeout and the sample server's test pause).
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import signal
@@ -47,6 +49,21 @@ def make_test_registry(target: Path, pause_file: Path) -> Path:
     return target
 
 
+def descendants(pid: int) -> list[int]:
+    """Every process below `pid`, from /proc (Linux; the recovery tests' host)."""
+    children: dict[int, list[int]] = {}
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        with contextlib.suppress(OSError, ValueError, IndexError):
+            fields = stat.read_text().rsplit(")", 1)[1].split()
+            children.setdefault(int(fields[1]), []).append(int(stat.parent.name))
+    found, queue = [], [pid]
+    while queue:
+        for child in children.get(queue.pop(), []):
+            found.append(child)
+            queue.append(child)
+    return found
+
+
 @dataclass
 class WorkerProcs:
     env: dict[str, str] = field(repr=False)  # holds credentials: never print it
@@ -71,15 +88,30 @@ class WorkerProcs:
         return next(name for name, p in self.procs.items() if p.pid == pid)
 
     def kill(self, name: str) -> None:
+        """SIGKILL a worker and every process it started. The MCP stdio client
+        starts servers in their own session, so the process group alone would
+        miss them (informal review F9)."""
         proc = self.procs[name]
-        os.killpg(proc.pid, signal.SIGKILL)
+        for pid in [*descendants(proc.pid), proc.pid]:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
         proc.wait(timeout=10)
 
+    def stop(self, name: str) -> None:
+        """SIGSTOP a worker and its children: it freezes, then may come back."""
+        for pid in [self.procs[name].pid, *descendants(self.procs[name].pid)]:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGSTOP)
+
+    def resume(self, name: str) -> None:
+        for pid in [self.procs[name].pid, *descendants(self.procs[name].pid)]:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGCONT)
+
     def stop_all(self) -> None:
-        for proc in self.procs.values():
+        for name, proc in self.procs.items():
             if proc.poll() is None:
-                os.killpg(proc.pid, signal.SIGKILL)
-                proc.wait(timeout=10)
+                self.kill(name)
 
 
 @contextmanager

@@ -18,7 +18,8 @@ from sqlalchemy import text
 
 from common.blob_store.s3 import S3BlobStore
 from common.persistence.repositories import RecordingBlobStore, make_engine
-from common.schemas import TaskResult
+from common.schemas import BlobRef, TaskResult
+from harness_activity import workspace as ws
 from orchestrator.submit import prepare_task, start_task
 from registry.loader import load_registry
 from tests.support.fake_model import FakeModel
@@ -192,5 +193,63 @@ async def test_checkpoint_matches_session_position(
     # seq 0: the instructions; seq 1: + the write_file call and its result;
     # seq 2 (final): + the finish_task call and its result.
     assert positions == [(0, 1), (1, 3), (2, 5)]
+    # The snapshots match: seq 0 is the starting workspace, seq 1 has the edit.
+    refs = await query(
+        "SELECT seq, workspace_ref FROM checkpoints WHERE task_id = :t ORDER BY seq", t=task_id
+    )
+    s3 = S3BlobStore.from_env()
+    for seq, ref in refs[:2]:
+        root = tmp_path / f"snapshot-{seq}"
+        ws.unpack(await s3.get(BlobRef.model_validate(ref)), root)
+        assert (root / "a.txt").exists() == (seq == 1)
     first = fake.state.requests[0]
     assert first["messages"][-1] == {"role": "user", "content": INSTRUCTIONS}
+
+
+async def test_superseded_attempt_comes_back_and_writes_nothing(
+    tmp_path: Path, recovery_env: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Freeze the worker holding the attempt past its heartbeat timeout, let the
+    other worker finish, then let the frozen one run again: it must write no
+    checkpoint and no attempt outcome (informal review F8).
+
+    Two mechanisms guarantee this end to end: Temporal cancels the resumed
+    attempt (its heartbeat timed out), and the attempt fences itself at its next
+    model call. This test checks the property; the fence alone is pinned by
+    test_harness_activity.py::test_superseded_attempt_writes_nothing."""
+    registry, _ = recovery_env
+    steps: list[dict[str, Any]] = [
+        {"tool": "write_file", "args": {"path": "notes.txt", "content": "first\n"}},
+        {"tool": "lookup_price", "args": {"sku": "SKU-1"}, "pause": True},
+        {"tool": "finish_task", "args": {"status": "done", "summary": "Done once."}},
+    ]
+    with (
+        FakeModel(steps) as fake,
+        worker_processes(tmp_path / "scratch", fake.base_url, registry) as workers,
+    ):
+        monkeypatch.setenv("PRAXIS_QUEUE_PREFIX", workers.env["PRAXIS_QUEUE_PREFIX"])
+        task_id, handle = await submit(registry, ["notes.txt"], workers.env)
+
+        async def paused() -> bool:
+            return fake.state.paused_step == 1
+
+        await wait_for(paused, "the held model call")
+        frozen = await holder(workers, task_id)
+        workers.stop(frozen)
+        result = TaskResult.model_validate(await asyncio.wait_for(handle.result(), 120))
+        old = await query(
+            "SELECT count(*) FROM checkpoints WHERE task_id = :t AND attempt = 1", t=task_id
+        )
+        fake.state.release.set()  # the old attempt's held call now gets its answer
+        workers.resume(frozen)
+        await asyncio.sleep(8)  # time for it to run on, and be cancelled or fence itself
+        after = await query(
+            "SELECT count(*) FROM checkpoints WHERE task_id = :t AND attempt = 1", t=task_id
+        )
+        rows = await query(
+            "SELECT attempt, outcome FROM task_attempts WHERE task_id = :t ORDER BY attempt",
+            t=task_id,
+        )
+    assert result.status == "succeeded" and result.attempts == 2
+    assert after == old  # no late checkpoint from the superseded attempt
+    assert rows == [(1, "lost"), (2, "done")]

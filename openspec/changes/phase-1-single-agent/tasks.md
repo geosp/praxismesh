@@ -38,6 +38,12 @@ Nits from `docs/reviews/phase-1/design-review-followup-3.md` to resolve in the P
 - [x] D.5 J17: add the unit check named in the report to task 2.5 (PR 2).
 - [x] D.6 J18: link the `finish_task`/`output_type` run from the RFC, add its decision-log row and a Risks row (PR 2).
 
+## Carried from the informal durability review (PR 3)
+
+- [ ] R.1 F10: when a harness turn fails for good, add its last heartbeated tokens and attempts to the `TaskResult` (PR 4).
+- [ ] R.2 F12: close the last attempt's row on a terminal failure, with its real category (PR 4).
+- [ ] R.3 F15: a recovery case with an edit and an effect in one task, and a loss in turn 2 or later (PR 4).
+
 ## 4. Evidence (PR 4)
 
 - [ ] 4.1 Benchmark suite in `tests/benchmarks/agent_tasks/`, `make benchmark`, the baseline on the Sparks in `docs/benchmarks/`, and the regression check.
