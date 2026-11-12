@@ -26,6 +26,8 @@ with workflow.unsafe.imports_passed_through():
     )
 
 NON_RETRYABLE = [
+    "AttemptsExhausted",
+    "HarnessInputError",
     "CapabilityError",
     "BudgetExceeded",
     "InvalidTaskInput",
@@ -34,7 +36,10 @@ NON_RETRYABLE = [
 ]
 SHORT = timedelta(seconds=30)
 SHORT_RETRY = RetryPolicy(maximum_attempts=5, non_retryable_error_types=NON_RETRYABLE)
-TURN_ATTEMPTS = 5
+# Unlimited Temporal attempts per turn, bounded by schedule_to_close: the Activity
+# itself stops after 5 real attempts, so template-version refusals (which a worker
+# of the right version will take later) do not use them up (review F7).
+TURN_ATTEMPTS = 0
 
 
 def failure_category(error: ActivityError) -> str:

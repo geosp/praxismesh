@@ -14,8 +14,8 @@ SKILLS_DIR = ".skills"
 
 def mount(bundle: Path, workspace: Path) -> Path:
     target = workspace / SKILLS_DIR / bundle.name
-    if target.exists():
-        for p in target.rglob("*"):
+    if target.exists():  # re-mount: make the old copy writable again, then replace it
+        for p in [target, *target.rglob("*")]:
             p.chmod(p.stat().st_mode | stat.S_IWUSR)
         shutil.rmtree(target)
     shutil.copytree(bundle, target)

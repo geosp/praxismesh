@@ -130,7 +130,7 @@ class AttemptRepository:
                 text(
                     """
                     UPDATE task_attempts SET outcome = 'lost',
-                        failure_category = COALESCE(failure_category, 'worker_lost'),
+                        failure_category = COALESCE(failure_category, 'lost_or_timed_out'),
                         ended_at = CURRENT_TIMESTAMP
                     WHERE task_id = :t AND turn = :turn AND attempt < :a AND outcome = 'started'
                     """
@@ -170,6 +170,7 @@ class AttemptRepository:
                         tokens_in = :ti, tokens_out = :to, tool_calls = :tc,
                         ended_at = CURRENT_TIMESTAMP
                     WHERE task_id = :t AND turn = :turn AND attempt = :a
+                        AND outcome = 'started'
                     """
                 ),
                 {

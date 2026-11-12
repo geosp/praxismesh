@@ -40,3 +40,10 @@ def test_symlinks_are_not_archived(tmp_path: Path) -> None:
     (tmp_path / "escape").symlink_to("/etc/passwd")
     workspace.unpack(workspace.pack(tmp_path), tmp_path / "out")
     assert not (tmp_path / "out" / "escape").exists()
+
+
+def test_skills_can_be_mounted_again(tmp_path: Path) -> None:
+    bundle = REGISTRY_ROOT / "skills" / "order-desk"
+    skills.mount(bundle, tmp_path)
+    mounted = skills.mount(bundle, tmp_path)
+    assert (mounted / "SKILL.md").is_file()
