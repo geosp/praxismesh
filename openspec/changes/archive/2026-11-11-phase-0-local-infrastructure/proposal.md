@@ -40,4 +40,4 @@ Not in scope: product code (gateway, orchestrator, harness workers), Kubernetes,
 - New runtime dependencies (Python, pinned in `uv.lock`): `temporalio`, `alembic`, `sqlalchemy[asyncio]` with `asyncpg` (not LGPL `psycopg`), `boto3`, `httpx`; dev: `boto3-stubs[s3]`.
 - Container images, pinned by tag and digest: ParadeDB `0.26.6-pg16` (AGPL-3.0, run unmodified; see `docs/release.md`), Temporal Server and admin tools 1.32.2, Temporal UI 2.58.1, SeaweedFS `chrislusf/seaweedfs:4.53`.
 - Tracking issue: #34.
-- Design: [docs/rfcs/phase-0-local-infrastructure.md](../../../docs/rfcs/phase-0-local-infrastructure.md).
+- Design: [docs/rfcs/phase-0-local-infrastructure.md](../../../../docs/rfcs/phase-0-local-infrastructure.md).

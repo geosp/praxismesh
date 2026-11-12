@@ -5,7 +5,7 @@ tier: light
 status: accepted
 phase: 0
 issue: "#34"
-openspec_change: openspec/changes/phase-0-local-infrastructure
+openspec_change: openspec/changes/archive/2026-11-11-phase-0-local-infrastructure (specs now in openspec/specs/)
 plan_sections: [Phase 0, "§1", "§2", "§4.13", "§4.16", "§5", "§6", "§8"]
 size: S
 hardware: x86_64 workstation with Docker (no GPU needed); vLLM on the DGX Spark pair, reached over the LAN

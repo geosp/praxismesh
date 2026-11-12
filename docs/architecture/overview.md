@@ -4,7 +4,7 @@ Cumulative, one section per phase (plan §4.17, §7.0 light tier). Each section 
 
 ## Phase 0: local infrastructure
 
-**Describes:** `f0337f1` (PR #40) plus the final fixes on branch `fix/34-phase-0-final-fixes` (issue #34). **Design:** [RFC](../rfcs/phase-0-local-infrastructure.md), [ADR-0002](../adr/0002-paradedb-as-postgresql-server.md). **Evidence:** [docs/demos/phase-0.md](../demos/phase-0.md).
+**Describes:** `130f3d4` on `main` (PR #42), the commit at which Phase 0 closed (issue #34). **Design:** [RFC](../rfcs/phase-0-local-infrastructure.md), [ADR-0002](../adr/0002-paradedb-as-postgresql-server.md). **Evidence:** [docs/demos/phase-0.md](../demos/phase-0.md).
 
 ### Components
 
