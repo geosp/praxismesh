@@ -8,8 +8,10 @@ Re-record the replay fixture after a deliberate Workflow change:
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -17,7 +19,7 @@ from typing import Any
 from temporalio import activity
 from temporalio.client import Client, WorkflowHistory
 from temporalio.contrib.pydantic import pydantic_data_converter
-from temporalio.exceptions import TimeoutError, TimeoutType
+from temporalio.exceptions import ApplicationError, TimeoutError, TimeoutType
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Replayer, Worker
 
@@ -32,7 +34,7 @@ from common.schemas import (
     TurnInput,
     TurnOutcome,
 )
-from orchestrator.workflow import TaskWorkflow, heartbeated_tokens
+from orchestrator.workflow import TaskWorkflow, failed_turn_usage
 
 FIXTURE = Path(__file__).parent / "fixtures" / "task_workflow_history.json"
 QUEUE = "orchestration-test"
@@ -71,17 +73,21 @@ def start(task_id: str = "task-wf-00000001") -> TaskStart:
     )
 
 
-def activities(behavior: TurnBehavior) -> list[Callable[..., Any]]:
+def activities(
+    behavior: TurnBehavior, resolved: ResolvedTask = RESOLVED
+) -> list[Callable[..., Any]]:
     @activity.defn(name="resolve_capabilities")
     async def resolve_capabilities(s: TaskStart) -> ResolvedTask:
-        return RESOLVED
+        return resolved
 
     @activity.defn(name="record_task")
     async def record_task(payload: RecordTaskInput) -> None:
         return None
 
     @activity.defn(name="run_harness_turn")
-    async def run_harness_turn(turn: TurnInput) -> TurnOutcome:
+    def run_harness_turn(turn: TurnInput) -> TurnOutcome:
+        # Synchronous, so a test can block it past its timeouts without
+        # blocking the worker's event loop.
         return behavior(turn, activity.info().attempt)
 
     @activity.defn(name="complete_task")
@@ -101,17 +107,21 @@ def activities(behavior: TurnBehavior) -> list[Callable[..., Any]]:
             attempts=p.attempts,
             tokens_in=p.tokens_in,
             tokens_out=p.tokens_out,
+            inner_turns=p.inner_turns,
         )
 
     return [resolve_capabilities, record_task, run_harness_turn, complete_task]
 
 
-async def run_task(behavior: TurnBehavior, task_id: str | None = None) -> tuple[TaskResult, str]:
-    return await _run(activities(behavior), task_id)
+async def run_task(
+    behavior: TurnBehavior, task_id: str | None = None, resolved: ResolvedTask = RESOLVED
+) -> tuple[TaskResult, str]:
+    return await _run(activities(behavior, resolved), task_id)
 
 
 async def _run(acts: list[Callable[..., Any]], task_id: str | None) -> tuple[TaskResult, str]:
     task_id = task_id or f"task-wf-{uuid.uuid4()}"
+    executor = ThreadPoolExecutor(max_workers=8)
     async with await WorkflowEnvironment.start_time_skipping(
         data_converter=pydantic_data_converter
     ) as env:
@@ -130,12 +140,14 @@ async def _run(acts: list[Callable[..., Any]], task_id: str | None) -> tuple[Tas
                 task_queue=QUEUE,
                 workflows=[TaskWorkflow],
                 activities=acts,
+                activity_executor=executor,
                 identity="test-orchestrator",
             ),
             Worker(
                 client,
                 task_queue="tpl.local-default",
                 activities=acts,
+                activity_executor=executor,
                 identity="test-harness",
             ),
         ):
@@ -218,13 +230,58 @@ async def test_task_workflow_replay() -> None:
     assert result.replay_failure is None
 
 
-def test_failed_turn_counts_heartbeated_tokens() -> None:
-    """A turn that failed for good still counts what its last attempt heartbeated
-    (informal review F10)."""
+def test_failed_turn_usage_from_either_error() -> None:
+    """A turn that failed for good still counts its usage: from the last heartbeat
+    of a timeout, or from the details of an error the Activity raised (gate F1)."""
     timed_out = TimeoutError(
         "heartbeat timeout",
         type=TimeoutType.HEARTBEAT,
-        last_heartbeat_details=[{"tokens_in": 50, "tokens_out": 5, "tool_calls": 1}],
+        last_heartbeat_details=[{"tokens_in": 50, "tokens_out": 5, "inner_turns": 2}],
     )
-    assert heartbeated_tokens(timed_out) == (50, 5)
-    assert heartbeated_tokens(RuntimeError("other")) == (0, 0)
+    assert failed_turn_usage(timed_out) == (50, 5, 2, 1)
+    raised = ApplicationError(
+        "lost 5 times",
+        {"tokens_in": 70, "tokens_out": 7, "inner_turns": 3, "attempts": 5},
+        type="AttemptsExhausted",
+        non_retryable=True,
+    )
+    assert failed_turn_usage(raised) == (70, 7, 3, 5)
+    assert failed_turn_usage(RuntimeError("other")) == (0, 0, 0, 1)
+
+
+async def test_attempts_exhausted_counts_usage_and_attempts() -> None:
+    def behavior(t: TurnInput, attempt: int) -> TurnOutcome:
+        raise ApplicationError(
+            "turn 1 was lost 5 times",
+            {"tokens_in": 300, "tokens_out": 30, "inner_turns": 4, "attempts": 5},
+            type="AttemptsExhausted",
+            non_retryable=True,
+        )
+
+    result, _ = await run_task(behavior)
+    assert result.status == "failed"
+    assert result.failure_reason == "harness turn 1 failed: AttemptsExhausted"
+    assert (result.tokens_in, result.tokens_out, result.attempts) == (300, 30, 5)
+    assert result.inner_turns == 4
+
+
+async def test_wall_time_budget_exhausted() -> None:
+    def behavior(t: TurnInput, a: int) -> TurnOutcome:
+        time.sleep(1.2)  # longer than the whole budget below
+        return outcome("continue")
+
+    resolved = RESOLVED.model_copy(update={"max_wall_time": timedelta(seconds=1)})
+    result, _ = await run_task(behavior, resolved=resolved)
+    assert result.status == "failed" and result.failure_reason == "wall-time budget exhausted"
+    assert result.turns == 1
+
+
+async def test_turn_timeout_fails_the_turn() -> None:
+    def behavior(t: TurnInput, a: int) -> TurnOutcome:
+        time.sleep(2)  # past start_to_close (1 s); retried until schedule_to_close (6 s)
+        return outcome("done")
+
+    resolved = RESOLVED.model_copy(update={"turn_timeout": timedelta(seconds=1)})
+    result, _ = await run_task(behavior, resolved=resolved)
+    assert result.status == "failed"
+    assert result.failure_reason == "harness turn 1 failed: TimeoutError"

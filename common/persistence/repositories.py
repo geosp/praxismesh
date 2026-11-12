@@ -95,6 +95,15 @@ class TaskRepository:
                 {"t": task_id, "s": status, "r": json.dumps(result)},
             )
 
+    async def sample_orders(self, task_id: str) -> list[dict[str, Any]]:
+        """The sample MCP server's orders for a task (demo and status only)."""
+        async with self.engine.connect() as conn:
+            rows = await conn.execute(
+                text("SELECT sku, qty FROM sample_orders WHERE task_id = :t ORDER BY order_id"),
+                {"t": task_id},
+            )
+            return [dict(r) for r in rows.mappings()]
+
     async def get(self, task_id: str) -> dict[str, Any] | None:
         async with self.engine.connect() as conn:
             row = (
@@ -185,17 +194,33 @@ class AttemptRepository:
                 },
             )
 
-    async def close_unfinished(self, task_id: str, turn: int, category: str) -> None:
-        """Close the turn's open attempt rows when it fails for good."""
+    async def close_unfinished(
+        self, task_id: str, turn: int | None, category: str, *, outcome: str = "failed"
+    ) -> None:
+        """Close open attempt rows: one turn's when it fails for good, or (with
+        `turn=None`) the whole task's when the task completes (gate F2)."""
         async with self.engine.begin() as conn:
             await conn.execute(
                 text(
-                    "UPDATE task_attempts SET outcome = 'failed', failure_category = :c, "
+                    "UPDATE task_attempts SET outcome = :o, failure_category = :c, "
                     "ended_at = CURRENT_TIMESTAMP "
-                    "WHERE task_id = :t AND turn = :turn AND outcome = 'started'"
+                    "WHERE task_id = :t AND outcome = 'started' "
+                    "AND (CAST(:turn AS INTEGER) IS NULL OR turn = :turn)"
                 ),
-                {"t": task_id, "turn": turn, "c": category},
+                {"t": task_id, "turn": turn, "c": category, "o": outcome},
             )
+
+    async def list(self, task_id: str) -> list[dict[str, Any]]:
+        async with self.engine.connect() as conn:
+            rows = await conn.execute(
+                text(
+                    "SELECT turn, attempt, worker_identity, outcome, failure_category, "
+                    "tokens_in, tokens_out, tool_calls, started_at, ended_at "
+                    "FROM task_attempts WHERE task_id = :t ORDER BY turn, attempt"
+                ),
+                {"t": task_id},
+            )
+            return [dict(r) for r in rows.mappings()]
 
     async def newer_attempt_exists(self, task_id: str, turn: int, attempt: int) -> bool:
         async with self.engine.connect() as conn:
@@ -235,6 +260,13 @@ class CheckpointRepository:
                     "finish": json.dumps(cp.finish) if cp.finish is not None else None,
                 },
             )
+
+    async def count(self, task_id: str) -> int:
+        async with self.engine.connect() as conn:
+            found = await conn.execute(
+                text("SELECT count(*) FROM checkpoints WHERE task_id = :t"), {"t": task_id}
+            )
+            return int(found.scalar_one())
 
     async def latest(self, task_id: str) -> Checkpoint | None:
         """The checkpoint to restore: newest turn, then attempt, then sequence."""

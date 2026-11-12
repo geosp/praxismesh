@@ -313,6 +313,8 @@ sequenceDiagram
 - **Limits:** a timeout and capped output.
 - **Allow-list:** offered only when `cli_tools` is non-empty, and the command's first word must be listed.
 
+> **As built** (Phase 1 gate, V4): only the first word is checked; the whole string then runs with `sh -c`, so with `sh` in `cli_tools` any command runs, including reads outside the workspace. The threat model records this under R1.
+
 This is **not** a sandbox for untrusted code. Egress is not restricted, and a pipe can call any binary in the image. The sandbox is the Phase 5 ADR (§2), and the threat model records this as an accepted Phase 1 risk.
 
 ### Deterministic fake model (`tests/support/fake_model/`)

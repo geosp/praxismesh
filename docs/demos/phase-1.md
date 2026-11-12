@@ -46,7 +46,9 @@ Observed:
 
 ## Step 2: losing a worker container
 
-The script submits a task that orders four SKUs. It polls `checkpoints` until the task has two, which means one after the first model call. It finds the container that holds the attempt (the hostname part of `task_attempts.worker_identity`) and stops it **abruptly** with `docker kill`.
+**Reproduce:** `make workers-up`, then `make demo-worker-loss` (the committed script `infra/demo/worker-loss.sh`). It prints the latest checkpoint (also shown by `make task-status ID=…`), the killed container, the attempts and the orders. A run after the gate fixes, on 2026-11-12: `task-a890068e-…`, latest checkpoint `…:1:1:1`; `worker-b` killed; turn 1 attempt 1 `lost`, attempt 2 `done` on the other container; four orders, each once; Workflow `COMPLETED`.
+
+The run recorded below used an earlier version of the same steps. The script submits a task that orders four SKUs. It polls `checkpoints` until the task has two, which means one after the first model call. It finds the container that holds the attempt (the hostname part of `task_attempts.worker_identity`) and stops it **abruptly** with `docker kill`.
 
 `docker stop` (SIGTERM, then a 10 s grace period) was tried first. The Temporal worker shut down gracefully and let its attempt finish (`done`, attempt 1), so it did not show a lost worker. An abrupt stop is what a crashed container looks like.
 
@@ -96,7 +98,7 @@ Open the UI at <http://127.0.0.1:16686> and search service `praxis-cli`. Automat
 
 ## Benchmark and resources
 
-- **Benchmark baseline:** 10 of 10 tasks passed, each in one turn, in about 4 minutes in total ([docs/benchmarks/2026-11-12-local-default.md](../benchmarks/2026-11-12-local-default.md)).
+- **Benchmark baseline:** 10 of 10 tasks passed in about 4 minutes; the baseline was re-recorded after the gate fixes to include inner turns (one task used 2 harness turns) ([docs/benchmarks/2026-11-12-local-default.md](../benchmarks/2026-11-12-local-default.md)).
 - **Memory:** `docker stats` with the stack, three workers, Prometheus and Jaeger running came to about 940 MiB in total.
 
 ## Cleanup

@@ -29,7 +29,7 @@ The harness configuration (model, MCP servers, skills, tools) SHALL come only fr
 - **THEN** loading it fails naming the field
 
 ### Requirement: Only allowed tools are callable
-A harness SHALL expose only the template's MCP tools (filtered to each server's `tools_allowed`), the template's skills bundle, and the built-in workspace tools. The command tool SHALL be offered only when the template lists `cli_tools`, and SHALL refuse a command whose program is not listed. (Plan: Phase 1 task 10; §4.1 verify allowed and prohibited capabilities.)
+A harness SHALL expose only the template's MCP tools (filtered to each server's `tools_allowed`), the template's skills bundle, and the built-in workspace tools. The command tool SHALL be offered only when the template lists `cli_tools`, and SHALL refuse a command whose first word is not listed; it does not confine the rest of the command (accepted risk until the Phase 5 sandbox). (Plan: Phase 1 task 10; §4.1 verify allowed and prohibited capabilities.)
 
 #### Scenario: Prohibited tool call
 - **WHEN** a model calls an MCP tool that is not in `tools_allowed`, or runs a program not in `cli_tools`

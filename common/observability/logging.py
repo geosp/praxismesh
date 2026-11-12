@@ -36,6 +36,20 @@ def current_context() -> dict[str, Any]:
     return dict(_context.get())
 
 
+# Attach the IDs to each record when it is created, not when it is formatted: a
+# handler may format later, outside the block that set them.
+_base_factory = logging.getLogRecordFactory()
+
+
+def _record_with_context(*args: Any, **kwargs: Any) -> logging.LogRecord:
+    record = _base_factory(*args, **kwargs)
+    record.praxis_context = dict(_context.get())
+    return record
+
+
+logging.setLogRecordFactory(_record_with_context)
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         line: dict[str, Any] = {
@@ -43,7 +57,7 @@ class JsonFormatter(logging.Formatter):
             "level": record.levelname.lower(),
             "logger": record.name,
             "msg": record.getMessage(),
-            **_context.get(),
+            **getattr(record, "praxis_context", _context.get()),
         }
         extra = getattr(record, "fields", None)
         if isinstance(extra, dict):

@@ -5,17 +5,21 @@ Runs in the unit suite: no stack needed (read-only MCP tools only)."""
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from agents import SQLiteSession
 
 from common.observability import disable_sdk_tracing
 from harness_activity.config import HarnessConfig, build_config
 from harness_activity.runner import OpenAIAgentsRunner, Usage
-from registry.loader import load_registry
+from registry.loader import REGISTRY_ROOT, load_registry
 from tests.support.fake_model import FakeModel
 
 
@@ -221,3 +225,134 @@ async def test_stop_run_and_superseded_reach_the_runner_unwrapped(
             await OpenAIAgentsRunner().run(
                 config, tmp_path, SQLiteSession("sup"), "go", superseded, Usage()
             )
+
+
+def tool_results(fake: FakeModel) -> list[str]:
+    texts = []
+    for m in fake.state.requests[-1]["messages"]:
+        if m["role"] == "tool":
+            c = m["content"]
+            texts.append("".join(p.get("text", "") for p in c) if isinstance(c, list) else c)
+    return texts
+
+
+async def test_refusals_are_logged_with_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Both kinds of refusal write a log line carrying the task and attempt IDs
+    (capability-model spec; threat model C4; gate F4)."""
+    from common.observability import log_context
+    from common.observability.logging import JsonFormatter
+
+    caplog.set_level(logging.WARNING, logger="praxis.harness")
+    with log_context(task_id="task-log-00000001", attempt=2):
+        await run(
+            script(
+                {"tool": "delete_database", "args": {}},
+                {"tool": "run_command", "args": {"command": "curl http://example.com"}},
+                {"tool": "finish_task", "args": {"status": "done", "summary": "ok"}},
+            ),
+            tmp_path,
+            monkeypatch,
+        )
+        lines = [json.loads(JsonFormatter().format(r)) for r in caplog.records]
+    refusals = {line["msg"]: line for line in lines if line["msg"].startswith("refused")}
+    assert refusals["refused tool call"]["tool"] == "delete_database"
+    assert refusals["refused command"]["program"] == "curl"
+    assert all(
+        line["task_id"] == "task-log-00000001" and line["attempt"] == 2
+        for line in refusals.values()
+    )
+
+
+async def test_mcp_tools_allowed_filter(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An MCP tool missing from the catalog entry's `tools_allowed` is neither
+    offered nor callable (gate F5)."""
+    registry_dir = tmp_path / "registry"
+    shutil.copytree(
+        REGISTRY_ROOT, registry_dir, ignore=shutil.ignore_patterns("*.py", "__pycache__")
+    )
+    entry = registry_dir / "mcp" / "sample-shop.yaml"
+    data = yaml.safe_load(entry.read_text())
+    data["tools_allowed"] = [t for t in data["tools_allowed"] if t != "record_order"]
+    entry.write_text(yaml.safe_dump(data))
+    registry = load_registry(registry_dir, check_lock=False)
+    with FakeModel(
+        script(
+            {"tool": "record_order", "args": {"sku": "SKU-1", "qty": 1}},
+            {"tool": "finish_task", "args": {"status": "done", "summary": "ok"}},
+        )
+    ) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        _, loaded = registry.resolve("default")
+        config = build_config(registry, loaded, "task-filter-0001")
+        workspace = tmp_path / "ws"
+        workspace.mkdir()
+        await OpenAIAgentsRunner().run(
+            config, workspace, SQLiteSession("filter"), "go", no_op, Usage()
+        )
+        offered = {t["function"]["name"] for t in fake.state.requests[0]["tools"]}
+        assert "record_order" not in offered and "lookup_price" in offered
+        assert "record_order" in tool_results(fake)[0]  # an error naming the tool
+
+
+async def test_file_tools_stay_in_the_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`..`, absolute paths and symlinks cannot reach outside the workspace
+    (threat model C6; gate F9)."""
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP-SECRET-CONTENT")
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "link.txt").symlink_to(secret)
+    escape = tmp_path / "escaped.txt"
+    _, fake = await run(
+        script(
+            {"tool": "read_file", "args": {"path": "../secret.txt"}},
+            {"tool": "read_file", "args": {"path": str(secret)}},
+            {"tool": "read_file", "args": {"path": "link.txt"}},
+            {"tool": "write_file", "args": {"path": str(escape), "content": "x"}},
+            {"tool": "finish_task", "args": {"status": "done", "summary": "ok"}},
+        ),
+        workspace,
+        monkeypatch,
+    )
+    results = tool_results(fake)
+    assert len(results) == 4 and all("TOP-SECRET-CONTENT" not in r for r in results)
+    assert all(r.startswith("error: path outside the workspace") for r in results), results
+    assert not escape.exists()
+
+
+def test_mcp_server_env_is_exactly_what_is_granted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An MCP server gets PATH, LANG, its literal env, PRAXIS_TASK_ID and the secrets
+    its template grants, and nothing else from the worker (threat model C7; F9)."""
+    monkeypatch.setenv("VLLM_BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("PRAXIS_SAMPLE_DB_URL", "postgresql+asyncpg://granted")
+    monkeypatch.setenv("S3_SECRET_KEY", "not-granted")
+    monkeypatch.setenv("CANARY_SECRET", "not-granted")
+    registry = load_registry()
+    _, loaded = registry.resolve("default")
+    (server,) = build_config(registry, loaded, "task-env-00000001").mcp
+    assert set(server.env) == {"PATH", "LANG", "PRAXIS_TASK_ID", "PRAXIS_SAMPLE_DB_URL"}
+    assert server.env["PRAXIS_TASK_ID"] == "task-env-00000001"
+    assert server.env["PRAXIS_SAMPLE_DB_URL"] == "postgresql+asyncpg://granted"
+
+
+async def test_tool_errors_are_counted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tool calls and errors are recorded per tool (worker metrics; gate F3)."""
+    from prometheus_client import REGISTRY
+
+    labels = {"template": "local-default@1", "tool": "read_file"}
+    before = REGISTRY.get_sample_value("praxis_tool_errors_total", labels) or 0
+    calls_before = REGISTRY.get_sample_value("praxis_tool_calls_total", labels) or 0
+    await run(
+        script(
+            {"tool": "read_file", "args": {"path": "missing.txt"}},
+            {"tool": "finish_task", "args": {"status": "done", "summary": "ok"}},
+        ),
+        tmp_path,
+        monkeypatch,
+    )
+    assert REGISTRY.get_sample_value("praxis_tool_errors_total", labels) == before + 1
+    assert REGISTRY.get_sample_value("praxis_tool_calls_total", labels) == calls_before + 1

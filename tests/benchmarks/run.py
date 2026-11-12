@@ -82,7 +82,7 @@ async def run_one(task: Task, client: Any, scratch: Path) -> dict[str, Any]:
     else:
         passed, check = False, "no checkpoint"
     async with engine.connect() as conn:
-        inner = (
+        tool_calls = (
             await conn.execute(
                 text("SELECT COALESCE(sum(tool_calls), 0) FROM task_attempts WHERE task_id = :t"),
                 {"t": start.task_id},
@@ -98,7 +98,8 @@ async def run_one(task: Task, client: Any, scratch: Path) -> dict[str, Any]:
         "failure_reason": reason,
         "turns": result.turns if result else None,
         "attempts": result.attempts if result else None,
-        "tool_calls": int(inner),
+        "inner_turns": result.inner_turns if result else None,
+        "tool_calls": int(tool_calls),
         "tokens_in": result.tokens_in if result else None,
         "tokens_out": result.tokens_out if result else None,
         "seconds": seconds,
@@ -130,15 +131,15 @@ def markdown(env: dict[str, Any], rows: list[dict[str, Any]], verdict: str) -> s
         *(f"| {k} | `{v}` |" for k, v in env.items() if k != "date"),
         "| Model endpoint | the DGX Spark endpoint (vLLM) |",
         "",
-        "| Task | Result | Check | Turns | Attempts | Tool calls | Tokens in | Tokens out "
-        "| Seconds |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Task | Result | Check | Turns | Inner turns | Attempts | Tool calls | Tokens in "
+        "| Tokens out | Seconds |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         lines.append(
             f"| {r['task']} | {'pass' if r['passed'] else 'FAIL'} | {r['check']} | {r['turns']} "
-            f"| {r['attempts']} | {r['tool_calls']} | {r['tokens_in']} | {r['tokens_out']} "
-            f"| {r['seconds']} |"
+            f"| {r.get('inner_turns')} | {r['attempts']} | {r['tool_calls']} "
+            f"| {r['tokens_in']} | {r['tokens_out']} | {r['seconds']} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -173,7 +174,8 @@ async def main(argv: list[str]) -> int:
                 rows.append(row)
                 mark = "pass" if row["passed"] else "FAIL"
                 print(
-                    f"{row['task']:20} {mark}  turns={row['turns']} tools={row['tool_calls']} "
+                    f"{row['task']:20} {mark}  turns={row['turns']} inner={row['inner_turns']} "
+                    f"tools={row['tool_calls']} "
                     f"in={row['tokens_in']} {row['seconds']}s  {row['check']}",
                     flush=True,
                 )

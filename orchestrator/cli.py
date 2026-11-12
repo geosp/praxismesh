@@ -22,7 +22,13 @@ from temporalio.contrib.pydantic import pydantic_data_converter
 from common.blob_store.s3 import S3BlobStore
 from common.errors import InvalidTaskInput, PraxisError
 from common.observability import configure_tracing, log_context, tracing_interceptor
-from common.persistence.repositories import RecordingBlobStore, TaskRepository, make_engine
+from common.persistence.repositories import (
+    AttemptRepository,
+    CheckpointRepository,
+    RecordingBlobStore,
+    TaskRepository,
+    make_engine,
+)
 from common.schemas import TaskResult
 from orchestrator.submit import prepare_task, start_task
 from registry.loader import load_registry
@@ -106,9 +112,14 @@ async def output(args: argparse.Namespace) -> int:
 
 
 async def status(args: argparse.Namespace) -> int:
+    """The task row, its attempts, its latest checkpoint and the Workflow status."""
     engine = make_engine()
     try:
         row = await TaskRepository(engine).get(args.task_id)
+        attempts = await AttemptRepository(engine).list(args.task_id)
+        latest = await CheckpointRepository(engine).latest(args.task_id)
+        checkpoints = await CheckpointRepository(engine).count(args.task_id)
+        orders = await TaskRepository(engine).sample_orders(args.task_id)
     finally:
         await engine.dispose()
     client = await connect()
@@ -118,7 +129,28 @@ async def status(args: argparse.Namespace) -> int:
     except Exception as e:  # the Workflow may be outside Temporal's retention
         workflow_status = f"unavailable ({type(e).__name__})"
     print(
-        json.dumps({"task_id": args.task_id, "workflow": workflow_status, "task": row}, default=str)
+        json.dumps(
+            {
+                "task_id": args.task_id,
+                "workflow": workflow_status,
+                "task": row,
+                "attempts": attempts,
+                "checkpoints": checkpoints,
+                "latest_checkpoint": (
+                    {
+                        "checkpoint_id": latest.checkpoint_id,
+                        "turn": latest.turn,
+                        "attempt": latest.attempt,
+                        "seq": latest.seq,
+                        "session_position": latest.session_position,
+                    }
+                    if latest
+                    else None
+                ),
+                "orders": orders,
+            },
+            default=str,
+        )
     )
     return 0
 

@@ -8,6 +8,7 @@ and retries infrastructure failures only. Inputs and outputs are IDs and
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
@@ -42,12 +43,20 @@ SHORT_RETRY = RetryPolicy(maximum_attempts=5, non_retryable_error_types=NON_RETR
 TURN_ATTEMPTS = 0
 
 
-def heartbeated_tokens(cause: BaseException | None) -> tuple[int, int]:
-    """Tokens the last attempt heartbeated before it timed out (review F10)."""
-    details = getattr(cause, "last_heartbeat_details", None) or []
+def failed_turn_usage(cause: BaseException | None) -> tuple[int, int, int, int]:
+    """What a turn that failed for good used: tokens in and out, inner turns and
+    attempts. A timeout carries the last heartbeat; a failure the Activity raised
+    carries its usage in the error's details (review F10, gate F1)."""
+    details: Any = getattr(cause, "last_heartbeat_details", None) or getattr(cause, "details", None)
     if details and isinstance(details[0], dict):
-        return int(details[0].get("tokens_in", 0)), int(details[0].get("tokens_out", 0))
-    return 0, 0
+        d = details[0]
+        return (
+            int(d.get("tokens_in", 0)),
+            int(d.get("tokens_out", 0)),
+            int(d.get("inner_turns", 0)),
+            int(d.get("attempts", 1)),
+        )
+    return 0, 0, 0, 1
 
 
 def failure_category(error: ActivityError) -> str:
@@ -77,7 +86,7 @@ class TaskWorkflow:
             retry_policy=SHORT_RETRY,
         )
         deadline = workflow.now() + resolved.max_wall_time
-        turns = attempts = tokens_in = tokens_out = 0
+        turns = attempts = tokens_in = tokens_out = inner_turns = 0
         status = "failed"
         summary, reason = "", None
         questions: list[str] = []
@@ -106,6 +115,7 @@ class TaskWorkflow:
                         template_hash=resolved.template_hash,
                         remaining_tokens=resolved.max_tokens - used,
                         remaining_wall_time=remaining_time,
+                        request_id=start.request_id,
                     ),
                     result_type=TurnOutcome,
                     task_queue=resolved.task_queue,
@@ -120,13 +130,15 @@ class TaskWorkflow:
             except ActivityError as e:
                 # Count what the lost attempts heartbeated before the turn failed
                 # for good (informal review F10).
-                lost_in, lost_out = heartbeated_tokens(e.cause)
+                lost_in, lost_out, lost_inner, lost_attempts = failed_turn_usage(e.cause)
                 tokens_in += lost_in
                 tokens_out += lost_out
-                attempts += 1
+                inner_turns += lost_inner
+                attempts += lost_attempts
                 reason = f"harness turn {turns} failed: {failure_category(e)}"
                 break
             attempts += outcome.attempts
+            inner_turns += outcome.inner_turns
             tokens_in += outcome.tokens_in
             tokens_out += outcome.tokens_out
             if outcome.status in ("done", "needs_input"):
@@ -147,6 +159,7 @@ class TaskWorkflow:
                 attempts=attempts,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
+                inner_turns=inner_turns,
             ),
             result_type=TaskResult,
             start_to_close_timeout=SHORT,

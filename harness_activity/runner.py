@@ -31,6 +31,7 @@ from openai import AsyncOpenAI
 from opentelemetry import trace
 from opentelemetry.trace import Span, Tracer
 
+from common.observability.metrics import TOOL_CALLS, TOOL_ERRORS
 from harness_activity import skills
 from harness_activity.config import HarnessConfig
 from harness_activity.tools import FINISH_TOOL, TurnState, build_tools
@@ -101,9 +102,11 @@ class _Hooks(RunHooks[Any]):
         state: TurnState,
         before: BeforeModelCall,
         tracer: Tracer,
+        template: str,
     ) -> None:
         self.usage, self.allowed, self.state, self.before = usage, allowed, state, before
         self.tracer = tracer
+        self.template = template
         self.model_span: Span | None = None
         self.tool_spans: dict[str, Span] = {}
 
@@ -131,10 +134,12 @@ class _Hooks(RunHooks[Any]):
                 # No hook fires for a tool that does not exist, so refusals are
                 # logged here; the SDK returns the error to the model.
                 self.state.refused.append(str(name))
+                TOOL_ERRORS.labels(template=self.template, tool=str(name)).inc()
                 log.warning("refused tool call", extra={"fields": {"tool": name}})
 
     async def on_tool_start(self, context: Any, agent: Any, tool: Tool) -> None:
         self.usage.tool_calls += 1
+        TOOL_CALLS.labels(template=self.template, tool=tool.name).inc()
         self.tool_spans[tool.name] = self.tracer.start_span(
             "tool call", attributes={"praxis.tool": tool.name}
         )
@@ -143,6 +148,8 @@ class _Hooks(RunHooks[Any]):
         failed = tool.name != FINISH_TOOL and _looks_failed(str(result))
         if failed:
             self.state.failed_in_step.append(tool.name)
+        if failed or _looks_failed(str(result)):
+            TOOL_ERRORS.labels(template=self.template, tool=tool.name).inc()
         span = self.tool_spans.pop(tool.name, None)
         if span is not None:
             span.set_attribute("praxis.tool_failed", failed)
@@ -197,7 +204,9 @@ class OpenAIAgentsRunner:
                     input_text,
                     max_turns=config.inner_max_turns,
                     session=session,
-                    hooks=_Hooks(usage, allowed, state, before_model_call, self.tracer),
+                    hooks=_Hooks(
+                        usage, allowed, state, before_model_call, self.tracer, config.template_ref
+                    ),
                     run_config=RunConfig(
                         tracing_disabled=True, tool_not_found_behavior="return_error_to_model"
                     ),

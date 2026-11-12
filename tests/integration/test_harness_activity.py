@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
+import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import timedelta
@@ -21,21 +23,24 @@ from agents.extensions.memory.sqlalchemy_session import SQLAlchemySession
 from agents.memory import Session
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
+from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
 from common.blob_store import MemoryBlobStore
 from common.errors import TemplateVersionUnavailable
+from common.observability.logging import JsonFormatter
 from common.persistence.repositories import (
     Checkpoint,
     CheckpointRepository,
     TaskRepository,
     make_engine,
 )
-from common.schemas import BlobRef, TaskStart, TurnInput
+from common.schemas import BlobRef, CompleteTaskInput, TaskStart, TurnInput
 from harness_activity import workspace as ws
 from harness_activity.activity import CONTINUE_MESSAGE, HarnessActivities
 from harness_activity.config import HarnessConfig
 from harness_activity.runner import BeforeModelCall, RunResult, StopRun, Superseded, Usage
+from orchestrator.activities import OrchestratorActivities
 from registry.loader import load_registry
 from tests.support.stack import run_id
 
@@ -131,6 +136,7 @@ class Harness:
             template_hash=template_hash or loaded.hash,
             remaining_tokens=remaining_tokens,
             remaining_wall_time=timedelta(minutes=10),
+            request_id="req-activity-test",
         )
 
     async def run(self, attempt: int = 1, details: dict[str, Any] | None = None, **kw: Any) -> Any:
@@ -345,3 +351,140 @@ async def test_template_refusals_are_not_attempts(engine: AsyncEngine, tmp_path:
     assert h.runner.seen.calls == 0
     outcome = await h.run(attempt=3, details={"refusals": 2})
     assert outcome.attempts == 1
+
+
+async def open_rows(engine: AsyncEngine, task_id: str) -> list[tuple[int, str, str | None]]:
+    async with engine.connect() as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT attempt, outcome, failure_category FROM task_attempts "
+                "WHERE task_id = :t ORDER BY attempt"
+            ),
+            {"t": task_id},
+        )
+        return [(int(a), str(o), c) for a, o, c in rows]
+
+
+async def test_attempts_exhausted_closes_rows_and_reports_usage(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """Attempt 6 of a turn lost 5 times: the last open row is closed as lost, and the
+    error carries the turn's usage and its 5 real attempts (gate F1, F2)."""
+    h = await harness(engine, tmp_path, done)
+    async with engine.begin() as conn:  # attempt 5 started, then its worker was lost
+        await conn.execute(
+            text(
+                "INSERT INTO task_attempts (task_id, turn, attempt, worker_identity, outcome, "
+                "retention_class) VALUES (:t, 1, 5, 'lost-worker', 'started', 'audit')"
+            ),
+            {"t": h.task_id},
+        )
+    with pytest.raises(ApplicationError) as raised:
+        await h.run(attempt=6, details={"tokens_in": 400, "tokens_out": 40, "inner_turns": 6})
+    assert raised.value.type == "AttemptsExhausted" and raised.value.non_retryable
+    details = raised.value.details[0]
+    assert (details["tokens_in"], details["attempts"], details["inner_turns"]) == (400, 5, 6)
+    assert await open_rows(engine, h.task_id) == [(5, "lost", "lost_or_timed_out")]
+    assert h.runner.seen.calls == 0
+
+
+async def test_missing_model_url_closes_the_row(
+    engine: AsyncEngine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = await harness(engine, tmp_path, done)
+    monkeypatch.delenv("VLLM_BASE_URL")
+    with pytest.raises(ApplicationError) as raised:
+        await h.run()
+    assert raised.value.type == "CapabilityError"
+    assert await open_rows(engine, h.task_id) == [(1, "failed", "CapabilityError")]
+
+
+async def test_complete_task_closes_rows_left_open(engine: AsyncEngine, tmp_path: Path) -> None:
+    """When schedule_to_close expires no Activity code runs; complete_task closes
+    the rows that were left open (gate F2)."""
+    h = await harness(engine, tmp_path, done)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO task_attempts (task_id, turn, attempt, worker_identity, outcome, "
+                "retention_class) VALUES (:t, 1, 3, 'gone', 'started', 'audit')"
+            ),
+            {"t": h.task_id},
+        )
+    acts = OrchestratorActivities(load_registry(), TaskRepository(engine))
+    resolved = await ActivityEnvironment().run(
+        acts.resolve_capabilities,
+        TaskStart(
+            task_id=h.task_id,
+            request_id="req-1",
+            profile="default",
+            template="local-default",
+            instructions_ref=(await h.blobs.put(b"x", retention="task")),
+        ),
+    )
+    await ActivityEnvironment().run(
+        acts.complete_task,
+        CompleteTaskInput(
+            task_id=h.task_id,
+            status="failed",
+            failure_reason="timeout",
+            resolved=resolved,
+            turns=1,
+            attempts=3,
+            tokens_in=0,
+            tokens_out=0,
+        ),
+    )
+    assert await open_rows(engine, h.task_id) == [(3, "failed", "task_completed")]
+
+
+async def test_activity_metrics_are_recorded(engine: AsyncEngine, tmp_path: Path) -> None:
+    """Activity duration and heartbeat lag are recorded (worker metrics; gate F3)."""
+    from prometheus_client import REGISTRY
+
+    count = "praxis_activity_seconds_count"
+    labels = {"activity": "run_harness_turn", "outcome": "done"}
+    before = REGISTRY.get_sample_value(count, labels) or 0
+    lag_before = (
+        REGISTRY.get_sample_value(
+            "praxis_heartbeat_lag_seconds_count", {"activity": "run_harness_turn"}
+        )
+        or 0
+    )
+    h = await harness(engine, tmp_path, done)
+    await h.run()
+    assert REGISTRY.get_sample_value(count, labels) == before + 1
+    lag_after = REGISTRY.get_sample_value(
+        "praxis_heartbeat_lag_seconds_count", {"activity": "run_harness_turn"}
+    )
+    assert (lag_after or 0) > lag_before
+
+
+async def test_log_lines_carry_request_and_task_ids(
+    engine: AsyncEngine, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Harness and orchestrator log lines carry the request, task and workflow IDs
+    (RFC Observability; gate F8)."""
+    caplog.set_level(logging.INFO)
+    h = await harness(engine, tmp_path, done)
+    await h.run()
+    acts = OrchestratorActivities(load_registry(), TaskRepository(engine))
+    env = ActivityEnvironment()
+    env.info = dataclasses.replace(env.info, workflow_id=h.task_id)
+    await env.run(
+        acts.resolve_capabilities,
+        TaskStart(
+            task_id=h.task_id,
+            request_id="req-activity-test",
+            profile="default",
+            template="local-default",
+            instructions_ref=(await h.blobs.put(b"y", retention="task")),
+        ),
+    )
+    lines = [json.loads(JsonFormatter().format(r)) for r in caplog.records]
+    harness_line = next(x for x in lines if x["logger"] == "praxis.harness")
+    orchestrator_line = next(x for x in lines if x["logger"] == "praxis.orchestrator")
+    for line in (harness_line, orchestrator_line):
+        assert line["request_id"] == "req-activity-test"
+        assert line["task_id"] == h.task_id and line["workflow_id"] == h.task_id
+    assert harness_line["turn"] == 1 and harness_line["worker"] == "test-worker"

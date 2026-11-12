@@ -31,7 +31,7 @@ SERVICES := db temporal temporal-ui s3
 JOBS := temporal-schema temporal-namespace
 JOB_TIMEOUT := 120
 
-.PHONY: help check up down reset status migrate smoke restart-check unhealthy-check logs registry-lock workers-up workers-down workers-check recovery-check benchmark observability-up observability-down task task-status task-output
+.PHONY: help check up down reset status migrate smoke restart-check unhealthy-check logs registry-lock workers-up workers-down workers-check recovery-check benchmark observability-up observability-down demo-worker-loss task task-status task-output
 
 help:
 	@echo "make up              start the stack and wait until it is healthy"
@@ -51,7 +51,8 @@ help:
 	@echo "make benchmark       run the agent benchmark on the real model (ARGS=--baseline to record it)"
 	@echo "make observability-up   start Prometheus (127.0.0.1:9090) and Jaeger (127.0.0.1:16686)"
 	@echo "make task PROMPT=... [OUTPUT=path]  submit a task and wait for its result"
-	@echo "make task-status ID=...             show a task"
+	@echo "make task-status ID=...             show a task: attempts, latest checkpoint, orders"
+	@echo "make demo-worker-loss               kill the worker container running a task (demo step 2)"
 	@echo "make task-output ID=... FILE=...    print one of a task's output files"
 
 check:
@@ -155,6 +156,9 @@ task: check
 
 task-status: check
 	@$(UV) python -m orchestrator.cli task status $(ID)
+
+demo-worker-loss: check
+	@sh infra/demo/worker-loss.sh
 
 task-output: check
 	@$(UV) python -m orchestrator.cli task output $(ID) $(FILE)

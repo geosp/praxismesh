@@ -35,15 +35,17 @@ from agents.extensions.memory.sqlalchemy_session import SQLAlchemySession
 from openai import BadRequestError
 from sqlalchemy.ext.asyncio import AsyncEngine
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
 from common.blob_store import BlobCorrupt, BlobNotFound, BlobStore
 from common.errors import NonRetryableError, TemplateVersionUnavailable
 from common.observability import log_context
 from common.observability.metrics import (
+    ACTIVITY_SECONDS,
     CHECKPOINT_BYTES,
     CHECKPOINT_SECONDS,
+    HEARTBEAT_LAG_SECONDS,
     TOKENS,
-    TOOL_CALLS,
 )
 from common.persistence.repositories import (
     AttemptRepository,
@@ -134,8 +136,12 @@ class _Heartbeat:
     async def _loop(self) -> None:
         timeout = activity.info().heartbeat_timeout or DEFAULT_HEARTBEAT_TIMEOUT
         interval = max(0.5, timeout.total_seconds() / 3)
+        last = time.monotonic()
         while True:
             activity.heartbeat(asdict(self.current()))
+            now = time.monotonic()
+            HEARTBEAT_LAG_SECONDS.labels(activity="run_harness_turn").observe(now - last)
+            last = now
             await asyncio.sleep(interval)
 
 
@@ -175,30 +181,58 @@ class HarnessActivities:
             )
         attempt = info.attempt
         real_attempt = attempt - prior.refusals
-        if real_attempt > MAX_REAL_ATTEMPTS:
-            await self.attempts.close_unfinished(turn.task_id, turn.turn, "attempts_exhausted")
-            raise AttemptsExhausted(f"turn {turn.turn} was lost {MAX_REAL_ATTEMPTS} times")
+        began = time.monotonic()
+        outcome = "error"
+        heartbeat = _Heartbeat(prior)
         with log_context(
+            request_id=turn.request_id,
             task_id=turn.task_id,
             workflow_id=info.workflow_id,
             turn=turn.turn,
             attempt=attempt,
             worker=self.identity,
         ):
-            heartbeat = _Heartbeat(prior)
-            workdir = self.scratch / turn.task_id / f"{turn.turn}-{attempt}-{uuid.uuid4().hex[:8]}"
             try:
-                async with heartbeat.running():
-                    await self.attempts.start(turn.task_id, turn.turn, attempt, self.identity)
-                    return await self._run(turn, attempt, real_attempt, heartbeat, workdir)
-            except (BlobCorrupt, BlobNotFound) as e:
-                await self.attempts.close_unfinished(turn.task_id, turn.turn, "input_unreadable")
-                raise HarnessInputError(f"checkpoint or input unreadable: {e}") from e
-            except BadRequestError as e:
-                await self.attempts.close_unfinished(turn.task_id, turn.turn, "model_rejected")
-                raise HarnessInputError(f"the model server rejected the request: {e}") from e
+                if real_attempt > MAX_REAL_ATTEMPTS:
+                    raise AttemptsExhausted(f"turn {turn.turn} was lost {MAX_REAL_ATTEMPTS} times")
+                result = await self._attempt(turn, attempt, real_attempt, heartbeat)
+                outcome = result.status
+                return result
+            except NonRetryableError as e:
+                # The turn has failed for good: close its open attempt rows and tell
+                # the Workflow what the turn used, lost attempts included (gate F1, F2).
+                exhausted = isinstance(e, AttemptsExhausted)
+                await self.attempts.close_unfinished(
+                    turn.task_id,
+                    turn.turn,
+                    "lost_or_timed_out" if exhausted else type(e).__name__,
+                    outcome="lost" if exhausted else "failed",
+                )
+                used = heartbeat.current()
+                details = {**asdict(used), "attempts": min(real_attempt, MAX_REAL_ATTEMPTS)}
+                log.error("harness turn failed for good", extra={"fields": {"error": str(e)}})
+                raise ApplicationError(
+                    str(e), details, type=type(e).__name__, non_retryable=True
+                ) from e
             finally:
-                shutil.rmtree(workdir, ignore_errors=True)
+                ACTIVITY_SECONDS.labels(activity="run_harness_turn", outcome=outcome).observe(
+                    time.monotonic() - began
+                )
+
+    async def _attempt(
+        self, turn: TurnInput, attempt: int, real_attempt: int, heartbeat: _Heartbeat
+    ) -> TurnOutcome:
+        workdir = self.scratch / turn.task_id / f"{turn.turn}-{attempt}-{uuid.uuid4().hex[:8]}"
+        try:
+            async with heartbeat.running():
+                await self.attempts.start(turn.task_id, turn.turn, attempt, self.identity)
+                return await self._run(turn, attempt, real_attempt, heartbeat, workdir)
+        except (BlobCorrupt, BlobNotFound) as e:
+            raise HarnessInputError(f"checkpoint or input unreadable: {e}") from e
+        except BadRequestError as e:
+            raise HarnessInputError(f"the model server rejected the request: {e}") from e
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
 
     async def _run(
         self,
@@ -287,7 +321,6 @@ class HarnessActivities:
         usage = result.usage
         TOKENS.labels(template=template_ref, direction="in").inc(usage.tokens_in)
         TOKENS.labels(template=template_ref, direction="out").inc(usage.tokens_out)
-        TOOL_CALLS.labels(template=template_ref, tool="any").inc(usage.tool_calls)
         finish = (
             {
                 "status": result.status,
