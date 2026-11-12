@@ -6,13 +6,21 @@ idempotency). Its key is sha256 of the task ID (`PRAXIS_TASK_ID`), the tool name
 and the canonical JSON of its arguments; the order and the key commit in one
 transaction, so a repeat returns the recorded result. The database URL comes
 from `PRAXIS_SAMPLE_DB_URL`, which the worker passes to this server only.
+
+Test mode (recovery tests only): when `SAMPLE_MCP_PAUSE_FILE` is set, the first
+`record_order` that commits an effect writes `<file>.paused` and holds its
+response until `<file>.release` exists. It writes `<file>.done` first, so the
+pause is one-shot even if the worker is killed while it holds. This lets a test
+kill the worker between the effect and the next checkpoint.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -115,4 +123,19 @@ async def record_order(sku: str, qty: int) -> dict[str, Any]:
             text("UPDATE idempotency_keys SET result = :r WHERE key = :k"),
             {"r": json.dumps(result), "k": key},
         )
+    await _pause_after_effect()
     return {**result, "repeated": False}
+
+
+async def _pause_after_effect() -> None:
+    pause = os.environ.get("SAMPLE_MCP_PAUSE_FILE")
+    if not pause or Path(f"{pause}.done").exists():
+        return
+    # One-shot from the start: if the worker is killed while holding, the resumed
+    # call does not pause again.
+    Path(f"{pause}.done").touch()
+    Path(f"{pause}.paused").touch()
+    for _ in range(1200):  # at most 10 minutes
+        if Path(f"{pause}.release").exists():
+            break
+        await asyncio.sleep(0.5)

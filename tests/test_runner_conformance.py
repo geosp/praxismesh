@@ -49,6 +49,7 @@ async def run(
             SQLiteSession("conformance"),
             "Write the order summary.",
             no_op,
+            Usage(),
         )
         return result, fake
 
@@ -191,3 +192,32 @@ async def test_finish_with_successful_sibling_is_done(
         monkeypatch,
     )
     assert result.status == "done"
+
+
+async def test_stop_run_and_superseded_reach_the_runner_unwrapped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The SDK must let our control signals out of `on_llm_start` (review F6e)."""
+    from harness_activity.runner import StopRun, Superseded
+
+    steps = script({"tool": "list_files", "args": {}})
+
+    async def stop_on_second_call(usage: Usage) -> None:
+        if usage.inner_turns == 1:
+            raise StopRun("budget")
+
+    with FakeModel(steps) as fake:
+        config = config_for(fake, monkeypatch)
+        result = await OpenAIAgentsRunner().run(
+            config, tmp_path, SQLiteSession("stop"), "go", stop_on_second_call, Usage()
+        )
+        assert result.status == "continue" and result.summary == "budget"
+        assert len(fake.state.requests) == 1
+
+        async def superseded(usage: Usage) -> None:
+            raise Superseded("newer attempt")
+
+        with pytest.raises(Superseded):
+            await OpenAIAgentsRunner().run(
+                config, tmp_path, SQLiteSession("sup"), "go", superseded, Usage()
+            )

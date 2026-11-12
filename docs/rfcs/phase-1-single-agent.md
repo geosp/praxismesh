@@ -222,7 +222,7 @@ sequenceDiagram
 - **Wall time** is checked between turns. A single turn can overrun it by at most its own `schedule_to_close`.
 - **Exhausted budget:** the task ends `failed` with the reason, and the last checkpoint is kept.
 - **A harness turn that fails for good** (retries exhausted, `schedule_to_close` passed, or a non-retryable error from the turn): the Workflow still runs `complete_task`. A run stopped by `TaskAlreadyExists` ends without `complete_task`, and the original task's row is untouched (J1). The task ends `failed`, with the error's category as the reason, and the last checkpoint is kept.
-- **Usage after the last heartbeat:** a lost attempt's usage after its last heartbeat is not counted. That is at most `heartbeat_timeout / 3` of work.
+- **Usage after the last heartbeat:** a lost attempt's usage after its last heartbeat is not counted. That is the work since its last heartbeat: about `heartbeat_timeout / 3`, but up to about `heartbeat_timeout`, because the SDK throttles heartbeats. Usage is heartbeated live, from the moment the attempt starts until its outcome.
 
 **Tests:** replay tests against committed histories, using the same pattern as `tests/test_hello_replay.py`, and time-skipping tests with mocked Activities: retry, timeout, budget exhaustion, `needs_input`, and a non-retryable error (§8).
 
@@ -326,6 +326,8 @@ A small HTTP server that serves the OpenAI chat-completions endpoint, reached th
 
 ### Recovery check (`make recovery-check`, run in the `stack` job)
 
+> **As built** (decision log 2026-11-12): the check kills worker **processes** with SIGKILL, found through `task_attempts.worker_identity`, using a generated test registry with a 5 s heartbeat timeout. The demo stops a worker container.
+
 1. Start the `workers` profile with the fake model. Submit a scripted task: write a file, call `record_order`, then keep working until the pause step.
 2. Wait until `checkpoints` shows a row after the `record_order` step and the fake model reports it is paused. Find the worker that holds the attempt from `task_attempts.worker_identity`, then stop that worker's container.
 3. Release the pause. The held response goes to a dead connection.
@@ -337,8 +339,8 @@ A small HTTP server that serves the OpenAI chat-completions endpoint, reached th
    - the task completes.
 5. Restart the stopped worker and clean up.
 
-`test_side_effect_not_repeated_after_crash` needs a different pause point, because a held model response always comes after the checkpoint that follows a tool call. In test mode only (`SAMPLE_MCP_PAUSE_AFTER_EFFECT=1`), the sample MCP server commits `record_order`'s effect and its key, then holds the tool response until the test releases it.
-- **The crash:** the test kills the worker with `docker kill` (SIGKILL) while the response is held, so no checkpoint has recorded the call and no graceful shutdown runs. The test template sets the sample server's `client_session_timeout_seconds` above the hold time, so the held call is not turned into a timeout error first. The pause applies only to the first call that commits an effect.
+`test_side_effect_not_repeated_after_crash` needs a different pause point, because a held model response always comes after the checkpoint that follows a tool call. In test mode only (`SAMPLE_MCP_PAUSE_FILE`, set through the sample server's literal `env` in a generated test registry), the sample MCP server commits `record_order`'s effect and its key, then holds the tool response until the test releases it.
+- **The crash:** the test SIGKILLs the worker process and everything below it while the response is held, so no checkpoint has recorded the call and no graceful shutdown runs. The test template sets the sample server's `client_session_timeout_seconds` above the hold time, so the held call is not turned into a timeout error first. The pause applies only to the first call that commits an effect.
 - **On the other worker:** the restored session ends before the call. The fake model, answering from that history, issues the same `record_order` again.
 - **The check:** `sample_orders` has one row, and the second call returned the recorded result. The pause is one-shot, so it is not applied to the second call.
 
@@ -445,7 +447,7 @@ The mypy `files` list gains the new packages. `claude-agent-sdk` is not a Phase 
 | Baseline observability | `observability/baseline` | `test_trace_parentage`, `test_no_sdk_trace_export`, `test_log_context_ids`, `test_metrics_endpoint` |
 | Agent benchmark suite | `quality/agent-benchmarks` | `make benchmark`, with the baseline recorded |
 | Threat model | `security/threat-model` | the controls-to-tests table |
-| `run_harness_turn` | `execution/harness-turn` | `test_harness_turn_scripted`, `test_prohibited_tool_returns_error`, `test_runner_conformance`, `test_heartbeat_details` |
+| `run_harness_turn` | `execution/harness-turn` | `test_harness_turn_scripted`, `test_prohibited_tool_returns_error`, `test_runner_conformance`, `test_usage_is_heartbeated_live` |
 | Durable session, workspace snapshots, recovery on another worker | `execution/durability` | `make recovery-check`, `test_checkpoint_matches_session_position`, `test_restore_prefers_latest_turn`, `test_restore_without_checkpoint` |
 | `TaskWorkflow` | `execution/task-workflow` | `test_task_workflow_*` (time-skipping), `test_task_workflow_replay`, `test_duplicate_task_id_rejected` (in Temporal and after retention, through `tasks`) |
 | Sample skill and MCP tool, negative capability test | `agents/capability-model` | `test_forbidden_skill_or_tool_rejected` |

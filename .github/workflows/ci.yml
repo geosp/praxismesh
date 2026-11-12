@@ -117,6 +117,7 @@ jobs:
       - run: make restart-check
       - run: make unhealthy-check
       - run: make workers-check
+      - run: make recovery-check
       - name: Stack logs on failure
         if: failure()
         run: |

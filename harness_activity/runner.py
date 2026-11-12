@@ -54,8 +54,13 @@ class RunResult:
 
 
 class StopRun(Exception):
-    """Raised by `before_model_call` to end the run early (budget used up, or a
-    newer attempt of the same turn exists). The turn then returns `continue`."""
+    """Raised by `before_model_call` to end the run early because the task's token
+    budget is used up. The turn then returns `continue`."""
+
+
+class Superseded(Exception):
+    """Raised by `before_model_call` when a newer attempt of the same turn exists.
+    The runner lets it propagate: a superseded attempt writes nothing more."""
 
 
 # Called at the start of every inner turn, before the model call (RFC: the
@@ -71,7 +76,10 @@ class HarnessRunner(Protocol):
         session: Session,
         input_text: str,
         before_model_call: BeforeModelCall,
-    ) -> RunResult: ...
+        usage: Usage,
+    ) -> RunResult:
+        """Run once. `usage` is updated live, so the caller can heartbeat it."""
+        ...
 
 
 def _looks_failed(result: str) -> bool:
@@ -120,9 +128,9 @@ class OpenAIAgentsRunner:
         session: Session,
         input_text: str,
         before_model_call: BeforeModelCall,
+        usage: Usage,
     ) -> RunResult:
         state = TurnState()
-        usage = Usage()
         instructions = config.instructions
         if config.skills_bundle is not None:
             mounted = skills.mount(config.skills_bundle, workspace)
@@ -164,7 +172,7 @@ class OpenAIAgentsRunner:
                 )
             except MaxTurnsExceeded:
                 return RunResult("continue", usage, summary="inner-turn limit reached")
-            except StopRun as e:
+            except StopRun as e:  # Superseded is not caught: it propagates
                 return RunResult("continue", usage, summary=str(e))
             except ModelBehaviorError as e:
                 # A model mistake, not an infrastructure failure: the next harness
