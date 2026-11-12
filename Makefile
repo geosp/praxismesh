@@ -31,7 +31,7 @@ SERVICES := db temporal temporal-ui s3
 JOBS := temporal-schema temporal-namespace
 JOB_TIMEOUT := 120
 
-.PHONY: help check up down reset status migrate smoke restart-check unhealthy-check logs registry-lock workers-up workers-down workers-check task task-status task-output
+.PHONY: help check up down reset status migrate smoke restart-check unhealthy-check logs registry-lock workers-up workers-down workers-check recovery-check task task-status task-output
 
 help:
 	@echo "make up              start the stack and wait until it is healthy"
@@ -47,6 +47,7 @@ help:
 	@echo "make workers-up      build and start the orchestrator and two template workers"
 	@echo "make workers-down    stop the workers"
 	@echo "make workers-check   run a scripted task through the worker containers (fake model)"
+	@echo "make recovery-check  kill the worker running a task; the other must finish it (fake model)"
 	@echo "make task PROMPT=... [OUTPUT=path]  submit a task and wait for its result"
 	@echo "make task-status ID=...             show a task"
 	@echo "make task-output ID=... FILE=...    print one of a task's output files"
@@ -98,7 +99,7 @@ migrate: check
 	@$(UV) alembic -c common/persistence/alembic.ini upgrade head
 
 smoke: check
-	@$(UV) pytest -m integration tests/integration
+	@$(UV) pytest -m integration tests/integration --ignore=tests/integration/test_recovery.py
 
 restart-check: check
 	@$(UV) python -m tests.integration.restart_check
@@ -126,6 +127,11 @@ workers-check: check
 		up -d --build --wait --wait-timeout 180 fake-model $(WORKERS)
 	@$(MAKE) --no-print-directory task \
 		PROMPT="Order 3 units of SKU-1 and write order-summary.md." OUTPUT=order-summary.md
+
+# Workers as host processes, one SIGKILLed mid-task: recovery after edits, no
+# repeated side effect, checkpoint positions (RFC: Recovery check).
+recovery-check: check
+	@$(UV) pytest -m integration tests/integration/test_recovery.py -v
 
 workers-down: check
 	@$(COMPOSE) --profile workers --profile fake-model rm -sf $(WORKERS) fake-model

@@ -22,19 +22,19 @@
 
 ## 3. Durability (PR 3)
 
-- [ ] 3.1 Checkpoints at every `on_llm_start` (including the first) and after the run (deterministic tar, off the event loop), heartbeat details with usage, attempt rows at start, restore ordered by turn, attempt and seq (or a fresh start when none exists), truncation to the session position; `test_checkpoint_matches_session_position`, `test_restore_prefers_latest_turn`, `test_restore_without_checkpoint`.
-- [ ] 3.2 `SQLAlchemySession` on the app database; truncation to the session position; self-fencing of overlapping attempts; cumulative usage and `lost` attempt rows.
-- [ ] 3.3 Idempotency keys and `record_order`; the sample server's test-only pause after the effect; `test_side_effect_not_repeated_after_crash`.
-- [ ] 3.4 `make recovery-check` with the fake model's pause point (stop the worker holding the attempt after an acknowledged checkpoint; the other finishes with the full history), run in the `stack` job.
+- [x] 3.1 Checkpoints at every `on_llm_start` (including the first) and after the run (deterministic tar, off the event loop), heartbeat details with usage, attempt rows at start, restore ordered by turn, attempt and seq (or a fresh start when none exists), truncation to the session position; `test_checkpoint_matches_session_position`, `test_restore_prefers_latest_turn`, `test_restore_without_checkpoint`.
+- [x] 3.2 `SQLAlchemySession` on the app database; truncation to the session position; self-fencing of overlapping attempts; cumulative usage and `lost` attempt rows.
+- [x] 3.3 Idempotency keys and `record_order`; the sample server's test-only pause after the effect; `test_side_effect_not_repeated_after_crash`.
+- [x] 3.4 `make recovery-check` with the fake model's pause point (SIGKILL the worker process holding the attempt after an acknowledged checkpoint; the other finishes with the full history), run in the `stack` job. *(Worker processes rather than containers: decision log 2026-11-12.)*
 
 ## Carried from the design review
 
 Nits from `docs/reviews/phase-1/design-review-followup-3.md` to resolve in the PR that touches them. J1, J3, J7, J10, J11 and J13 are already applied to the RFC.
 
-- [ ] D.1 J2: name the `McpServer` field and the test catalog entry for the sample server's timeout and pause flag (PR 3).
+- [x] D.1 J2: name the `McpServer` field and the test catalog entry for the sample server's timeout and pause flag (PR 3). *(`McpServer.client_session_timeout_seconds` and literal `env.SAMPLE_MCP_PAUSE_FILE`, set in the generated test registry, `tests/support/worker_procs.py`.)*
 - [x] D.2 J4, J5, J6, J8, J9, J14, J16: wording and field-list alignment in the RFC and specs (PR 1). *(J4: no "both runners" wording remains.)*
 - [x] D.3 J12: state the status when a sibling tool call in the same step fails alongside `finish_task` (PR 2).
-- [ ] D.4 J15: assert the `seq` 0 checkpoint in `test_checkpoint_matches_session_position` (PR 3).
+- [x] D.4 J15: assert the `seq` 0 checkpoint in `test_checkpoint_matches_session_position` (PR 3).
 - [x] D.5 J17: add the unit check named in the report to task 2.5 (PR 2).
 - [x] D.6 J18: link the `finish_task`/`output_type` run from the RFC, add its decision-log row and a Risks row (PR 2).
 

@@ -326,6 +326,8 @@ A small HTTP server that serves the OpenAI chat-completions endpoint, reached th
 
 ### Recovery check (`make recovery-check`, run in the `stack` job)
 
+> **As built** (decision log 2026-11-12): the check kills worker **processes** with SIGKILL, found through `task_attempts.worker_identity`, using a generated test registry with a 5 s heartbeat timeout. The demo stops a worker container.
+
 1. Start the `workers` profile with the fake model. Submit a scripted task: write a file, call `record_order`, then keep working until the pause step.
 2. Wait until `checkpoints` shows a row after the `record_order` step and the fake model reports it is paused. Find the worker that holds the attempt from `task_attempts.worker_identity`, then stop that worker's container.
 3. Release the pause. The held response goes to a dead connection.
