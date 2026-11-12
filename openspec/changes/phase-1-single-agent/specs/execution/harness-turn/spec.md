@@ -18,11 +18,18 @@ One harness turn: a bounded harness invocation inside a Temporal Activity, confi
 - **THEN** the harness turn stops at the limit and returns `continue`
 
 ### Requirement: Both runners behind HarnessRunner, openai_agents by default
-Harness runners SHALL implement one `HarnessRunner` interface. The `openai_agents` runner SHALL be the default; the `claude_sdk` runner SHALL be selectable by template and installed only as an optional extra. The Claude runner SHALL set `strict_mcp_config`, an empty `setting_sources`, `skills` limited to the bundle, and `allowed_tools` from the template. (Plan: §4.1; §2 harness licensing; owner decision 2026-11-12.)
+Harness runners SHALL implement one `HarnessRunner` interface. The `openai_agents` runner SHALL be the default; the `claude_sdk` runner SHALL be selectable by template and installed only as an optional extra. (Plan: §4.1; §2 harness licensing; owner decision 2026-11-11.)
+
+#### Scenario: Default runner
+- **WHEN** the committed `local-default` template is loaded
+- **THEN** its harness is `openai_agents`, and the worker starts without the Claude extra installed
+
+### Requirement: Claude runner isolation
+The Claude runner SHALL restrict its tools (`tools`, exact `allowed_tools`, `permission_mode="dontAsk"`), load only the template's MCP servers (`strict_mcp_config`) and skills (a local plugin, no setting sources), and start the CLI with an explicit minimal environment. (Plan: §4.1 disable implicit discovery, verify prohibited capabilities.)
 
 #### Scenario: Claude runner discovers nothing implicitly
-- **WHEN** the Claude runner starts in a workspace that contains its own `.claude/` settings or skills
-- **THEN** those settings and skills are not loaded, and only the template's MCP servers and skills are available
+- **WHEN** the Claude runner runs against the fake model in a workspace with its own `.claude/` settings, skills and `.mcp.json`, and the worker environment holds a canary credential
+- **THEN** the request it sends lists only the allowed tools and skills, and the canary is not visible to its commands
 
 ### Requirement: Heartbeats with bounded progress
 A harness turn SHALL heartbeat at an interval shorter than the template's `heartbeat_timeout`, with details limited to the latest checkpoint ID, the inner turn, and tool-call and token counts. (Plan: §4.1 heartbeat with bounded progress metadata.)

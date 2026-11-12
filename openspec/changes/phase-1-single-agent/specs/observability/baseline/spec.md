@@ -26,3 +26,10 @@ Each worker SHALL expose Prometheus metrics: Activity duration, heartbeat lag, t
 #### Scenario: Metrics after a task
 - **WHEN** a task has completed on a worker
 - **THEN** its `/metrics` endpoint reports a non-zero Activity count and token count
+
+### Requirement: No trace data leaves the installation
+The harness SDKs' own tracing to third-party backends SHALL be disabled; traces go only to the configured OTLP endpoint, or nowhere. (Plan: §2 local, self-hosted default; §9.5 untrusted content.)
+
+#### Scenario: SDK tracing off
+- **WHEN** a worker has started and run a task
+- **THEN** no `openai-agents` trace processor or exporter is registered

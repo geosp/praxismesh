@@ -7,7 +7,7 @@ What an agent may do comes from versioned worker templates, never from requests 
 ## ADDED Requirements
 
 ### Requirement: Versioned definitions with validated loaders
-`AgentProfile`, `WorkerTemplate` and `McpServer` SHALL be Pydantic schemas with a `schema_version`, loaded from YAML under `registry/` and validated on load. A template SHALL be identified by `name@version` plus a content hash, and every task SHALL record the template version and hash it ran with. (Plan: Phase 1 task 1; §5; §4.10 immutable template versions.)
+`AgentProfile`, `WorkerTemplate` and `McpServer` SHALL be Pydantic schemas with a `schema_version`, loaded from YAML under `registry/` and validated on load. A template SHALL be identified by `name@version`, with its content hash recorded in `registry/registry.lock`; every task SHALL record the version and hash it ran with, and a worker SHALL refuse a turn whose template hash differs from its own. (Plan: Phase 1 task 1; §5; §4.10 immutable template versions.)
 
 #### Scenario: Valid definitions load
 - **WHEN** the loaders read the committed `registry/` files
@@ -15,7 +15,7 @@ What an agent may do comes from versioned worker templates, never from requests 
 
 #### Scenario: Changed template without a version bump
 - **WHEN** a template file's content changes but its `version` does not
-- **THEN** the loader reports the hash mismatch against the recorded version instead of silently using the new content
+- **THEN** loading fails naming the template, because its hash no longer matches `registry/registry.lock`
 
 ### Requirement: Capabilities come from templates only
 The harness configuration (model, MCP servers, skills, tools) SHALL come only from the worker template. Profiles and requests SHALL reject unknown fields; a request carries only a profile name, instructions and input files. One that names a skill, MCP server or tool SHALL be rejected before any Workflow starts, naming the field. (Plan: Phase 1 task 10; §4.1; §5 "No MCP/skills fields".)
@@ -33,4 +33,11 @@ A harness SHALL expose only the template's MCP tools (filtered to each server's 
 
 #### Scenario: Prohibited tool call
 - **WHEN** a model calls an MCP tool that is not in `tools_allowed`, or runs a program not in `cli_tools`
-- **THEN** the call is refused with an explicit error in the tool result, and the refusal is logged with the task and attempt IDs
+- **THEN** the call is refused with an explicit error returned to the model as the tool result, the refusal is logged with the task and attempt IDs, and the harness turn is not retried because of it
+
+### Requirement: The template decides the harness
+The chosen template's `harness` SHALL be authoritative, and the template SHALL be one of the profile's `allowed_templates` (the first is the default). A profile whose `harness` differs from the chosen template's SHALL be rejected. (Plan: §4.10 templates are the unit of capability; §5 `AgentProfile.harness`, `allowed_templates[]`.)
+
+#### Scenario: Harness mismatch
+- **WHEN** a request uses a profile with `harness: claude_sdk` and a template with `harness: openai_agents`
+- **THEN** it is rejected with a capability error naming both values

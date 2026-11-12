@@ -14,8 +14,15 @@ A fixed suite of representative agent tasks with deterministic checks, run whene
 - **THEN** a results file in `docs/benchmarks/` records every task and is marked as the baseline
 
 ### Requirement: Regression limit
-A benchmark run that passes 2 or more fewer tasks than the baseline SHALL block phase closure. (Plan: §8 benchmark rule; owner decision 2026-11-12: at most 1 task lost out of 10.)
+A benchmark run that passes 2 or more fewer tasks than the baseline SHALL block phase closure. (Plan: §8 benchmark rule; owner decision 2026-11-11: at most 1 task lost out of 10.)
 
 #### Scenario: Regression detected
 - **WHEN** a run passes 8 tasks against a baseline of 10
 - **THEN** the run's report states that the regression limit is exceeded
+
+### Requirement: When the benchmark runs
+The benchmark SHALL be run after any change to a model, a template, a harness version or a system prompt, and at every phase closure from Phase 1 onward. (Plan: §8 benchmark rule.)
+
+#### Scenario: Template changed
+- **WHEN** a pull request changes `registry/templates/local-default.yaml`
+- **THEN** the phase evidence links a benchmark run made after that change

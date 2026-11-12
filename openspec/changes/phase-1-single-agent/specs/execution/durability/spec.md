@@ -11,10 +11,10 @@ After each inner turn that changed the workspace or the session, a harness turn 
 
 #### Scenario: Checkpoint after an edit
 - **WHEN** an inner turn writes a file in the workspace
-- **THEN** a new checkpoint row exists whose workspace snapshot contains that file
+- **THEN** a new checkpoint row exists whose workspace snapshot contains that file, and whose session position equals the number of session items saved for that turn
 
 ### Requirement: Recovery on another worker
-When a worker stops mid-turn, the next attempt SHALL run on any worker of the template's queue and restore the latest acknowledged checkpoint's workspace and session, discarding session items recorded after it. Worker affinity SHALL NOT be required. (Plan: Phase 1 task 8 and accept criteria; §4.2; owner decision 2026-11-12: under Compose, stop one worker container.)
+When a worker stops mid-turn, the next attempt SHALL run on any worker of the template's queue and restore the latest acknowledged checkpoint's workspace and session, discarding session items recorded after it. Worker affinity SHALL NOT be required. (Plan: Phase 1 task 8 and accept criteria; §4.2; owner decision 2026-11-11: under Compose, stop one worker container.)
 
 #### Scenario: Worker stopped after edits
 - **WHEN** worker A is stopped after an acknowledged checkpoint that includes workspace edits
@@ -26,3 +26,7 @@ Every tool with an effect outside the workspace SHALL take an idempotency key de
 #### Scenario: Crash between effect and checkpoint
 - **WHEN** a worker is stopped after `record_order` has taken effect but before the next checkpoint, and the resumed task calls it again with the same arguments
 - **THEN** the order exists once, and the second call returns the recorded result
+
+#### Scenario: Identical calls within one task
+- **WHEN** a task calls `record_order` twice with the same arguments
+- **THEN** one order is recorded; this is the sample tool's intended behavior, and a tool that needs repeats adds a sequence number to its arguments
