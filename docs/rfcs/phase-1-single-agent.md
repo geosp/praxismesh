@@ -9,7 +9,7 @@ openspec_change: openspec/changes/phase-1-single-agent
 plan_sections: [Phase 1, "§2", "§4.1", "§4.2", "§4.10", "§4.13", "§5", "§6", "§8"]
 size: L
 hardware: x86_64 workstation with Docker (no GPU); vLLM on the DGX Spark pair for real-model runs; CI uses a scripted fake model endpoint
-pre0_inputs: [harness decision (go, openai_agents default), model per tier (spark: qwen3.8-flash-next)]
+pre0_inputs: [harness decision (go; openai_agents only in Phase 1), model for the local tier (served as spark: qwen3.8-flash-next)]
 date: 2026-11-11
 authors: [owner, coding agent]
 revision: 4 (defers the Claude runner; addresses the design review of e437d0f and the targeted follow-ups of 17b3d67 and e138063, docs/reviews/phase-1/)
@@ -60,6 +60,15 @@ Section numbers such as §4.1 refer to the plan's sections, listed in the docume
 | **`ExecutionAttempt`** | The schema of one `task_attempts` row. |
 | **System prompt** | Owned by the template: a prompt file in `registry/`, included in the template hash and recorded as the prompt hash. |
 | **`request_id`** | Minted by the CLI for each submission. A task has one, and logs carry it. |
+| **`worker_identity`** | `<hostname>@<pid>/<template>`, which Temporal also shows as the worker's identity. |
+| **`comms_mcp`** | The agent messaging MCP server of plan §4.11. Phase 1 has a stub only. |
+| **The CLI** | `python -m orchestrator.cli`, also reached through the `make task` targets. |
+| **Pre-0, the Sparks** | Pre-0 is the spike that came before Phase 0. The Sparks are the two NVIDIA DGX Spark machines serving the local model through vLLM. |
+| **ParadeDB** | The PostgreSQL server (ADR-0002). "The `praxismesh` database" is the application's database on it. |
+| **ADR-0001** | The decision that an OpenSpec change's `design.md` links its phase RFC rather than repeating it. |
+| **As-built section** | The part of `docs/architecture/overview.md` that records what was actually built (plan §4.17). |
+| **Claim Check** | Storing a large payload in the `BlobStore` and passing only its reference (Phase 3A). |
+| **Licensing decision** | Whether the Claude Agent SDK's terms allow its use with local models and in published images (plan §2); still open. |
 
 ## Plan
 
@@ -222,7 +231,7 @@ sequenceDiagram
 1. **Start.** First reject the turn, with the retryable `TemplateVersionUnavailable`, if the template hash in `TurnInput` differs from the one this worker loaded. Only then upsert the `task_attempts` row as started (J3).
 2. **Restore.** Find the newest checkpoint for the task by reading `checkpoints`, which is authoritative: order by `turn`, then `attempt`, then `seq`, all descending.
    - **A checkpoint exists:** unpack its workspace snapshot into a fresh directory under the worker's scratch volume. Restore the session, then truncate it to the checkpoint's `session_position` (see Session).
-   - **No checkpoint exists for the task** (the first attempt of turn 1, or an attempt lost before its first checkpoint): start fresh. Clear the session, download the input files from the `tasks` row's `input_refs` into the workspace root (J7), and read the instructions from `instructions_ref`. The attempt then behaves as the first attempt of turn 1, whatever its own turn and attempt numbers.
+   - **No checkpoint exists for the task** (the first attempt of turn 1, or an attempt of turn 1 lost before its first checkpoint; a later turn always finds turn 1's checkpoints): start fresh. Clear the session, download the input files from the `tasks` row's `input_refs` into the workspace root (J7), and read the instructions from `instructions_ref`. The attempt then behaves as the first attempt of turn 1, whatever its own turn and attempt numbers.
 3. **Configure, from the template only.**
      - the model client from `base_url_env`;
      - the MCP servers, spawned as stdio subprocesses with `tool_filter` set to `tools_allowed`, and an environment of their literal `env` plus `PRAXIS_TASK_ID` plus only their declared `secret_env`;
@@ -233,7 +242,7 @@ sequenceDiagram
      - has the worker call `set_tracing_disabled(True)` and `set_trace_processors([])` at startup. The second call removes the SDK's default processor, which the first alone leaves registered, so nothing is ever sent to the SDK's trace backend;
      - logs refusals in `on_llm_end`, by comparing the tool names the model requested with the allowed ones. No hook fires for a tool that was not found.
 4. **Run** for at most `inner_max_turns` inner turns.
-   - **Input to `Runner.run`:** when starting fresh, the instructions. Otherwise the restored session already holds the instructions and the conversation, so the input is a fixed message: "Continue the task from where it stopped."
+   - **Input to `Runner.run`:** when starting fresh, the instructions. Otherwise the restored session already holds the instructions and the conversation, so the input is a fixed message: "Continue the task from where it stopped." Each resumed attempt or later turn therefore adds one such message to the session before its `seq` 0 checkpoint; this is expected
    - **Budget inside a turn:** at each `on_llm_start`, if the tokens used reach the `TurnInput`'s remaining budget, the turn ends with `continue`, and the Workflow then stops the task. A turn can therefore overrun its token budget by at most one model call.
    - **Inner-turn limit:** `Runner.run` raises `MaxTurnsExceeded` at the limit. That path also takes the final checkpoint, and maps to `continue`.
    - **Done or needs input:** the agent ends by calling the built-in `finish_task(status, summary, questions[])` tool, with `status` `done` or `needs_input`. The run stops on that call (`tool_use_behavior={"stop_at_tool_names": ["finish_task"]}`), and its arguments decide the turn's status. A run that ends without calling it counts as `continue`. The runner records the **validated** `finish_task` arguments itself, in the run context, because the SDK also stops the run on a call with invalid arguments and then returns only a generic error string. A stop without valid arguments counts as `continue` (J11). The arguments are stored with the final checkpoint, so an attempt lost after `finish_task` goes straight to Finish on restore (J13).
@@ -486,7 +495,7 @@ The mypy `files` list gains the new packages. `claude-agent-sdk` is not a Phase 
 **Real model, on request** (linked from the evidence): the end-to-end sample task and `make benchmark`, both against the Sparks. Phase 1 cannot close on stubbed results alone (§8).
 
 **Demo** (`docs/demos/phase-1.md`). Entry point: `make workers-up`, then `make task`.
-1. **Sample task:** it uses the `order-desk` skill and the `sample-shop` MCP tool, and produces `order-summary.md` plus a validated `TaskResult`. Show the file, the `TaskResult` and the task in the Temporal UI.
+1. **Sample task:** `make task PROMPT=… OUTPUT=order-summary.md` submits it with `outputs: [order-summary.md]`, which the CLI stores in the `tasks` row's `outputs`. It uses the `order-desk` skill and the `sample-shop` MCP tool, and produces `order-summary.md` plus a validated `TaskResult`. Show the file (`make task-output ID=… PATH=order-summary.md`), the `TaskResult`, and the task in the Temporal UI.
 2. **Worker loss:** during a second task, wait for an acknowledged checkpoint (in `make task-status`), then stop the worker that holds the attempt. The other worker resumes and finishes. Show:
    - the same `task_id` and Workflow ID;
    - the edits kept;

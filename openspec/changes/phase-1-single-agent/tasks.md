@@ -2,14 +2,14 @@
 
 ## 1. Foundations (PR 1)
 
-- [ ] 1.1 Dependencies: `openai-agents`, `pydantic`, `pyyaml` (runtime), `mcp`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp` and `prometheus-client`. Confirm that CI's `licenses` job passes.
-- [ ] 1.2 `common/schemas/`: `AgentProfile`, `WorkerTemplate`, `McpServer`, `BlobRef`, `TaskRequest`, `TaskResult`, `TurnInput`, `TurnOutcome` and `ExecutionAttempt`, each with `schema_version`. The profile and request schemas forbid extra fields.
-- [ ] 1.3 `registry/` loaders and `registry/registry.lock` (template hashes, checked in CI); the committed `default` profile, `local-default@1` template and `sample-shop` MCP entry; harness-precedence and template-choice rules. Negative tests for profiles and requests.
-- [ ] 1.4 `common/blob_store/`: protocol, typed errors, in-memory fake, S3 adapter, and the shared contract suite (fake in unit tests, SeaweedFS in `stack`).
-- [ ] 1.5 Migration `0003` (including `sample_orders`, and `DEFAULT 'task'` on the SDK and sample tables) and `common/persistence/retention.py`; repositories with the stated upsert keys; a test that every row and blob has a retention class.
-- [ ] 1.6 `common/observability/`: JSON logging with context IDs, OpenTelemetry setup with `TracingInterceptor`, Prometheus metrics, SDK tracing disabled; unit tests with an in-memory exporter and `test_no_sdk_trace_export`.
-- [ ] 1.7 CLI (`python -m orchestrator.cli task submit|status`): validates requests, mints `task_id`, uploads instructions and inputs as blobs, starts with `REJECT_DUPLICATE` (its duplicate test lands in PR 2).
-- [ ] 1.8 Tooling: new `infra/.env` keys (`S3_BUCKET`, `PRAXIS_SAMPLE_DB_URL`, and the optional `OTEL_EXPORTER_OTLP_ENDPOINT`) in `.env.example` and `check-prereqs.sh`; `make registry-lock`; mypy `files` gains the new packages.
+- [x] 1.1 Dependencies: `openai-agents`, `pydantic`, `pyyaml` (runtime), `mcp`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp` and `prometheus-client`. Confirm that CI's `licenses` job passes.
+- [x] 1.2 `common/schemas/`: `AgentProfile`, `WorkerTemplate`, `McpServer`, `BlobRef`, `TaskRequest`, `TaskResult`, `TurnInput`, `TurnOutcome` and `ExecutionAttempt`, each with `schema_version`. The profile and request schemas forbid extra fields.
+- [x] 1.3 `registry/` loaders and `registry/registry.lock` (template hashes, checked in CI); the committed `default` profile, `local-default@1` template and `sample-shop` MCP entry; harness-precedence and template-choice rules. Negative tests for profiles and requests.
+- [x] 1.4 `common/blob_store/`: protocol, typed errors, in-memory fake, S3 adapter, and the shared contract suite (fake in unit tests, SeaweedFS in `stack`).
+- [x] 1.5 Migration `0003` (including `sample_orders`, and `DEFAULT 'task'` on the SDK and sample tables) and `common/persistence/retention.py`; repositories with the stated upsert keys; a test that every row and blob has a retention class.
+- [x] 1.6 `common/observability/`: JSON logging with context IDs, OpenTelemetry setup with `TracingInterceptor`, Prometheus metrics, SDK tracing disabled; unit tests with an in-memory exporter and `test_no_sdk_trace_export`.
+- [x] 1.7 CLI (`python -m orchestrator.cli task submit|status`): validates requests, mints `task_id`, uploads instructions and inputs as blobs, starts with `REJECT_DUPLICATE` (its duplicate test lands in PR 2).
+- [x] 1.8 Tooling: new `infra/.env` keys (`S3_BUCKET`, `PRAXIS_SAMPLE_DB_URL`, and the optional `OTEL_EXPORTER_OTLP_ENDPOINT`) in `.env.example` and `check-prereqs.sh`; `make registry-lock`; mypy `files` gains the new packages.
 
 ## 2. Harness (PR 2)
 
@@ -32,7 +32,7 @@
 Nits from `docs/reviews/phase-1/design-review-followup-3.md` to resolve in the PR that touches them. J1, J3, J7, J10, J11 and J13 are already applied to the RFC.
 
 - [ ] D.1 J2: name the `McpServer` field and the test catalog entry for the sample server's timeout and pause flag (PR 3).
-- [ ] D.2 J4, J5, J6, J8, J9, J14, J16: wording and field-list alignment in the RFC and specs (PR 1).
+- [x] D.2 J4, J5, J6, J8, J9, J14, J16: wording and field-list alignment in the RFC and specs (PR 1). *(J4: no "both runners" wording remains.)*
 - [ ] D.3 J12: state the status when a sibling tool call in the same step fails alongside `finish_task` (PR 2).
 - [ ] D.4 J15: assert the `seq` 0 checkpoint in `test_checkpoint_matches_session_position` (PR 3).
 - [ ] D.5 J17: add the unit check named in the report to task 2.5 (PR 2).

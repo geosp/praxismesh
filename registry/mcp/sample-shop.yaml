@@ -1,0 +1,8 @@
+# The sample MCP server (sample_mcp/), run as a stdio subprocess per harness turn.
+name: sample-shop
+transport: stdio
+command: python
+args: ["-m", "sample_mcp"]
+secret_env: [PRAXIS_SAMPLE_DB_URL]
+tools_allowed: [lookup_price, lookup_stock, get_discount, get_setting, record_order]
+capabilities: [shop-read, shop-orders]

@@ -10,6 +10,13 @@ dependencies = [
     "asyncpg>=0.32.0",
     "boto3>=1.44.0",
     "httpx>=0.28.1",
+    "mcp>=2.3.0",
+    "openai-agents>=0.24.0",
+    "opentelemetry-exporter-otlp>=1.45.2",
+    "opentelemetry-sdk>=1.45.2",
+    "prometheus-client>=0.26.0",
+    "pydantic>=2.14.3",
+    "pyyaml>=6.0.3",
     "sqlalchemy[asyncio]>=2.1.8",
     "temporalio>=1.36.0",
 ]
@@ -25,10 +32,14 @@ extend-exclude = [".agents/skills", "spikes"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# Pydantic copies field defaults per instance; RUF012 sees our `Strict` base, not BaseModel.
+"common/schemas/*.py" = ["RUF012"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = [".agents/sync_agents.py", ".github/scripts/ci_gate.py", "common", "tests"]
+files = [".agents/sync_agents.py", ".github/scripts/ci_gate.py", "common", "registry", "orchestrator", "tests"]
 mypy_path = ".agents:.github/scripts:."
 explicit_package_bases = true
 

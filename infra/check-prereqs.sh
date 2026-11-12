@@ -19,9 +19,11 @@ env_file=${1:-infra/.env}
 
 known="COMPOSE_PROJECT_NAME POSTGRES_PASSWORD TEMPORAL_DB_PASSWORD APP_DB_PASSWORD DB_PORT"
 known="$known TEMPORAL_PORT TEMPORAL_UI_PORT TEMPORAL_NAMESPACE TEMPORAL_RETENTION"
-known="$known S3_PORT S3_ACCESS_KEY S3_SECRET_KEY VLLM_BASE_URL VLLM_MODEL VLLM_API_KEY"
-# Everything except the model endpoint and its key must be non-empty.
-required=$(printf '%s\n' "$known" | tr ' ' '\n' | grep -vE '^VLLM_(BASE_URL|API_KEY)$' | tr '\n' ' ')
+known="$known S3_PORT S3_ACCESS_KEY S3_SECRET_KEY S3_BUCKET VLLM_BASE_URL VLLM_MODEL VLLM_API_KEY"
+known="$known PRAXIS_SAMPLE_DB_URL OTEL_EXPORTER_OTLP_ENDPOINT"
+# Everything except these optional keys must be non-empty.
+optional='^(VLLM_BASE_URL|VLLM_API_KEY|PRAXIS_SAMPLE_DB_URL|OTEL_EXPORTER_OTLP_ENDPOINT)$'
+required=$(printf '%s\n' "$known" | tr ' ' '\n' | grep -vE "$optional" | tr '\n' ' ')
 
 value() {
     sed -n "s/^$1=//p" "$env_file" | tail -n 1

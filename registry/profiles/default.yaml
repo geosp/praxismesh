@@ -1,0 +1,9 @@
+# The default agent profile. Profiles carry identity and task limits only; every
+# capability (model, MCP servers, skills, tools) comes from the template.
+name: default
+tier: local
+harness: openai_agents
+allowed_templates: [local-default]
+max_turns: 6
+max_tokens: 1000000
+max_wall_time: PT30M

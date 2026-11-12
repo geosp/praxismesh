@@ -31,7 +31,7 @@ SERVICES := db temporal temporal-ui s3
 JOBS := temporal-schema temporal-namespace
 JOB_TIMEOUT := 120
 
-.PHONY: help check up down reset status migrate smoke restart-check unhealthy-check logs
+.PHONY: help check up down reset status migrate smoke restart-check unhealthy-check logs registry-lock
 
 help:
 	@echo "make up              start the stack and wait until it is healthy"
@@ -43,6 +43,7 @@ help:
 	@echo "make restart-check   check repeat starts, a retention change and a restart"
 	@echo "make unhealthy-check check that a stopped database is reported by name"
 	@echo "make logs            follow the stack's logs"
+	@echo "make registry-lock   record new template versions in registry/registry.lock"
 
 check:
 	@sh infra/check-prereqs.sh $(ENV_FILE)
@@ -101,3 +102,7 @@ unhealthy-check: check
 
 logs: check
 	@$(COMPOSE) logs -f --tail 100
+
+# Record new template versions; existing entries are never rewritten.
+registry-lock:
+	@uv run python -m registry.lock
