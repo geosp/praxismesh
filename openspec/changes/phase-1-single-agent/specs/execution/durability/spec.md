@@ -1,0 +1,28 @@
+# Spec Delta
+
+## Purpose
+
+A task survives the loss of its worker: session and workspace are checkpointed during a harness turn and restored on another worker, and side effects are not repeated (plan §4.2; Phase 1 task 8; accept criteria).
+
+## ADDED Requirements
+
+### Requirement: Mid-turn checkpoints
+After each inner turn that changed the workspace or the session, a harness turn SHALL record a checkpoint: a workspace snapshot stored through `BlobStore` and the session position, committed in `checkpoints`. A checkpoint SHALL count as acknowledged once its row is committed. (Plan: Phase 1 task 8; §4.2 separate workspace checkpoints, a transcript alone cannot restore files.)
+
+#### Scenario: Checkpoint after an edit
+- **WHEN** an inner turn writes a file in the workspace
+- **THEN** a new checkpoint row exists whose workspace snapshot contains that file
+
+### Requirement: Recovery on another worker
+When a worker stops mid-turn, the next attempt SHALL run on any worker of the template's queue and restore the latest acknowledged checkpoint's workspace and session, discarding session items recorded after it. Worker affinity SHALL NOT be required. (Plan: Phase 1 task 8 and accept criteria; §4.2; owner decision 2026-11-12: under Compose, stop one worker container.)
+
+#### Scenario: Worker stopped after edits
+- **WHEN** worker A is stopped after an acknowledged checkpoint that includes workspace edits
+- **THEN** worker B resumes the same task (same task and Workflow IDs), the edits are present, the conversation continues, and the task completes
+
+### Requirement: No duplicated side effects
+Every tool with an effect outside the workspace SHALL take an idempotency key derived from the task ID, the tool name and its canonical arguments, and SHALL apply its effect at most once per key, returning the recorded result on a repeat. (Plan: Phase 1 accept criteria; §4.2 idempotency keys, test pod termination between side effect and checkpoint.)
+
+#### Scenario: Crash between effect and checkpoint
+- **WHEN** a worker is stopped after `record_order` has taken effect but before the next checkpoint, and the resumed task calls it again with the same arguments
+- **THEN** the order exists once, and the second call returns the recorded result
