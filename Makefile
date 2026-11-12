@@ -31,7 +31,7 @@ SERVICES := db temporal temporal-ui s3
 JOBS := temporal-schema temporal-namespace
 JOB_TIMEOUT := 120
 
-.PHONY: help check up down reset status migrate smoke restart-check unhealthy-check logs registry-lock workers-up workers-down workers-check recovery-check task task-status task-output
+.PHONY: help check up down reset status migrate smoke restart-check unhealthy-check logs registry-lock workers-up workers-down workers-check recovery-check benchmark observability-up observability-down task task-status task-output
 
 help:
 	@echo "make up              start the stack and wait until it is healthy"
@@ -48,6 +48,8 @@ help:
 	@echo "make workers-down    stop the workers"
 	@echo "make workers-check   run a scripted task through the worker containers (fake model)"
 	@echo "make recovery-check  kill the worker running a task; the other must finish it (fake model)"
+	@echo "make benchmark       run the agent benchmark on the real model (ARGS=--baseline to record it)"
+	@echo "make observability-up   start Prometheus (127.0.0.1:9090) and Jaeger (127.0.0.1:16686)"
 	@echo "make task PROMPT=... [OUTPUT=path]  submit a task and wait for its result"
 	@echo "make task-status ID=...             show a task"
 	@echo "make task-output ID=... FILE=...    print one of a task's output files"
@@ -132,6 +134,16 @@ workers-check: check
 # repeated side effect, checkpoint positions (RFC: Recovery check).
 recovery-check: check
 	@$(UV) pytest -m integration tests/integration/test_recovery.py -v
+
+# The agent benchmark on the real model (not in CI; plan §8).
+benchmark: check
+	@$(UV) python -m tests.benchmarks.run $(ARGS)
+
+observability-up: check
+	@$(COMPOSE) --profile observability up -d prometheus jaeger
+
+observability-down: check
+	@$(COMPOSE) --profile observability rm -sf prometheus jaeger
 
 workers-down: check
 	@$(COMPOSE) --profile workers --profile fake-model rm -sf $(WORKERS) fake-model
