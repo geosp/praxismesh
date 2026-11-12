@@ -4,7 +4,11 @@ from common.schemas.base import Harness, RetentionClass, Strict
 from common.schemas.blob import BlobRef
 from common.schemas.capability import AgentProfile, McpServer, WorkerTemplate
 from common.schemas.task import (
+    Artifact,
+    CompleteTaskInput,
     ExecutionAttempt,
+    RecordTaskInput,
+    ResolvedTask,
     TaskRequest,
     TaskResult,
     TaskStart,
@@ -14,10 +18,14 @@ from common.schemas.task import (
 
 __all__ = [
     "AgentProfile",
+    "Artifact",
     "BlobRef",
+    "CompleteTaskInput",
     "ExecutionAttempt",
     "Harness",
     "McpServer",
+    "RecordTaskInput",
+    "ResolvedTask",
     "RetentionClass",
     "Strict",
     "TaskRequest",

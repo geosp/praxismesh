@@ -17,7 +17,7 @@ from temporalio.common import WorkflowIDConflictPolicy, WorkflowIDReusePolicy
 from common.blob_store import BlobStore
 from common.errors import InvalidTaskInput
 from common.schemas import TaskStart
-from orchestrator.constants import ORCHESTRATION_QUEUE, TASK_WORKFLOW
+from orchestrator.constants import TASK_WORKFLOW, orchestration_queue
 from orchestrator.requests import parse_task_request
 from registry.loader import Registry
 
@@ -58,7 +58,7 @@ async def start_task(client: Client, start: TaskStart) -> WorkflowHandle[Any, An
         TASK_WORKFLOW,
         start,
         id=start.task_id,
-        task_queue=ORCHESTRATION_QUEUE,
+        task_queue=orchestration_queue(),
         id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
         id_conflict_policy=WorkflowIDConflictPolicy.FAIL,
     )
