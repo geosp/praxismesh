@@ -1,0 +1,29 @@
+[
+  {
+    "tool": "lookup_price",
+    "args": {
+      "sku": "SKU-1"
+    }
+  },
+  {
+    "tool": "record_order",
+    "args": {
+      "sku": "SKU-1",
+      "qty": 3
+    }
+  },
+  {
+    "tool": "write_file",
+    "args": {
+      "path": "order-summary.md",
+      "content": "# Order summary\n\n| SKU | Qty | Unit price | Line total |\n|---|---|---|---|\n| SKU-1 | 3 | 12.50 | 37.50 |\n"
+    }
+  },
+  {
+    "tool": "finish_task",
+    "args": {
+      "status": "done",
+      "summary": "Ordered 3 x SKU-1."
+    }
+  }
+]
