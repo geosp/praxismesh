@@ -37,7 +37,7 @@ second execution or authorization path.
 ## Decision outcome
 
 Proposed option: split out Phase 4A, after Phase 4 and before Phase 5. It is part
-of the MVP and follows the full process tier, like Phase 4. Phase 5 remains the
+of the MVP and follows the [full process tier](../../PROJECT_PLAN.md#70-process-tiers-and-phase-order-rev-211), like Phase 4. Phase 5 remains the
 MVP completion point. This ADR is a sequencing decision, not the implementation
 RFC or a claim that any UI is available today.
 
@@ -65,9 +65,9 @@ object-store credential or Kubernetes access. It cannot grant tools, bypass
 approval gates or change template capabilities. Authentication and authorization
 are enforced on the API; a hidden button is not an access control.
 
-Phase 8 retains template/profile/MCP administration, cluster/fleet management,
+[Phase 8](../plan/phases/phase-8.md) retains template/profile/MCP administration, cluster/fleet management,
 deployment/rollout/scale controls, GPU placement, full operational dashboards,
-external kubectl reconciliation and verified-workflow views introduced by
+external kubectl reconciliation and [verified-workflow views](../plan/design-decisions.md#415-reusable-independently-verified-workflows-planned-platform-capability) introduced by
 Phase 6B. It extends the same frontend and shared event/identity contracts.
 GitHub delivery views cannot imply Phase 5 capabilities in Phase 4A.
 
