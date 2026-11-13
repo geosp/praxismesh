@@ -59,3 +59,34 @@ with the subsequent documentation-only commit proposed as `docs_sha`. Check that
 `git diff <code_sha> <docs_sha> -- . ':!docs'` is empty. This evidence does not
 close findings independently or authorize phase closure. After a review PASS,
 Phase 1 light-tier verification must use those exact revisions.
+
+## Handoff revalidation
+
+A continuation on 2026-11-13 found the correction commits already present on
+PR #53. The remote branch had advanced to
+`c31d40aacdb74de7ca88479cecbf27552a06071f` through an existing merge of `main`,
+adding the earlier `gate-followup.md` report. The local branch was fast-forwarded
+to preserve that report and remote history. No merge was created in this
+continuation. The diff from the `code_sha` above to that head contains only docs.
+
+All three mutations were rerun separately with the command above, and each
+failed at its intended assertion (exit 1, one failed test):
+
+- Output-token recording removed: line 530, `None == (0 + 7)`.
+- Checkpoint sizes zeroed: line 533, `0.0 == ((0 + 110) + 139)`.
+- Checkpoint durations zeroed: line 537, `0.0 == (0 + 0.75)`.
+
+Every mutation was restored, including on failure of the mutation driver;
+`git diff --exit-code -- harness_activity/activity.py` passed afterwards.
+The unit/replay suite again passed (157 passed, 91 deselected). Dependency sync,
+Ruff lint/format, mypy, agent-sync and both OpenSpec checks again passed. The
+agent-sync dependency download required network access; its successful rerun
+reported all 12 generated files current.
+
+After restoration, the full focused Activity/CLI run passed again (17 passed),
+and `make smoke` passed (82 passed, 4 skips for an unconfigured model endpoint).
+The preserved PR #53 review is byte-for-byte unchanged from `f160aea`.
+The proposed `docs_sha` is the commit containing this appended revalidation;
+its exact SHA is recorded externally in PR #53 to avoid self-reference. The
+remote `code_sha` remains `9472d20d3b5e5d7cee1542ffedf9c25335defadd`.
+Independent review and verification remain pending in a fresh session.
