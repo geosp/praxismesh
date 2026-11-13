@@ -1,0 +1,2 @@
+error: a task request may not set mcp_servers, skills: capabilities come only from the worker template
+exit: 2

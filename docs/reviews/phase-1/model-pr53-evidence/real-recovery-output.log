@@ -1,0 +1,10 @@
+# Order summary
+
+| SKU | Qty | Unit price | Line total |
+|---|---|---|---|
+| SKU-4 | 2 | 4.10 | 8.20 |
+| SKU-5 | 1 | 22.40 | 22.40 |
+| SKU-2 | 3 | 7.25 | 21.75 |
+| SKU-1 | 1 | 12.50 | 12.50 |
+
+Total: 64.85

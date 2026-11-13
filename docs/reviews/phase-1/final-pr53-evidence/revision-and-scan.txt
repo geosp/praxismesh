@@ -1,0 +1,35 @@
+Revision checks, 2026-11-13
+
+$ git cat-file -t 9472d20d3b5e5d7cee1542ffedf9c25335defadd
+commit
+$ git cat-file -t f2789d505755397bfdd40a88106a04a0b192f3cf
+commit
+$ git branch -r --contains 9472d20d3b5e5d7cee1542ffedf9c25335defadd
+  origin/fix/44-phase-1-followup-fixes
+$ git branch -r --contains f2789d505755397bfdd40a88106a04a0b192f3cf
+  origin/fix/44-phase-1-followup-fixes
+$ git ls-remote origin refs/heads/fix/44-phase-1-followup-fixes refs/pull/53/head
+f2789d505755397bfdd40a88106a04a0b192f3cf refs/heads/fix/44-phase-1-followup-fixes
+f2789d505755397bfdd40a88106a04a0b192f3cf refs/pull/53/head
+$ git diff --stat 9472d20d3b5e5d7cee1542ffedf9c25335defadd f2789d505755397bfdd40a88106a04a0b192f3cf -- . ':!docs'
+(no output)
+$ git diff --name-status 9472d20d3b5e5d7cee1542ffedf9c25335defadd f2789d505755397bfdd40a88106a04a0b192f3cf
+A docs/reviews/phase-1/gate-followup-pr53.md
+A docs/reviews/phase-1/gate-followup.md
+A docs/reviews/phase-1/pr53-t1-t2-corrections.md
+
+$ gh api repos/geosp/praxismesh/commits/9472d20d3b5e5d7cee1542ffedf9c25335defadd/check-runs --jq '.total_count'
+0
+Informational only: no check-runs attached directly to frozen code commit.
+Latest docs-only PR head checks are separately successful.
+
+$ git grep -nIE 'gh[opsu]_[A-Za-z0-9]{20,}|github_pat_|sk-[A-Za-z0-9]{20,}|BEGIN [A-Z ]*PRIVATE KEY' <each pinned sha>
+Only match at both revisions: .agents/skills/verify-phase/SKILL.md:76,
+the scanner's own pattern, not a credential.
+$ git ls-tree -r --name-only <each pinned sha> | rg -i '\.jsonl$|transcript'
+spikes/harness-vllm/results/claude-agent-sdk.jsonl
+spikes/harness-vllm/results/claude-agent-sdk.run1-effort-high-rejected.jsonl
+spikes/harness-vllm/results/openai-agents.jsonl
+These are documented Pre-0 per-task benchmark measurements, 10 records each,
+not agent-session transcripts. Inspected record keys and spike README table.
+No actual credential or session transcript found by these checks.

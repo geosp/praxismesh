@@ -1,0 +1,11 @@
+{"ts": "2026-11-13T14:44:48.700719+00:00", "level": "info", "logger": "praxis.cli", "msg": "task submitted", "task_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac", "request_id": "req-95d7ed06-3688-4920-af95-07ef677b9181", "workflow_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac", "template": "local-default"}
+task: task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac
+latest checkpoint: task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac:1:1:1
+killed praxismesh-pr53-modelverify-worker-a-1 (abrupt stop)
+task status: succeeded | workflow: COMPLETED
+  turn 1 attempt 1: lost on a98e50a564f0
+  turn 1 attempt 2: done on 76545c5ea27e
+orders: [{'sku': 'SKU-1', 'qty': 1}, {'sku': 'SKU-5', 'qty': 1}, {'sku': 'SKU-2', 'qty': 3}, {'sku': 'SKU-4', 'qty': 2}]
+restart it with: docker start praxismesh-pr53-modelverify-worker-a-1
+
+exit: 0

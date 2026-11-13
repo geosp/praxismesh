@@ -1,0 +1,28 @@
+import asyncio,json,io,tarfile
+from pathlib import Path
+from sqlalchemy import text
+from common.persistence.repositories import make_engine
+from common.schemas import BlobRef
+from common.blob_store.s3 import S3BlobStore
+async def main():
+ engine=make_engine(); s3=S3BlobStore.from_env();out={}
+ async with engine.connect() as c:
+  for task in ['task-28f42876-96df-4d29-b33f-49147c786e18','task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac']:
+   rows=(await c.execute(text('SELECT * FROM checkpoints WHERE task_id=:t ORDER BY turn,attempt,seq'),{'t':task})).mappings().all()
+   checks=[]
+   for row in rows:
+    b=await s3.get(BlobRef.model_validate(row['workspace_ref']))
+    with tarfile.open(fileobj=io.BytesIO(b)) as tar:names=tar.getnames()
+    checks.append({k:row[k] for k in ['checkpoint_id','session_id','session_position','turn','attempt','seq']}|{'files':names})
+   messages=(await c.execute(text('SELECT message_data FROM agent_messages WHERE session_id=:s ORDER BY id'),{'s':rows[-1]['session_id']})).scalars().all()
+   read_args=[]; functions=[]
+   for m in messages:
+    item=json.loads(m)
+    if item.get('type')=='function_call':
+     functions.append(item.get('name'))
+     if item.get('name')=='read_file':read_args.append(json.loads(item.get('arguments','{}')))
+   out[task]={'checkpoints':checks,'session_items':len(messages),'function_names':functions,'read_file_args':read_args}
+ await engine.dispose()
+ Path('.verify/real-checkpoints.json').write_text(json.dumps(out,indent=2)+'\n')
+ print(json.dumps(out,indent=2))
+asyncio.run(main())

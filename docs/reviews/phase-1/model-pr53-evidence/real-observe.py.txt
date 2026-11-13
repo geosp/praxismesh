@@ -1,0 +1,29 @@
+import urllib.request,urllib.parse,json,datetime,collections
+from pathlib import Path
+now=datetime.datetime.now(datetime.timezone.utc)
+q={'query.service_name':'praxis-cli','query.start_time_min':(now-datetime.timedelta(hours=1)).isoformat(),'query.start_time_max':now.isoformat(),'query.num_traces':'10'}
+with urllib.request.urlopen('http://127.0.0.1:26686/api/v3/traces?'+urllib.parse.urlencode(q)) as r: raw=r.read().decode()
+traces=collections.defaultdict(list)
+for line in raw.splitlines():
+ for rs in json.loads(line).get('result',{}).get('resourceSpans',[]):
+  attrs={a['key']:a['value'].get('stringValue') for a in rs['resource']['attributes']}
+  for scope in rs.get('scopeSpans',[]):
+   for s in scope.get('spans',[]): traces[s['traceId']].append((attrs.get('service.name'),s))
+out=[]
+for tid,ss in traces.items():
+ if not any(a.get('key')=='praxis.task_id' and a['value'].get('stringValue')=='task-28f42876-96df-4d29-b33f-49147c786e18' for _,s in ss for a in s.get('attributes',[])): continue
+ ids={s['spanId']:s for _,s in ss}; root=next(s for _,s in ss if s['name']=='praxis.task.submit')
+ def chain(s):
+  result=[]
+  while s.get('parentSpanId') in ids:
+   s=ids[s['parentSpanId']];result.append(s['name'])
+  return result
+ tools=[s for _,s in ss if s['name']=='tool call']
+ out.append({'task_id':'task-28f42876-96df-4d29-b33f-49147c786e18','trace_id':tid,'spans':len(ss),'services':sorted({svc for svc,_ in ss}),'span_counts':dict(collections.Counter(s['name'] for _,s in ss)),'tool_names':sorted({a['value'].get('stringValue') for s in tools for a in s.get('attributes',[]) if a['key']=='praxis.tool'}),'model_tool_descend_from_submit':all('praxis.task.submit' in chain(s) for _,s in ss if s['name'] in ('model call','tool call'))})
+metrics={}
+for query in ['up','praxis_tokens_total','praxis_tool_calls_total','praxis_activity_seconds_count','praxis_checkpoint_bytes_count']:
+ with urllib.request.urlopen('http://127.0.0.1:29090/api/v1/query?'+urllib.parse.urlencode({'query':query})) as r:d=json.load(r)
+ metrics[query]=[{'metric':x['metric'],'value':x['value'][1]} for x in d['data']['result']]
+result={'traces':out,'metrics':metrics}
+Path('.verify/real-observability.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result,indent=2))

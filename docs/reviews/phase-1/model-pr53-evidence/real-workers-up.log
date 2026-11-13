@@ -1,0 +1,125 @@
+ Image praxismesh-worker:dev Building
+#1 [internal] load local bake definitions
+#1 reading from stdin 571B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 1.33kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff
+#3 DONE 0.0s
+
+#4 [internal] load metadata for docker.io/library/python:3.11-slim-bookworm@sha256:a83ba18aef0f865b1a4a611c2cf460fe446f2795673bbb9fe43be570439e3b39
+#4 DONE 0.0s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 164B done
+#5 DONE 0.0s
+
+#6 FROM ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff
+#6 resolve ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff 0.0s done
+#6 DONE 0.0s
+
+#7 [stage-0  1/15] FROM docker.io/library/python:3.11-slim-bookworm@sha256:a83ba18aef0f865b1a4a611c2cf460fe446f2795673bbb9fe43be570439e3b39
+#7 resolve docker.io/library/python:3.11-slim-bookworm@sha256:a83ba18aef0f865b1a4a611c2cf460fe446f2795673bbb9fe43be570439e3b39 0.0s done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 697.33kB done
+#8 DONE 0.0s
+
+#9 [stage-0 10/15] COPY orchestrator orchestrator
+#9 CACHED
+
+#10 [stage-0 14/15] COPY tests/support tests/support
+#10 CACHED
+
+#11 [stage-0 13/15] COPY workers workers
+#11 CACHED
+
+#12 [stage-0  9/15] COPY registry registry
+#12 CACHED
+
+#13 [stage-0  7/15] RUN uv sync --locked --no-dev --no-install-project
+#13 CACHED
+
+#14 [stage-0 12/15] COPY sample_mcp sample_mcp
+#14 CACHED
+
+#15 [stage-0  5/15] WORKDIR /app
+#15 CACHED
+
+#16 [stage-0  6/15] COPY pyproject.toml uv.lock .python-version ./
+#16 CACHED
+
+#17 [stage-0  2/15] COPY --from=ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff /uv /usr/local/bin/uv
+#17 CACHED
+
+#18 [stage-0  4/15] RUN useradd --create-home --uid 10001 praxis
+#18 CACHED
+
+#19 [stage-0 11/15] COPY harness_activity harness_activity
+#19 CACHED
+
+#20 [stage-0  8/15] COPY common common
+#20 CACHED
+
+#21 [stage-0  3/15] RUN apt-get update     && apt-get install -y --no-install-recommends git     && rm -rf /var/lib/apt/lists/*
+#21 CACHED
+
+#22 [stage-0 15/15] RUN mkdir -p /scratch && chown praxis /scratch
+#22 CACHED
+
+#23 exporting to image
+#23 exporting layers done
+#23 exporting manifest sha256:856ccef85b4e51d7b5e97322cea874ebfb5cde837ef26a34829dd2df6ff36388 done
+#23 exporting config sha256:1be7a9e74bdc3162124525587ca53e9345c50dca75112b9e540e9d5303d84773 done
+#23 exporting attestation manifest sha256:b65a3fa411f110789ca497faa9a73e7b6ac7e5f94810656d779a2f32c27b962d done
+#23 exporting manifest list sha256:a0c39102a6672ac9ef3fb9dd45f8a393e63850f84e9f6bce85cdd1da25606746 done
+#23 naming to docker.io/library/praxismesh-worker:dev done
+#23 unpacking to docker.io/library/praxismesh-worker:dev done
+#23 DONE 0.0s
+
+#24 resolving provenance for metadata file
+#24 DONE 0.0s
+ Image praxismesh-worker:dev Built
+ Container praxismesh-pr53-modelverify-temporal-1 Running
+ Container praxismesh-pr53-modelverify-db-1 Running
+ Container praxismesh-pr53-modelverify-s3-1 Running
+ Container praxismesh-pr53-modelverify-worker-b-1 Creating
+ Container praxismesh-pr53-modelverify-worker-a-1 Creating
+ Container praxismesh-pr53-modelverify-orchestrator-1 Creating
+ Container praxismesh-pr53-modelverify-orchestrator-1 Created
+ Container praxismesh-pr53-modelverify-worker-b-1 Created
+ Container praxismesh-pr53-modelverify-worker-a-1 Created
+ Container praxismesh-pr53-modelverify-db-1 Waiting
+ Container praxismesh-pr53-modelverify-s3-1 Waiting
+ Container praxismesh-pr53-modelverify-s3-1 Healthy
+ Container praxismesh-pr53-modelverify-db-1 Healthy
+ Container praxismesh-pr53-modelverify-temporal-schema-1 Starting
+ Container praxismesh-pr53-modelverify-temporal-schema-1 Started
+ Container praxismesh-pr53-modelverify-temporal-schema-1 Waiting
+ Container praxismesh-pr53-modelverify-temporal-schema-1 Exited
+ Container praxismesh-pr53-modelverify-temporal-1 Waiting
+ Container praxismesh-pr53-modelverify-temporal-1 Healthy
+ Container praxismesh-pr53-modelverify-worker-b-1 Starting
+ Container praxismesh-pr53-modelverify-orchestrator-1 Starting
+ Container praxismesh-pr53-modelverify-worker-a-1 Starting
+ Container praxismesh-pr53-modelverify-worker-b-1 Started
+ Container praxismesh-pr53-modelverify-worker-a-1 Started
+ Container praxismesh-pr53-modelverify-orchestrator-1 Started
+ Container praxismesh-pr53-modelverify-worker-b-1 Waiting
+ Container praxismesh-pr53-modelverify-temporal-schema-1 Waiting
+ Container praxismesh-pr53-modelverify-db-1 Waiting
+ Container praxismesh-pr53-modelverify-s3-1 Waiting
+ Container praxismesh-pr53-modelverify-temporal-1 Waiting
+ Container praxismesh-pr53-modelverify-worker-a-1 Waiting
+ Container praxismesh-pr53-modelverify-orchestrator-1 Waiting
+ Container praxismesh-pr53-modelverify-temporal-schema-1 Exited
+ Container praxismesh-pr53-modelverify-s3-1 Healthy
+ Container praxismesh-pr53-modelverify-temporal-1 Healthy
+ Container praxismesh-pr53-modelverify-db-1 Healthy
+ Container praxismesh-pr53-modelverify-worker-b-1 Healthy
+ Container praxismesh-pr53-modelverify-worker-a-1 Healthy
+ Container praxismesh-pr53-modelverify-orchestrator-1 Healthy
