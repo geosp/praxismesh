@@ -1,0 +1,24 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.17, pytest-9.2.0, pluggy-1.7.0
+rootdir: /tmp/praxismesh-pr53-final-verify
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 248 items / 91 deselected / 157 selected
+
+tests/test_benchmark_report.py ..                                        [  1%]
+tests/test_blob_store_memory.py .........                                [  7%]
+tests/test_ci_gate.py .................................................  [ 38%]
+tests/test_cli.py .                                                      [ 38%]
+tests/test_hello_replay.py .                                             [ 39%]
+tests/test_observability.py ...                                          [ 41%]
+tests/test_registry.py ...................                               [ 53%]
+tests/test_runner_conformance.py ..................                      [ 64%]
+tests/test_submit.py ....                                                [ 67%]
+tests/test_sync_agents.py ................................               [ 87%]
+tests/test_task_workflow.py .............                                [ 96%]
+tests/test_tool_pins.py ..                                               [ 97%]
+tests/test_workspace.py ....                                             [100%]
+
+===================== 157 passed, 91 deselected in 34.25s ======================

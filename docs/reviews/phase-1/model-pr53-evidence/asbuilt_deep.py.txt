@@ -1,0 +1,30 @@
+exec(open('.verify/asbuilt_probe.py').read().split('try:\n models=')[0])
+import asyncio,tarfile,io
+from sqlalchemy import text
+from common.persistence.repositories import make_engine
+from common.blob_store.s3 import S3BlobStore
+from common.schemas import BlobRef
+os.environ.update(env)
+async def main():
+ e=make_engine();s3=S3BlobStore.from_env()
+ async with e.connect() as c:
+  for tid in ['task-28f42876-96df-4d29-b33f-49147c786e18','task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac']:
+   t=(await c.execute(text('select task_id,workflow_id,run_id,request_id,retention_class from tasks where task_id=:t'),{'t':tid})).mappings().one();emit('identity',dict(t))
+   cps=(await c.execute(text('select attempt,seq,session_position,workspace_ref,finish is not null as finished from checkpoints where task_id=:t order by turn,attempt,seq'),{'t':tid})).mappings().all()
+   for cp in cps:
+    data=await s3.get(BlobRef.model_validate(cp['workspace_ref']))
+    with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as tar:names=tar.getnames()
+    emit('checkpoint',{'task_id':tid,**{k:cp[k] for k in ['attempt','seq','session_position','finished']},'bytes':len(data),'files':names})
+   emit('session_count',{'task_id':tid,'items':(await c.execute(text('select count(*) from agent_messages where session_id=:t'),{'t':tid})).scalar_one()})
+   emit('effects',{'task_id':tid,'keys':[list(r) for r in (await c.execute(text('select tool,count(*) from idempotency_keys where task_id=:t group by tool'),{'t':tid})).all()]})
+ await e.dispose()
+asyncio.run(main())
+for path in ['/api/v3/services','/api/v3/traces?query.service_name=praxis-cli&query.num_traces=100']:
+ try:
+  d=get('http://127.0.0.1:26686'+path);emit('jaeger_structure',{'path':path,'keys':list(d),'sample_types':{k:type(v).__name__ for k,v in d.items()}})
+  if 'services' in path:emit('services',d)
+  else:
+   for k,v in d.items():
+    if isinstance(v,list):emit('trace_shape',{'field':k,'count':len(v),'first_keys':list(v[0]) if v and isinstance(v[0],dict) else []})
+    elif isinstance(v,dict):emit('trace_shape',{'field':k,'keys':list(v)})
+ except Exception as e:emit('jaeger_error',{'path':path,'error':type(e).__name__,'status':getattr(e,'code',None)})

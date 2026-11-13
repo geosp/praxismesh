@@ -1,0 +1,50 @@
+import os,json,subprocess,urllib.request,urllib.parse,hashlib
+from pathlib import Path
+root=Path.cwd(); env=os.environ.copy()
+for line in (root/'.verify/real-model.env').read_text().splitlines():
+ if line and not line.startswith('#') and '=' in line:
+  k,v=line.split('=',1);env[k]=v
+
+def emit(k,v):print(json.dumps({k:v},default=str),flush=True)
+def get(url,auth=False):
+ req=urllib.request.Request(url)
+ if auth and env.get('VLLM_API_KEY'):req.add_header('Authorization','Bearer '+env['VLLM_API_KEY'])
+ return json.load(urllib.request.urlopen(req,timeout=20))
+try:
+ models=get(env['VLLM_BASE_URL'].rstrip('/')+'/v1/models',True)
+ emit('endpoint_identity',{'ids':[m['id'] for m in models['data']],'configured_model':env.get('VLLM_MODEL'),'object':models.get('object')})
+except Exception as e:emit('endpoint_error',type(e).__name__)
+prefix='praxismesh-pr53-modelverify'
+try:
+ ids=subprocess.check_output(['docker','ps','-aq','--filter','label=com.docker.compose.project='+prefix],text=True).split()
+ allc=json.loads(subprocess.check_output(['docker','inspect',*ids],text=True))
+ for c in allc:
+  service=c['Config']['Labels'].get('com.docker.compose.service'); ce=dict(x.split('=',1) for x in c['Config']['Env'] if '=' in x)
+  emit('container',{'service':service,'id':c['Id'][:12],'state':c['State']['Status'],'healthy':c['State'].get('Health',{}).get('Status'),'model_endpoint_matches':ce.get('VLLM_BASE_URL')==env['VLLM_BASE_URL'] if service in ['worker-a','worker-b'] else None,'fake_endpoint':('fake-model' in ce.get('VLLM_BASE_URL','')) if service in ['worker-a','worker-b'] else None})
+except Exception as e:emit('container_error',type(e).__name__)
+for tid in ['task-28f42876-96df-4d29-b33f-49147c786e18','task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac']:
+ p=subprocess.run(['.venv/bin/python','-m','orchestrator.cli','task','status',tid],env=env,capture_output=True,text=True)
+ try:
+  d=json.loads(p.stdout);t=d['task'];r=t.get('result',{})
+  emit('task',{'id':tid,'exit':p.returncode,'workflow':d['workflow'],'status':t['status'],'task_keys':list(t),'result':{k:v for k,v in r.items() if k not in ['summary','questions']},'attempts':d['attempts'],'checkpoints':d['checkpoints'],'latest':d['latest_checkpoint'],'orders':d['orders']})
+ except Exception as e:emit('task_error',{'id':tid,'exit':p.returncode,'parse':type(e).__name__,'stderr_lines':len(p.stderr.splitlines())})
+ p=subprocess.run(['.venv/bin/python','-m','orchestrator.cli','task','output',tid,'order-summary.md'],env=env,capture_output=True)
+ emit('artifact',{'task_id':tid,'exit':p.returncode,'bytes':len(p.stdout),'sha256':hashlib.sha256(p.stdout).hexdigest(),'text':p.stdout.decode() if p.returncode==0 else None})
+try:
+ ts=get('http://127.0.0.1:29090/api/v1/targets')['data']['activeTargets'];emit('targets',[{'scrapeUrl':t['scrapeUrl'],'health':t['health'],'lastError':t['lastError']} for t in ts])
+ names=get('http://127.0.0.1:29090/api/v1/label/__name__/values')['data'];emit('metric_names',[n for n in names if n.startswith('praxis_')])
+except Exception as e:emit('prometheus_error',type(e).__name__)
+try:
+ services=get('http://127.0.0.1:26686/api/services')['data'];emit('trace_services',services)
+ q=urllib.parse.urlencode({'service':'praxis-cli','limit':100,'lookback':'2h'})
+ traces=get('http://127.0.0.1:26686/api/traces?'+q)['data']
+ tids=['task-28f42876-96df-4d29-b33f-49147c786e18','task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac']
+ for trace in traces:
+  if not any(t.get('value') in tids for s in trace['spans'] for t in s['tags']):continue
+  emit('trace',{'traceID':trace['traceID'],'spans':[{'id':s['spanID'],'operation':s['operationName'],'parents':[(r['spanID'],r['refType']) for r in s['references']],'tool':[t['value'] for t in s['tags'] if t['key']=='praxis.tool']} for s in trace['spans']]})
+except Exception as e:emit('trace_error',type(e).__name__)
+for path in ['docs/benchmarks/baseline.json','docs/benchmarks/2026-11-13-local-default.json']:
+ d=json.loads(Path(path).read_text());emit('benchmark',{'path':path,**{k:v for k,v in d.items() if k!='rows'}})
+ if 'rows' in d:emit('benchmark_rows',[{k:r[k] for k in ['task','task_id','passed','status','turns','inner_turns','tokens_in','tokens_out','seconds']} for r in d['rows']])
+from tests.benchmarks.run import environment
+emit('current_benchmark_identity',environment())

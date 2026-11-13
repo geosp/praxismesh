@@ -1,0 +1,189 @@
+{
+  "traces": [
+    {
+      "task_id": "task-28f42876-96df-4d29-b33f-49147c786e18",
+      "trace_id": "c7f267797fb7f3d7ae71cce6c7b7e441",
+      "spans": 24,
+      "services": [
+        "praxis-cli",
+        "praxis-orchestrator",
+        "praxis-template"
+      ],
+      "span_counts": {
+        "RunWorkflow:TaskWorkflow": 1,
+        "StartActivity:resolve_capabilities": 1,
+        "RunActivity:resolve_capabilities": 1,
+        "StartActivity:record_task": 1,
+        "RunActivity:record_task": 1,
+        "StartActivity:run_harness_turn": 1,
+        "StartWorkflow:TaskWorkflow": 1,
+        "praxis.task.submit": 1,
+        "model call": 5,
+        "tool call": 7,
+        "RunActivity:run_harness_turn": 1,
+        "StartActivity:complete_task": 1,
+        "RunActivity:complete_task": 1,
+        "CompleteWorkflow:TaskWorkflow": 1
+      },
+      "tool_names": [
+        "finish_task",
+        "lookup_price",
+        "lookup_stock",
+        "read_file",
+        "record_order",
+        "write_file"
+      ],
+      "model_tool_descend_from_submit": true
+    }
+  ],
+  "metrics": {
+    "up": [
+      {
+        "metric": {
+          "__name__": "up",
+          "instance": "worker-b:9100",
+          "job": "praxis-workers"
+        },
+        "value": "1"
+      },
+      {
+        "metric": {
+          "__name__": "up",
+          "instance": "orchestrator:9100",
+          "job": "praxis-workers"
+        },
+        "value": "1"
+      },
+      {
+        "metric": {
+          "__name__": "up",
+          "instance": "worker-a:9100",
+          "job": "praxis-workers"
+        },
+        "value": "1"
+      }
+    ],
+    "praxis_tokens_total": [
+      {
+        "metric": {
+          "__name__": "praxis_tokens_total",
+          "direction": "in",
+          "instance": "worker-b:9100",
+          "job": "praxis-workers",
+          "template": "local-default@1"
+        },
+        "value": "23051"
+      },
+      {
+        "metric": {
+          "__name__": "praxis_tokens_total",
+          "direction": "out",
+          "instance": "worker-b:9100",
+          "job": "praxis-workers",
+          "template": "local-default@1"
+        },
+        "value": "2129"
+      }
+    ],
+    "praxis_tool_calls_total": [
+      {
+        "metric": {
+          "__name__": "praxis_tool_calls_total",
+          "instance": "worker-b:9100",
+          "job": "praxis-workers",
+          "template": "local-default@1",
+          "tool": "read_file"
+        },
+        "value": "3"
+      },
+      {
+        "metric": {
+          "__name__": "praxis_tool_calls_total",
+          "instance": "worker-b:9100",
+          "job": "praxis-workers",
+          "template": "local-default@1",
+          "tool": "lookup_price"
+        },
+        "value": "6"
+      },
+      {
+        "metric": {
+          "__name__": "praxis_tool_calls_total",
+          "instance": "worker-b:9100",
+          "job": "praxis-workers",
+          "template": "local-default@1",
+          "tool": "lookup_stock"
+        },
+        "value": "6"
+      },
+      {
+        "metric": {
+          "__name__": "praxis_tool_calls_total",
+          "instance": "worker-b:9100",
+          "job": "praxis-workers",
+          "template": "local-default@1",
+          "tool": "record_order"
+        },
+        "value": "6"
+      },
+      {
+        "metric": {
+          "__name__": "praxis_tool_calls_total",
+          "instance": "worker-b:9100",
+          "job": "praxis-workers",
+          "template": "local-default@1",
+          "tool": "write_file"
+        },
+        "value": "2"
+      },
+      {
+        "metric": {
+          "__name__": "praxis_tool_calls_total",
+          "instance": "worker-b:9100",
+          "job": "praxis-workers",
+          "template": "local-default@1",
+          "tool": "finish_task"
+        },
+        "value": "2"
+      }
+    ],
+    "praxis_activity_seconds_count": [
+      {
+        "metric": {
+          "__name__": "praxis_activity_seconds_count",
+          "activity": "run_harness_turn",
+          "instance": "worker-b:9100",
+          "job": "praxis-workers",
+          "outcome": "done"
+        },
+        "value": "2"
+      }
+    ],
+    "praxis_checkpoint_bytes_count": [
+      {
+        "metric": {
+          "__name__": "praxis_checkpoint_bytes_count",
+          "instance": "worker-b:9100",
+          "job": "praxis-workers"
+        },
+        "value": "12"
+      },
+      {
+        "metric": {
+          "__name__": "praxis_checkpoint_bytes_count",
+          "instance": "orchestrator:9100",
+          "job": "praxis-workers"
+        },
+        "value": "0"
+      },
+      {
+        "metric": {
+          "__name__": "praxis_checkpoint_bytes_count",
+          "instance": "worker-a:9100",
+          "job": "praxis-workers"
+        },
+        "value": "0"
+      }
+    ]
+  }
+}

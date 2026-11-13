@@ -1,0 +1,16 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.17, pytest-9.2.0, pluggy-1.7.0 -- /tmp/praxismesh-pr53-model-verify/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /tmp/praxismesh-pr53-model-verify
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 5 items
+
+tests/integration/test_model_endpoints.py::test_model_name_configured PASSED [ 20%]
+tests/integration/test_model_endpoints.py::test_model_listed PASSED      [ 40%]
+tests/integration/test_model_endpoints.py::test_messages_endpoint PASSED [ 60%]
+tests/integration/test_model_endpoints.py::test_chat_endpoint PASSED     [ 80%]
+tests/integration/test_model_endpoints.py::test_unreachable_endpoint_fails PASSED [100%]
+
+============================== 5 passed in 1.43s ===============================
