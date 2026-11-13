@@ -104,9 +104,10 @@ administration without rebuilding task orchestration.
 
 ## Links
 
-- PROJECT_PLAN.md: sections 2, 7.0, 7.2 and 8.
-- docs/plan/phases/phase-2.md: live event observation and reconnect semantics.
-- docs/plan/phases/phase-3b.md: questions, approval and cancellation controls.
-- docs/plan/phases/phase-4.md: gateway, background work and conversation identity.
-- docs/plan/phases/phase-8.md: original combined UI scope.
-- docs/plan/design-decisions.md: sections 4.9 and 4.12.
+- [Core plan](../../PROJECT_PLAN.md): sections 2, 7.0, 7.2 and 8.
+- [Phase 2](../plan/phases/phase-2.md): event observation and reconnect.
+- [Phase 3B](../plan/phases/phase-3b.md): questions, approval and cancellation.
+- [Phase 4](../plan/phases/phase-4.md): gateway and conversation identity.
+- [Proposed Phase 4A](../plan/phases/phase-4a.md): task UI acceptance and demo.
+- [Phase 8](../plan/phases/phase-8.md): remaining administration scope.
+- [Design decisions](../plan/design-decisions.md): sections 4.9 and 4.12.
