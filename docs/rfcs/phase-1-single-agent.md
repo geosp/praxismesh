@@ -5,7 +5,7 @@ tier: light
 status: accepted
 phase: 1
 issue: "#44"
-openspec_change: openspec/changes/phase-1-single-agent
+openspec_change: openspec/changes/archive/2026-11-13-phase-1-single-agent
 plan_sections: [Phase 1, "§2", "§4.1", "§4.2", "§4.10", "§4.13", "§5", "§6", "§8"]
 size: L
 hardware: x86_64 workstation with Docker (no GPU); vLLM on the DGX Spark pair for real-model runs; CI uses a scripted fake model endpoint
