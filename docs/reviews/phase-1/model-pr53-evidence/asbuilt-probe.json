@@ -1,0 +1,533 @@
+[
+  {
+    "endpoint_identity": {
+      "ids": [
+        "qwen3.8-flash-next",
+        "spark"
+      ],
+      "configured_model": "spark",
+      "object": "list"
+    }
+  },
+  {
+    "container": {
+      "service": "worker-a",
+      "id": "a98e50a564f0",
+      "state": "running",
+      "healthy": "healthy",
+      "model_endpoint_matches": true,
+      "fake_endpoint": false
+    }
+  },
+  {
+    "container": {
+      "service": "worker-b",
+      "id": "76545c5ea27e",
+      "state": "running",
+      "healthy": "healthy",
+      "model_endpoint_matches": true,
+      "fake_endpoint": false
+    }
+  },
+  {
+    "container": {
+      "service": "orchestrator",
+      "id": "cf0a3a13d5ed",
+      "state": "running",
+      "healthy": "healthy",
+      "model_endpoint_matches": null,
+      "fake_endpoint": null
+    }
+  },
+  {
+    "container": {
+      "service": "prometheus",
+      "id": "304a98ac05ac",
+      "state": "running",
+      "healthy": null,
+      "model_endpoint_matches": null,
+      "fake_endpoint": null
+    }
+  },
+  {
+    "container": {
+      "service": "jaeger",
+      "id": "a327d85d629e",
+      "state": "running",
+      "healthy": null,
+      "model_endpoint_matches": null,
+      "fake_endpoint": null
+    }
+  },
+  {
+    "container": {
+      "service": "temporal-namespace",
+      "id": "e22cd4e25c9c",
+      "state": "exited",
+      "healthy": null,
+      "model_endpoint_matches": null,
+      "fake_endpoint": null
+    }
+  },
+  {
+    "container": {
+      "service": "temporal-ui",
+      "id": "151dd7592a89",
+      "state": "running",
+      "healthy": "healthy",
+      "model_endpoint_matches": null,
+      "fake_endpoint": null
+    }
+  },
+  {
+    "container": {
+      "service": "temporal",
+      "id": "8f9a50cab24e",
+      "state": "running",
+      "healthy": "healthy",
+      "model_endpoint_matches": null,
+      "fake_endpoint": null
+    }
+  },
+  {
+    "container": {
+      "service": "temporal-schema",
+      "id": "598ee8263fa7",
+      "state": "exited",
+      "healthy": null,
+      "model_endpoint_matches": null,
+      "fake_endpoint": null
+    }
+  },
+  {
+    "container": {
+      "service": "s3",
+      "id": "327321505dcf",
+      "state": "running",
+      "healthy": "healthy",
+      "model_endpoint_matches": null,
+      "fake_endpoint": null
+    }
+  },
+  {
+    "container": {
+      "service": "db",
+      "id": "7c126ce32911",
+      "state": "running",
+      "healthy": "healthy",
+      "model_endpoint_matches": null,
+      "fake_endpoint": null
+    }
+  },
+  {
+    "task": {
+      "id": "task-28f42876-96df-4d29-b33f-49147c786e18",
+      "exit": 0,
+      "workflow": "COMPLETED",
+      "status": "succeeded",
+      "task_keys": [
+        "task_id",
+        "workflow_id",
+        "run_id",
+        "request_id",
+        "profile",
+        "template",
+        "template_version",
+        "template_hash",
+        "instructions_ref",
+        "input_refs",
+        "outputs",
+        "status",
+        "result",
+        "created_at",
+        "updated_at",
+        "retention_class"
+      ],
+      "result": {
+        "schema_version": 1,
+        "task_id": "task-28f42876-96df-4d29-b33f-49147c786e18",
+        "status": "succeeded",
+        "artifacts": [
+          {
+            "schema_version": 1,
+            "path": "order-summary.md",
+            "ref": {
+              "schema_version": 1,
+              "id": "blob:e4dfc5e25db255a18880a3c819bd9cdba1f8748d42644da397652f087e710f4f",
+              "key": "sha256/e4dfc5e25db255a18880a3c819bd9cdba1f8748d42644da397652f087e710f4f",
+              "checksum": "sha256:e4dfc5e25db255a18880a3c819bd9cdba1f8748d42644da397652f087e710f4f",
+              "content_type": "application/octet-stream",
+              "bytes": 148,
+              "retention_class": "audit",
+              "created_at": "2026-11-13T14:44:50Z"
+            }
+          }
+        ],
+        "failure_reason": null,
+        "tier_used": "local",
+        "template": "local-default",
+        "template_version": 1,
+        "template_hash": "sha256:6122e8de71a551797b991d7ce87c701c366623076a63135b2f40e3f4b6e7f7ee",
+        "turns": 1,
+        "attempts": 1,
+        "tokens_in": 10311,
+        "tokens_out": 947,
+        "inner_turns": 5
+      },
+      "attempts": [
+        {
+          "turn": 1,
+          "attempt": 1,
+          "worker_identity": "76545c5ea27e@1/local-default",
+          "outcome": "done",
+          "failure_category": null,
+          "tokens_in": 10311,
+          "tokens_out": 947,
+          "tool_calls": 10,
+          "started_at": "2026-11-13 14:44:21.437813+00:00",
+          "ended_at": "2026-11-13 14:44:50.623078+00:00"
+        }
+      ],
+      "checkpoints": 6,
+      "latest": {
+        "checkpoint_id": "task-28f42876-96df-4d29-b33f-49147c786e18:1:1:5",
+        "turn": 1,
+        "attempt": 1,
+        "seq": 5,
+        "session_position": 30
+      },
+      "orders": [
+        {
+          "sku": "SKU-2",
+          "qty": 2
+        },
+        {
+          "sku": "SKU-1",
+          "qty": 3
+        }
+      ]
+    }
+  },
+  {
+    "artifact": {
+      "task_id": "task-28f42876-96df-4d29-b33f-49147c786e18",
+      "exit": 0,
+      "bytes": 148,
+      "sha256": "e4dfc5e25db255a18880a3c819bd9cdba1f8748d42644da397652f087e710f4f",
+      "text": "# Order summary\n\n| SKU | Qty | Unit price | Line total |\n|---|---|---|---|\n| SKU-1 | 3 | 12.50 | 37.50 |\n| SKU-2 | 2 | 7.25 | 14.50 |\n\nTotal: 52.00\n"
+    }
+  },
+  {
+    "task": {
+      "id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+      "exit": 0,
+      "workflow": "COMPLETED",
+      "status": "succeeded",
+      "task_keys": [
+        "task_id",
+        "workflow_id",
+        "run_id",
+        "request_id",
+        "profile",
+        "template",
+        "template_version",
+        "template_hash",
+        "instructions_ref",
+        "input_refs",
+        "outputs",
+        "status",
+        "result",
+        "created_at",
+        "updated_at",
+        "retention_class"
+      ],
+      "result": {
+        "schema_version": 1,
+        "task_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+        "status": "succeeded",
+        "artifacts": [
+          {
+            "schema_version": 1,
+            "path": "order-summary.md",
+            "ref": {
+              "schema_version": 1,
+              "id": "blob:9c5e6b4fa53e5a9918f81016ca821071e02f97aac4b803375abeddea20c5cf07",
+              "key": "sha256/9c5e6b4fa53e5a9918f81016ca821071e02f97aac4b803375abeddea20c5cf07",
+              "checksum": "sha256:9c5e6b4fa53e5a9918f81016ca821071e02f97aac4b803375abeddea20c5cf07",
+              "content_type": "application/octet-stream",
+              "bytes": 206,
+              "retention_class": "audit",
+              "created_at": "2026-11-13T14:45:57Z"
+            }
+          }
+        ],
+        "failure_reason": null,
+        "tier_used": "local",
+        "template": "local-default",
+        "template_version": 1,
+        "template_hash": "sha256:6122e8de71a551797b991d7ce87c701c366623076a63135b2f40e3f4b6e7f7ee",
+        "turns": 1,
+        "attempts": 2,
+        "tokens_in": 12740,
+        "tokens_out": 1182,
+        "inner_turns": 5
+      },
+      "attempts": [
+        {
+          "turn": 1,
+          "attempt": 1,
+          "worker_identity": "a98e50a564f0@1/local-default",
+          "outcome": "lost",
+          "failure_category": "lost_or_timed_out",
+          "tokens_in": 0,
+          "tokens_out": 0,
+          "tool_calls": 0,
+          "started_at": "2026-11-13 14:44:48.745519+00:00",
+          "ended_at": "2026-11-13 14:45:20.723410+00:00"
+        },
+        {
+          "turn": 1,
+          "attempt": 2,
+          "worker_identity": "76545c5ea27e@1/local-default",
+          "outcome": "done",
+          "failure_category": null,
+          "tokens_in": 12740,
+          "tokens_out": 1182,
+          "tool_calls": 15,
+          "started_at": "2026-11-13 14:45:20.723410+00:00",
+          "ended_at": "2026-11-13 14:45:57.130393+00:00"
+        }
+      ],
+      "checkpoints": 8,
+      "latest": {
+        "checkpoint_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac:1:2:5",
+        "turn": 1,
+        "attempt": 2,
+        "seq": 5,
+        "session_position": 40
+      },
+      "orders": [
+        {
+          "sku": "SKU-1",
+          "qty": 1
+        },
+        {
+          "sku": "SKU-5",
+          "qty": 1
+        },
+        {
+          "sku": "SKU-2",
+          "qty": 3
+        },
+        {
+          "sku": "SKU-4",
+          "qty": 2
+        }
+      ]
+    }
+  },
+  {
+    "artifact": {
+      "task_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+      "exit": 0,
+      "bytes": 206,
+      "sha256": "9c5e6b4fa53e5a9918f81016ca821071e02f97aac4b803375abeddea20c5cf07",
+      "text": "# Order summary\n\n| SKU | Qty | Unit price | Line total |\n|---|---|---|---|\n| SKU-4 | 2 | 4.10 | 8.20 |\n| SKU-5 | 1 | 22.40 | 22.40 |\n| SKU-2 | 3 | 7.25 | 21.75 |\n| SKU-1 | 1 | 12.50 | 12.50 |\n\nTotal: 64.85\n"
+    }
+  },
+  {
+    "targets": [
+      {
+        "scrapeUrl": "http://worker-a:9100/metrics",
+        "health": "up",
+        "lastError": ""
+      },
+      {
+        "scrapeUrl": "http://worker-b:9100/metrics",
+        "health": "up",
+        "lastError": ""
+      },
+      {
+        "scrapeUrl": "http://orchestrator:9100/metrics",
+        "health": "up",
+        "lastError": ""
+      }
+    ]
+  },
+  {
+    "metric_names": [
+      "praxis_activity_seconds_bucket",
+      "praxis_activity_seconds_count",
+      "praxis_activity_seconds_created",
+      "praxis_activity_seconds_sum",
+      "praxis_checkpoint_bytes_bucket",
+      "praxis_checkpoint_bytes_count",
+      "praxis_checkpoint_bytes_created",
+      "praxis_checkpoint_bytes_sum",
+      "praxis_checkpoint_seconds_bucket",
+      "praxis_checkpoint_seconds_count",
+      "praxis_checkpoint_seconds_created",
+      "praxis_checkpoint_seconds_sum",
+      "praxis_heartbeat_lag_seconds_bucket",
+      "praxis_heartbeat_lag_seconds_count",
+      "praxis_heartbeat_lag_seconds_created",
+      "praxis_heartbeat_lag_seconds_sum",
+      "praxis_tokens_created",
+      "praxis_tokens_total",
+      "praxis_tool_calls_created",
+      "praxis_tool_calls_total"
+    ]
+  },
+  {
+    "trace_error": "HTTPError"
+  },
+  {
+    "benchmark": {
+      "path": "docs/benchmarks/baseline.json",
+      "date": "2026-11-12",
+      "template": "local-default@1",
+      "template_hash": "sha256:6122e8de71a551797b991d7ce87c701c366623076a63135b2f40e3f4b6e7f7ee",
+      "model": "spark",
+      "harness": "openai-agents 0.24.0",
+      "prompt_hash": "sha256:9de242aeec2e5ed13fe20e67ef1975e2bb05c4b9ab32b7e3fbfe202b479dab15",
+      "passed": 10,
+      "results": "2026-11-12-local-default.json"
+    }
+  },
+  {
+    "benchmark": {
+      "path": "docs/benchmarks/2026-11-13-local-default.json",
+      "date": "2026-11-13",
+      "template": "local-default@1",
+      "template_hash": "sha256:6122e8de71a551797b991d7ce87c701c366623076a63135b2f40e3f4b6e7f7ee",
+      "model": "spark",
+      "harness": "openai-agents 0.24.0",
+      "prompt_hash": "sha256:9de242aeec2e5ed13fe20e67ef1975e2bb05c4b9ab32b7e3fbfe202b479dab15",
+      "passed": 10
+    }
+  },
+  {
+    "benchmark_rows": [
+      {
+        "task": "t01-order-total",
+        "task_id": "task-f9482383-99f6-4965-9c76-7ad530928370",
+        "passed": true,
+        "status": "succeeded",
+        "turns": 1,
+        "inner_turns": 8,
+        "tokens_in": 20103,
+        "tokens_out": 1534,
+        "seconds": 38.8
+      },
+      {
+        "task": "t02-restock",
+        "task_id": "task-12000a0d-1920-4df9-ac24-73327c3eb34a",
+        "passed": true,
+        "status": "succeeded",
+        "turns": 1,
+        "inner_turns": 7,
+        "tokens_in": 14389,
+        "tokens_out": 997,
+        "seconds": 25.0
+      },
+      {
+        "task": "t03-fix-discount",
+        "task_id": "task-0ad1647c-d68e-4816-88e8-1d3aed499e07",
+        "passed": true,
+        "status": "succeeded",
+        "turns": 1,
+        "inner_turns": 4,
+        "tokens_in": 7507,
+        "tokens_out": 699,
+        "seconds": 20.7
+      },
+      {
+        "task": "t04-config-port",
+        "task_id": "task-1fe6c73a-5173-4a28-8e0c-c643d870ce4b",
+        "passed": true,
+        "status": "succeeded",
+        "turns": 1,
+        "inner_turns": 5,
+        "tokens_in": 9214,
+        "tokens_out": 635,
+        "seconds": 15.2
+      },
+      {
+        "task": "t05-sort-expensive",
+        "task_id": "task-31783be4-49c8-4784-979e-4a438209a367",
+        "passed": true,
+        "status": "succeeded",
+        "turns": 1,
+        "inner_turns": 5,
+        "tokens_in": 10069,
+        "tokens_out": 913,
+        "seconds": 19.8
+      },
+      {
+        "task": "t06-git-commit",
+        "task_id": "task-1e0c4011-e6fa-4638-89f5-d4cea7a1e8a7",
+        "passed": true,
+        "status": "succeeded",
+        "turns": 1,
+        "inner_turns": 6,
+        "tokens_in": 12421,
+        "tokens_out": 615,
+        "seconds": 15.3
+      },
+      {
+        "task": "t07-log-status",
+        "task_id": "task-62c69dc0-16be-45e8-8b1c-398703e340c6",
+        "passed": true,
+        "status": "succeeded",
+        "turns": 1,
+        "inner_turns": 5,
+        "tokens_in": 8606,
+        "tokens_out": 502,
+        "seconds": 12.5
+      },
+      {
+        "task": "t08-fill-prices",
+        "task_id": "task-e7a12adb-8b2d-45c2-9242-7c96f0ff93f6",
+        "passed": true,
+        "status": "succeeded",
+        "turns": 1,
+        "inner_turns": 7,
+        "tokens_in": 15004,
+        "tokens_out": 770,
+        "seconds": 18.9
+      },
+      {
+        "task": "t09-report-table",
+        "task_id": "task-9b234004-129b-4105-ae6c-7237e68ff18a",
+        "passed": true,
+        "status": "succeeded",
+        "turns": 1,
+        "inner_turns": 6,
+        "tokens_in": 14460,
+        "tokens_out": 1264,
+        "seconds": 27.8
+      },
+      {
+        "task": "t10-fix-script",
+        "task_id": "task-a3f0b957-959e-4a3a-883d-8b14196876b6",
+        "passed": true,
+        "status": "succeeded",
+        "turns": 1,
+        "inner_turns": 5,
+        "tokens_in": 8918,
+        "tokens_out": 665,
+        "seconds": 16.2
+      }
+    ]
+  },
+  {
+    "current_benchmark_identity": {
+      "date": "2026-11-13",
+      "template": "local-default@1",
+      "template_hash": "sha256:6122e8de71a551797b991d7ce87c701c366623076a63135b2f40e3f4b6e7f7ee",
+      "model": "spark",
+      "harness": "openai-agents 0.24.0",
+      "prompt_hash": "sha256:9de242aeec2e5ed13fe20e67ef1975e2bb05c4b9ab32b7e3fbfe202b479dab15"
+    }
+  }
+]

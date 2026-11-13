@@ -1,0 +1,24 @@
+exec(open('.verify/asbuilt_probe.py').read().split('try:\n models=')[0])
+from datetime import datetime,UTC,timedelta
+q={'query.service_name':'praxis-cli','query.start_time_min':(datetime.now(UTC)-timedelta(hours=3)).isoformat(),'query.start_time_max':datetime.now(UTC).isoformat(),'query.num_traces':100}
+try:
+ d=get('http://127.0.0.1:26686/api/v3/traces?'+urllib.parse.urlencode(q))
+ def shape(v,depth=0):
+  if depth>3:return type(v).__name__
+  if isinstance(v,dict):return {k:shape(x,depth+1) for k,x in v.items()}
+  if isinstance(v,list):return [shape(v[0],depth+1)] if v else []
+  return type(v).__name__
+ emit('shape',shape(d))
+ spans=[]
+ for rs in d.get('result',{}).get('resourceSpans',[]):
+  service=next((a['value'].get('stringValue') for a in rs.get('resource',{}).get('attributes',[]) if a['key']=='service.name'),None)
+  for scope in rs.get('scopeSpans',[]):
+   for sp in scope.get('spans',[]):
+    attrs={a['key']:a['value'] for a in sp.get('attributes',[])}
+    spans.append({'trace':sp.get('traceId'),'id':sp.get('spanId'),'parent':sp.get('parentSpanId'),'name':sp.get('name'),'service':service,'task':attrs.get('praxis.task_id',{}).get('stringValue'),'tool':attrs.get('praxis.tool',{}).get('stringValue')})
+ for tid in ['task-28f42876-96df-4d29-b33f-49147c786e18','task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac']:
+  traces={s['trace'] for s in spans if s['task']==tid}
+  for trace in traces:
+   ss=[s for s in spans if s['trace']==trace];ids={s['id'] for s in ss}
+   emit('trace_metadata',{'task':tid,'trace':trace,'span_count':len(ss),'services':sorted({s['service'] for s in ss}),'external_parents':[s['parent'] for s in ss if s['parent'] and s['parent'] not in ids],'spans':ss})
+except urllib.error.HTTPError as e:emit('error',{'status':e.code,'body':e.read().decode()[:1000]})

@@ -1,0 +1,196 @@
+{
+  "task-28f42876-96df-4d29-b33f-49147c786e18": {
+    "checkpoints": [
+      {
+        "checkpoint_id": "task-28f42876-96df-4d29-b33f-49147c786e18:1:1:0",
+        "session_id": "task-28f42876-96df-4d29-b33f-49147c786e18",
+        "session_position": 1,
+        "turn": 1,
+        "attempt": 1,
+        "seq": 0,
+        "files": []
+      },
+      {
+        "checkpoint_id": "task-28f42876-96df-4d29-b33f-49147c786e18:1:1:1",
+        "session_id": "task-28f42876-96df-4d29-b33f-49147c786e18",
+        "session_position": 4,
+        "turn": 1,
+        "attempt": 1,
+        "seq": 1,
+        "files": []
+      },
+      {
+        "checkpoint_id": "task-28f42876-96df-4d29-b33f-49147c786e18:1:1:2",
+        "session_id": "task-28f42876-96df-4d29-b33f-49147c786e18",
+        "session_position": 14,
+        "turn": 1,
+        "attempt": 1,
+        "seq": 2,
+        "files": []
+      },
+      {
+        "checkpoint_id": "task-28f42876-96df-4d29-b33f-49147c786e18:1:1:3",
+        "session_id": "task-28f42876-96df-4d29-b33f-49147c786e18",
+        "session_position": 22,
+        "turn": 1,
+        "attempt": 1,
+        "seq": 3,
+        "files": [
+          "order-summary.md"
+        ]
+      },
+      {
+        "checkpoint_id": "task-28f42876-96df-4d29-b33f-49147c786e18:1:1:4",
+        "session_id": "task-28f42876-96df-4d29-b33f-49147c786e18",
+        "session_position": 26,
+        "turn": 1,
+        "attempt": 1,
+        "seq": 4,
+        "files": [
+          "order-summary.md"
+        ]
+      },
+      {
+        "checkpoint_id": "task-28f42876-96df-4d29-b33f-49147c786e18:1:1:5",
+        "session_id": "task-28f42876-96df-4d29-b33f-49147c786e18",
+        "session_position": 30,
+        "turn": 1,
+        "attempt": 1,
+        "seq": 5,
+        "files": [
+          "order-summary.md"
+        ]
+      }
+    ],
+    "session_items": 30,
+    "function_names": [
+      "read_file",
+      "lookup_price",
+      "lookup_stock",
+      "lookup_price",
+      "lookup_stock",
+      "record_order",
+      "record_order",
+      "write_file",
+      "read_file",
+      "finish_task"
+    ],
+    "read_file_args": [
+      {
+        "path": ".skills/order-desk/SKILL.md"
+      },
+      {
+        "path": "order-summary.md"
+      }
+    ]
+  },
+  "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac": {
+    "checkpoints": [
+      {
+        "checkpoint_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac:1:1:0",
+        "session_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+        "session_position": 1,
+        "turn": 1,
+        "attempt": 1,
+        "seq": 0,
+        "files": []
+      },
+      {
+        "checkpoint_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac:1:1:1",
+        "session_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+        "session_position": 4,
+        "turn": 1,
+        "attempt": 1,
+        "seq": 1,
+        "files": []
+      },
+      {
+        "checkpoint_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac:1:2:0",
+        "session_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+        "session_position": 5,
+        "turn": 1,
+        "attempt": 2,
+        "seq": 0,
+        "files": []
+      },
+      {
+        "checkpoint_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac:1:2:1",
+        "session_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+        "session_position": 22,
+        "turn": 1,
+        "attempt": 2,
+        "seq": 1,
+        "files": []
+      },
+      {
+        "checkpoint_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac:1:2:2",
+        "session_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+        "session_position": 31,
+        "turn": 1,
+        "attempt": 2,
+        "seq": 2,
+        "files": []
+      },
+      {
+        "checkpoint_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac:1:2:3",
+        "session_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+        "session_position": 34,
+        "turn": 1,
+        "attempt": 2,
+        "seq": 3,
+        "files": [
+          "order-summary.md"
+        ]
+      },
+      {
+        "checkpoint_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac:1:2:4",
+        "session_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+        "session_position": 37,
+        "turn": 1,
+        "attempt": 2,
+        "seq": 4,
+        "files": [
+          "order-summary.md"
+        ]
+      },
+      {
+        "checkpoint_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac:1:2:5",
+        "session_id": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+        "session_position": 40,
+        "turn": 1,
+        "attempt": 2,
+        "seq": 5,
+        "files": [
+          "order-summary.md"
+        ]
+      }
+    ],
+    "session_items": 40,
+    "function_names": [
+      "read_file",
+      "lookup_price",
+      "lookup_stock",
+      "lookup_price",
+      "lookup_stock",
+      "lookup_price",
+      "lookup_stock",
+      "lookup_price",
+      "lookup_stock",
+      "record_order",
+      "record_order",
+      "record_order",
+      "record_order",
+      "write_file",
+      "read_file",
+      "finish_task"
+    ],
+    "read_file_args": [
+      {
+        "path": ".skills/order-desk/SKILL.md"
+      },
+      {
+        "path": "order-summary.md"
+      }
+    ]
+  }
+}

@@ -1,0 +1,467 @@
+[
+  {
+    "shape": {
+      "result": {
+        "resourceSpans": [
+          {
+            "resource": "dict",
+            "scopeSpans": "list"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "trace_metadata": {
+      "task": "task-28f42876-96df-4d29-b33f-49147c786e18",
+      "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+      "span_count": 24,
+      "services": [
+        "praxis-cli",
+        "praxis-orchestrator",
+        "praxis-template"
+      ],
+      "external_parents": [],
+      "spans": [
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "e01c164a31938290",
+          "parent": "2ee7619e441945b8",
+          "name": "RunWorkflow:TaskWorkflow",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "47e1e435690f4d13",
+          "parent": "2ee7619e441945b8",
+          "name": "StartActivity:resolve_capabilities",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "aa2bf5d0c8154cfb",
+          "parent": "47e1e435690f4d13",
+          "name": "RunActivity:resolve_capabilities",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "4bc096d668e81ebd",
+          "parent": "2ee7619e441945b8",
+          "name": "StartActivity:record_task",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "4153820427dcc534",
+          "parent": "4bc096d668e81ebd",
+          "name": "RunActivity:record_task",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "81d63c6011319f9f",
+          "parent": "2ee7619e441945b8",
+          "name": "StartActivity:run_harness_turn",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "2ee7619e441945b8",
+          "parent": "29d9d871d4992cb7",
+          "name": "StartWorkflow:TaskWorkflow",
+          "service": "praxis-cli",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "29d9d871d4992cb7",
+          "parent": null,
+          "name": "praxis.task.submit",
+          "service": "praxis-cli",
+          "task": "task-28f42876-96df-4d29-b33f-49147c786e18",
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "32fff708a56a4cfe",
+          "parent": "5c0379fe92be220f",
+          "name": "model call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "5f3d63dc74f5533c",
+          "parent": "5c0379fe92be220f",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "read_file"
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "8a6395cfb0767b99",
+          "parent": "5c0379fe92be220f",
+          "name": "model call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "40f72ab4e33b7a74",
+          "parent": "5c0379fe92be220f",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "lookup_price"
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "0805410d1ca5a33b",
+          "parent": "5c0379fe92be220f",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "lookup_stock"
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "922f722acc31eca3",
+          "parent": "5c0379fe92be220f",
+          "name": "model call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "ab565b20158c7948",
+          "parent": "5c0379fe92be220f",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "write_file"
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "b10d687d71c65ff0",
+          "parent": "5c0379fe92be220f",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "record_order"
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "925f032940c45957",
+          "parent": "5c0379fe92be220f",
+          "name": "model call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "4819075dd616e0e3",
+          "parent": "5c0379fe92be220f",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "read_file"
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "2a614817cfa5ad0c",
+          "parent": "5c0379fe92be220f",
+          "name": "model call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "0f2175ea6812025d",
+          "parent": "5c0379fe92be220f",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "finish_task"
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "5c0379fe92be220f",
+          "parent": "81d63c6011319f9f",
+          "name": "RunActivity:run_harness_turn",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "296cb4aade2d3a1e",
+          "parent": "2ee7619e441945b8",
+          "name": "StartActivity:complete_task",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "fd36596b1e87ec8a",
+          "parent": "296cb4aade2d3a1e",
+          "name": "RunActivity:complete_task",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "c7f267797fb7f3d7ae71cce6c7b7e441",
+          "id": "fdee94fa68195be4",
+          "parent": "2ee7619e441945b8",
+          "name": "CompleteWorkflow:TaskWorkflow",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        }
+      ]
+    }
+  },
+  {
+    "trace_metadata": {
+      "task": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+      "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+      "span_count": 23,
+      "services": [
+        "praxis-cli",
+        "praxis-orchestrator",
+        "praxis-template"
+      ],
+      "external_parents": [],
+      "spans": [
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "c0ae63dc4a1c86d2",
+          "parent": "5bf62708c8b7ca34",
+          "name": "StartWorkflow:TaskWorkflow",
+          "service": "praxis-cli",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "5bf62708c8b7ca34",
+          "parent": null,
+          "name": "praxis.task.submit",
+          "service": "praxis-cli",
+          "task": "task-4a3b7cb0-243a-4bcb-bc9f-5be377ca6fac",
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "09fd4a61e00c17ab",
+          "parent": "c0ae63dc4a1c86d2",
+          "name": "RunWorkflow:TaskWorkflow",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "610237d3b8e9f092",
+          "parent": "c0ae63dc4a1c86d2",
+          "name": "StartActivity:resolve_capabilities",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "8d2f78a9886eefc5",
+          "parent": "610237d3b8e9f092",
+          "name": "RunActivity:resolve_capabilities",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "1fc3b301496f3e4b",
+          "parent": "c0ae63dc4a1c86d2",
+          "name": "StartActivity:record_task",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "961a3e75c3e5c38d",
+          "parent": "1fc3b301496f3e4b",
+          "name": "RunActivity:record_task",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "f1f9260260e78fca",
+          "parent": "c0ae63dc4a1c86d2",
+          "name": "StartActivity:run_harness_turn",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "38b5b345fbc404de",
+          "parent": "4725c503086f1f14",
+          "name": "model call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "cf93603d86baa773",
+          "parent": "4725c503086f1f14",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "lookup_price"
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "a503927fc84ecf00",
+          "parent": "4725c503086f1f14",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "lookup_stock"
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "b2ff71839cd7a17f",
+          "parent": "4725c503086f1f14",
+          "name": "model call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "6774515b0059a58d",
+          "parent": "4725c503086f1f14",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "record_order"
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "4ca9794a5c9b9084",
+          "parent": "4725c503086f1f14",
+          "name": "model call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "618c284ad28fde8e",
+          "parent": "4725c503086f1f14",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "write_file"
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "a79f66c00b116e6e",
+          "parent": "4725c503086f1f14",
+          "name": "model call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "5a877b1cef2817d2",
+          "parent": "4725c503086f1f14",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "read_file"
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "4128b581867a5430",
+          "parent": "4725c503086f1f14",
+          "name": "model call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "481bbf75395c6404",
+          "parent": "4725c503086f1f14",
+          "name": "tool call",
+          "service": "praxis-template",
+          "task": null,
+          "tool": "finish_task"
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "4725c503086f1f14",
+          "parent": "f1f9260260e78fca",
+          "name": "RunActivity:run_harness_turn",
+          "service": "praxis-template",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "393cb6a7a92fbc7c",
+          "parent": "c0ae63dc4a1c86d2",
+          "name": "StartActivity:complete_task",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "d71fc79f60913555",
+          "parent": "393cb6a7a92fbc7c",
+          "name": "RunActivity:complete_task",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        },
+        {
+          "trace": "b745c2c3f853669ae8f81ddab6c7e37b",
+          "id": "fb7bd2f346f3be1e",
+          "parent": "c0ae63dc4a1c86d2",
+          "name": "CompleteWorkflow:TaskWorkflow",
+          "service": "praxis-orchestrator",
+          "task": null,
+          "tool": null
+        }
+      ]
+    }
+  }
+]
