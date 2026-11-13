@@ -86,6 +86,9 @@ class Progress:
     inner_turns: int = 0
     checkpoint_id: str | None = None
     refusals: int = 0
+    # The real attempt that sent this heartbeat, so a turn ended by
+    # schedule_to_close still reports its attempts (follow-up M1).
+    attempts: int = 0
 
     @classmethod
     def from_details(cls, details: Any) -> Progress:
@@ -183,6 +186,7 @@ class HarnessActivities:
         real_attempt = attempt - prior.refusals
         began = time.monotonic()
         outcome = "error"
+        prior.attempts = real_attempt
         heartbeat = _Heartbeat(prior)
         with log_context(
             request_id=turn.request_id,
@@ -207,6 +211,7 @@ class HarnessActivities:
                     turn.turn,
                     "lost_or_timed_out" if exhausted else type(e).__name__,
                     outcome="lost" if exhausted else "failed",
+                    through_attempt=attempt,
                 )
                 used = heartbeat.current()
                 details = {**asdict(used), "attempts": min(real_attempt, MAX_REAL_ATTEMPTS)}

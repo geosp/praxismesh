@@ -195,19 +195,38 @@ class AttemptRepository:
             )
 
     async def close_unfinished(
-        self, task_id: str, turn: int | None, category: str, *, outcome: str = "failed"
+        self,
+        task_id: str,
+        turn: int | None,
+        category: str,
+        *,
+        outcome: str = "failed",
+        through_attempt: int | None = None,
     ) -> None:
         """Close open attempt rows: one turn's when it fails for good, or (with
-        `turn=None`) the whole task's when the task completes (gate F2)."""
+        `turn=None`) the whole task's when the task completes (gate F2).
+
+        A failing Activity supplies `through_attempt` so a stale attempt cannot
+        close a newer attempt that Temporal has already started (gate follow-up
+        N1). Task-wide completion intentionally leaves it unset.
+        """
         async with self.engine.begin() as conn:
             await conn.execute(
                 text(
                     "UPDATE task_attempts SET outcome = :o, failure_category = :c, "
                     "ended_at = CURRENT_TIMESTAMP "
                     "WHERE task_id = :t AND outcome = 'started' "
-                    "AND (CAST(:turn AS INTEGER) IS NULL OR turn = :turn)"
+                    "AND (CAST(:turn AS INTEGER) IS NULL OR turn = :turn) "
+                    "AND (CAST(:through_attempt AS INTEGER) IS NULL "
+                    "OR attempt <= :through_attempt)"
                 ),
-                {"t": task_id, "turn": turn, "c": category, "o": outcome},
+                {
+                    "t": task_id,
+                    "turn": turn,
+                    "c": category,
+                    "o": outcome,
+                    "through_attempt": through_attempt,
+                },
             )
 
     async def list(self, task_id: str) -> list[dict[str, Any]]:

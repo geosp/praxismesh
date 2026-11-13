@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -21,7 +22,12 @@ from temporalio.contrib.pydantic import pydantic_data_converter
 
 from common.blob_store.s3 import S3BlobStore
 from common.errors import InvalidTaskInput, PraxisError
-from common.observability import configure_tracing, log_context, tracing_interceptor
+from common.observability import (
+    configure_logging,
+    configure_tracing,
+    log_context,
+    tracing_interceptor,
+)
 from common.persistence.repositories import (
     AttemptRepository,
     CheckpointRepository,
@@ -34,6 +40,7 @@ from orchestrator.submit import prepare_task, start_task
 from registry.loader import load_registry
 
 PROVIDER = configure_tracing("praxis-cli")
+log = logging.getLogger("praxis.cli")
 
 
 async def connect() -> Client:
@@ -72,12 +79,15 @@ async def _submit(data: dict[str, Any], wait: bool) -> int:
         )
         tracer = PROVIDER.get_tracer("praxismesh.cli")
         with (
-            log_context(task_id=start.task_id, request_id=start.request_id),
+            log_context(
+                task_id=start.task_id, request_id=start.request_id, workflow_id=start.task_id
+            ),
             tracer.start_as_current_span(
                 "praxis.task.submit", attributes={"praxis.task_id": start.task_id}
             ),
         ):
             handle = await start_task(await connect(), start)
+            log.info("task submitted", extra={"fields": {"template": start.template}})
     finally:
         await engine.dispose()
     print(json.dumps({"task_id": start.task_id, "request_id": start.request_id}), flush=True)
@@ -180,6 +190,7 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str]) -> int:
     args = parser().parse_args(argv)
+    configure_logging(os.environ.get("LOG_LEVEL", "INFO"), stream=sys.stderr)
     handler = {"submit": submit, "status": status, "output": output}[args.command]
     try:
         return asyncio.run(handler(args))

@@ -9,6 +9,8 @@ import json
 import logging
 import os
 import shutil
+import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +19,7 @@ import yaml
 from agents import SQLiteSession
 
 from common.observability import disable_sdk_tracing
-from harness_activity.config import HarnessConfig, build_config
+from harness_activity.config import HarnessConfig, McpConfig, build_config
 from harness_activity.runner import OpenAIAgentsRunner, Usage
 from registry.loader import REGISTRY_ROOT, load_registry
 from tests.support.fake_model import FakeModel
@@ -160,6 +162,48 @@ async def test_command_env_has_no_credentials(
     output = next(tool_results)["content"]
     assert "exit=0" in output and "do-not-leak" not in output and "S3_SECRET" not in output
     assert os.environ["CANARY_SECRET"] == "do-not-leak"
+
+
+async def test_command_runs_in_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _, fake = await run(
+        script(
+            {"tool": "run_command", "args": {"command": "sh -c pwd"}},
+            {"tool": "finish_task", "args": {"status": "done", "summary": "ok"}},
+        ),
+        tmp_path,
+        monkeypatch,
+    )
+    assert f"stdout:\n{tmp_path}\n" in tool_results(fake)[0]
+
+
+async def test_command_timeout_is_enforced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("harness_activity.tools.COMMAND_TIMEOUT_S", 0.01)
+    _, fake = await run(
+        script(
+            {"tool": "run_command", "args": {"command": "sh -c 'sleep 1'"}},
+            {"tool": "finish_task", "args": {"status": "done", "summary": "ok"}},
+        ),
+        tmp_path,
+        monkeypatch,
+    )
+    assert "did not finish within 0.01 s" in tool_results(fake)[0]
+
+
+async def test_command_output_is_capped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("harness_activity.tools.OUTPUT_CAP", 20)
+    _, fake = await run(
+        script(
+            {
+                "tool": "run_command",
+                "args": {"command": "sh -c 'printf abcdefghijklmnopqrstuvwxyz'"},
+            },
+            {"tool": "finish_task", "args": {"status": "done", "summary": "ok"}},
+        ),
+        tmp_path,
+        monkeypatch,
+    )
+    output = tool_results(fake)[0]
+    assert "ghijklmnopqrstuvwxyz" in output and "abcdef" not in output
 
 
 async def test_finish_with_failed_sibling_is_continue(
@@ -306,6 +350,10 @@ async def test_file_tools_stay_in_the_workspace(
     workspace = tmp_path / "ws"
     workspace.mkdir()
     (workspace / "link.txt").symlink_to(secret)
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    (outside_dir / "nested-secret.txt").write_text("NESTED-TOP-SECRET")
+    (workspace / "linkdir").symlink_to(outside_dir, target_is_directory=True)
     escape = tmp_path / "escaped.txt"
     _, fake = await run(
         script(
@@ -313,20 +361,24 @@ async def test_file_tools_stay_in_the_workspace(
             {"tool": "read_file", "args": {"path": str(secret)}},
             {"tool": "read_file", "args": {"path": "link.txt"}},
             {"tool": "write_file", "args": {"path": str(escape), "content": "x"}},
+            {"tool": "list_files", "args": {"path": ".."}},
+            {"tool": "list_files", "args": {"path": str(outside_dir)}},
+            {"tool": "list_files", "args": {"path": "linkdir"}},
             {"tool": "finish_task", "args": {"status": "done", "summary": "ok"}},
         ),
         workspace,
         monkeypatch,
     )
     results = tool_results(fake)
-    assert len(results) == 4 and all("TOP-SECRET-CONTENT" not in r for r in results)
+    assert len(results) == 7
+    assert all("TOP-SECRET" not in r for r in results)
     assert all(r.startswith("error: path outside the workspace") for r in results), results
     assert not escape.exists()
 
 
 def test_mcp_server_env_is_exactly_what_is_granted(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An MCP server gets PATH, LANG, its literal env, PRAXIS_TASK_ID and the secrets
-    its template grants, and nothing else from the worker (threat model C7; F9)."""
+    """The config grants only its declared values; the SDK adds its documented
+    platform allow-list when it creates the subprocess (threat model C7; F9)."""
     monkeypatch.setenv("VLLM_BASE_URL", "http://127.0.0.1:9")
     monkeypatch.setenv("PRAXIS_SAMPLE_DB_URL", "postgresql+asyncpg://granted")
     monkeypatch.setenv("S3_SECRET_KEY", "not-granted")
@@ -337,6 +389,50 @@ def test_mcp_server_env_is_exactly_what_is_granted(monkeypatch: pytest.MonkeyPat
     assert set(server.env) == {"PATH", "LANG", "PRAXIS_TASK_ID", "PRAXIS_SAMPLE_DB_URL"}
     assert server.env["PRAXIS_TASK_ID"] == "task-env-00000001"
     assert server.env["PRAXIS_SAMPLE_DB_URL"] == "postgresql+asyncpg://granted"
+
+
+async def test_mcp_subprocess_env_is_granted_plus_sdk_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise the runner hand-off and inspect the environment in the actual
+    stdio child. A worker canary must not cross that boundary (gate M6)."""
+    from mcp.client.stdio import get_default_environment
+
+    monkeypatch.setenv("CANARY_SECRET", "must-not-reach-mcp")
+    with FakeModel(
+        script(
+            {"tool": "environment", "args": {}},
+            {"tool": "finish_task", "args": {"status": "done", "summary": "ok"}},
+        )
+    ) as fake:
+        config = config_for(fake, monkeypatch)
+        granted = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "LANG": "C.UTF-8",
+            "PRAXIS_TASK_ID": "task-env-process-0001",
+        }
+        env_server = McpConfig(
+            name="environment",
+            command=sys.executable,
+            args=["-m", "tests.support.env_mcp"],
+            env=granted,
+            tools_allowed=["environment"],
+            timeout_s=5,
+        )
+        config = replace(config, mcp=[env_server])
+        await OpenAIAgentsRunner().run(
+            config,
+            tmp_path,
+            SQLiteSession("env-process"),
+            "Report the environment.",
+            no_op,
+            Usage(),
+        )
+        observed = json.loads(tool_results(fake)[0])
+    expected = set(get_default_environment()) | set(granted)
+    assert set(observed) == expected
+    assert observed["PRAXIS_TASK_ID"] == "task-env-process-0001"
+    assert "CANARY_SECRET" not in observed and "must-not-reach-mcp" not in observed.values()
 
 
 async def test_tool_errors_are_counted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
