@@ -9,3 +9,4 @@ Proposed designs, written and independently reviewed **before** a phase or mater
 | RFC | Phase | Status |
 |---|---|---|
 | [phase-0-local-infrastructure](phase-0-local-infrastructure.md) | 0 | accepted |
+| [phase-1-single-agent](phase-1-single-agent.md) | 1 | accepted; implemented and independently verified |

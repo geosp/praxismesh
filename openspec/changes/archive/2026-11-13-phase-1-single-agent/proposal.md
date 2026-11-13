@@ -56,4 +56,4 @@ Not in scope:
   - `task`, `task-status`;
   - `recovery-check`, `benchmark`.
 - **New runtime dependencies:** `openai-agents`, `pydantic`, `pyyaml`, `mcp`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp` and `prometheus-client`.
-- **Tracking issue:** #44. Design: [docs/rfcs/phase-1-single-agent.md](../../../docs/rfcs/phase-1-single-agent.md).
+- **Tracking issue:** #44. Design: [docs/rfcs/phase-1-single-agent.md](../../../../docs/rfcs/phase-1-single-agent.md).

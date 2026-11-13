@@ -63,7 +63,7 @@ Observed idle memory for the four long-running services (`docker stats`, sum of 
 
 ## Phase 1: harness-in-Activity, single agent
 
-**Describes:** branch `feat/44-evidence` (issue #44), the last of four implementation PRs (#46 foundations, #47 harness, #48 durability, this one). **Design:** [RFC](../rfcs/phase-1-single-agent.md) (accepted, with as-built notes), OpenSpec change `phase-1-single-agent`. **Evidence:** [docs/demos/phase-1.md](../demos/phase-1.md), [docs/benchmarks/](../benchmarks/), [docs/security/threat-model.md](../security/threat-model.md).
+**Describes:** tested code `9472d20d3b5e5d7cee1542ffedf9c25335defadd`, delivered by PR #53 at `45366585cdf15a253be6767965731039e6d0c97d` (issue #44). Independent review and verification passed; [coordinator closure](../reviews/phase-1/closure.md) links the assessed docs and merged evidence. **Design:** [RFC](../rfcs/phase-1-single-agent.md) (accepted, with as-built notes), archived OpenSpec change `2026-11-13-phase-1-single-agent`. **Evidence:** [original demo](../demos/phase-1.md), [independent model demo](../demos/phase-1-model-pr53.md), [combined verification](../reviews/phase-1/model-verification-pr53.md), [benchmarks](../benchmarks/), [threat model](../security/threat-model.md).
 
 ### Components
 

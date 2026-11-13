@@ -2,6 +2,10 @@
 
 Human-facing documentation for PraxisMesh. Requirements live in [`openspec/`](../openspec/); this folder holds the plan, designs, decisions, verified architecture and evidence (plan §4.17).
 
+Phases 0 and 1 are complete. The [Phase 1 closure record](reviews/phase-1/closure.md)
+links independent PASS reports, real-model evidence and the delivered revisions.
+Phase 2 is next; its design and implementation have not started.
+
 | Folder | What it holds | Written when |
 |---|---|---|
 | [plan/](plan/) | The detailed project plan; start from [PROJECT_PLAN.md](../PROJECT_PLAN.md) | Maintained throughout |

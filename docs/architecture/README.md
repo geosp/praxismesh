@@ -6,4 +6,4 @@ What actually runs: components, APIs, Temporal Workflows and Activities, data mo
 - **Light tier (Phases 0-2):** each phase adds a section to `overview.md` (plan §7.0).
 - Each update records the `code_sha` it describes. Planned or future behavior is never written as current.
 
-Current: [overview.md](overview.md), Phase 0.
+Current: [overview.md](overview.md), Phases 0 and 1; [Phase 1 closure](../reviews/phase-1/closure.md).
