@@ -16,6 +16,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -467,7 +468,9 @@ async def test_complete_task_closes_rows_left_open(engine: AsyncEngine, tmp_path
     assert row is not None and row["result"]["inner_turns"] == 9  # real Activity pass-through (M3)
 
 
-async def test_activity_metrics_are_recorded(engine: AsyncEngine, tmp_path: Path) -> None:
+async def test_activity_metrics_are_recorded(
+    engine: AsyncEngine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Activity duration and heartbeat lag are recorded (worker metrics; gate F3)."""
     from prometheus_client import REGISTRY
 
@@ -480,18 +483,58 @@ async def test_activity_metrics_are_recorded(engine: AsyncEngine, tmp_path: Path
         )
         or 0
     )
-    tokens = {"template": "local-default@1", "direction": "in"}
-    tokens_before = REGISTRY.get_sample_value("praxis_tokens_total", tokens) or 0
+    token_labels = [
+        {"template": "local-default@1", "direction": direction} for direction in ("in", "out")
+    ]
+    tokens_before = [REGISTRY.get_sample_value("praxis_tokens_total", t) or 0 for t in token_labels]
     cp_bytes_before = REGISTRY.get_sample_value("praxis_checkpoint_bytes_count") or 0
     cp_seconds_before = REGISTRY.get_sample_value("praxis_checkpoint_seconds_count") or 0
-    h = await harness(engine, tmp_path, done)
+    bytes_sum_before = REGISTRY.get_sample_value("praxis_checkpoint_bytes_sum") or 0
+    seconds_sum_before = REGISTRY.get_sample_value("praxis_checkpoint_seconds_sum") or 0
+
+    # Build the expected archives independently of the instrumented pack calls.
+    expected = tmp_path / "expected"
+    expected.mkdir()
+    (expected / "input.txt").write_bytes(b"input data")
+    first_size = len(ws.pack(expected))
+    (expected / "edit.txt").write_text("recorded edit")
+    final_size = len(ws.pack(expected))
+    pack = ws.pack
+    elapsed = iter((0.25, 0.5))
+    clock = [100.0]
+
+    def timed_pack(root: Path) -> bytes:
+        data = pack(root)
+        clock[0] += next(elapsed)
+        return data
+
+    # Replace only this module's clock, leaving asyncio's real clock intact.
+    monkeypatch.setattr(
+        "harness_activity.activity.time", SimpleNamespace(monotonic=lambda: clock[0])
+    )
+    monkeypatch.setattr(ws, "pack", timed_pack)
+
+    async def measured_run(
+        seen: Seen, before: BeforeModelCall, usage: Usage, w: Path, s: Session
+    ) -> RunResult:
+        await before(usage)
+        (w / "edit.txt").write_text("recorded edit")
+        usage.tokens_in += 20
+        usage.tokens_out += 7
+        return RunResult("done", usage, summary="ok")
+
+    h = await harness(engine, tmp_path, measured_run)
     await h.run()
     assert REGISTRY.get_sample_value(count, labels) == before + 1
-    # The token count the spec names, and the checkpoint size and time (M2): the
-    # scripted run uses 20 tokens and takes two checkpoints (seq 0 and the final).
-    assert REGISTRY.get_sample_value("praxis_tokens_total", tokens) == tokens_before + 20
+    for labels_, baseline, used in zip(token_labels, tokens_before, (20, 7), strict=True):
+        assert REGISTRY.get_sample_value("praxis_tokens_total", labels_) == baseline + used
     assert REGISTRY.get_sample_value("praxis_checkpoint_bytes_count") == cp_bytes_before + 2
     assert REGISTRY.get_sample_value("praxis_checkpoint_seconds_count") == cp_seconds_before + 2
+    assert (
+        REGISTRY.get_sample_value("praxis_checkpoint_bytes_sum")
+        == bytes_sum_before + first_size + final_size
+    )
+    assert REGISTRY.get_sample_value("praxis_checkpoint_seconds_sum") == seconds_sum_before + 0.75
     lag_after = REGISTRY.get_sample_value(
         "praxis_heartbeat_lag_seconds_count", {"activity": "run_harness_turn"}
     )
