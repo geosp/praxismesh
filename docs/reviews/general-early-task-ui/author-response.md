@@ -19,3 +19,10 @@ ADR-0003 remains proposed until owner/coordinator acceptance. The owner must
 require successful latest-head CI before merging. Phase 4A's implementation RFC
 and OpenSpec contract remain deferred until Phase 4 establishes its APIs; UI
 implementation still requires its own independent design approval.
+
+## Subsequent owner acceptance
+
+On 2026-11-13, the owner explicitly stated "I accept ADR-0003". The author
+records that owner decision in the ADR status, index, plan and decision log.
+The independent report and its original pinned verdict remain unchanged.
+This accepts roadmap sequencing only; no UI implementation is approved here.

@@ -1,9 +1,10 @@
 # PraxisMesh plan: Phase 4A
 
 Part of the PraxisMesh project plan, revision 2.11. Start from the core plan:
-[PROJECT_PLAN.md](../../../PROJECT_PLAN.md). This proposed phase follows Phase 4
+[PROJECT_PLAN.md](../../../PROJECT_PLAN.md). This planned phase follows Phase 4
 and precedes Phase 5, under [ADR-0003](../../adr/0003-early-compose-task-ui.md).
-It has not been implemented or independently approved.
+Its sequencing is owner-accepted after independent planning review. Its detailed
+implementation design and implementation have not started or been approved.
 
 ## Phase 4A: Live task interaction UI on Compose
 

@@ -1,7 +1,7 @@
 ---
 id: ADR-0003
 title: Deliver a Compose task UI after the Phase 4 gateway
-status: proposed
+status: accepted
 date: 2026-11-13
 issue: "#56"
 related: [PROJECT_PLAN.md sections 7.0 and 7.2, docs/plan/phases/phase-4.md, docs/plan/phases/phase-8.md, docs/plan/design-decisions.md section 4.12]
@@ -11,8 +11,9 @@ superseded_by: null
 
 # ADR-0003: Deliver a Compose task UI after the Phase 4 gateway
 
-Proposed sequencing change for [issue #56](https://github.com/geosp/praxismesh/issues/56).
-This ADR and the accompanying plan revision require independent design review.
+Accepted by the owner on 2026-11-13 for [issue #56](https://github.com/geosp/praxismesh/issues/56),
+after the independent [planning design review passed](../reviews/general-early-task-ui/design-review-80c2dc2.md).
+This acceptance records the phase sequence; it does not approve a UI implementation design.
 
 ## Context and problem statement
 
@@ -36,7 +37,8 @@ second execution or authorization path.
 
 ## Decision outcome
 
-Proposed option: split out Phase 4A, after Phase 4 and before Phase 5. It is part
+Chosen option: split out Phase 4A, after Phase 4 and before Phase 5, because live
+task interaction can reuse the gateway without waiting for cluster administration. It is part
 of the MVP and follows the [full process tier](../../PROJECT_PLAN.md#70-process-tiers-and-phase-order-rev-211), like Phase 4. Phase 5 remains the
 MVP completion point. This ADR is a sequencing decision, not the implementation
 RFC or a claim that any UI is available today.
@@ -90,8 +92,11 @@ GitHub delivery views cannot imply Phase 5 capabilities in Phase 4A.
 
 ### Confirmation
 
-Before accepting this ADR, an independent design review checks sequencing,
-ownership, preserved requirements and the scope moved out of Phase 8.
+The independent planning design review passed at `80c2dc2`, checking sequencing,
+ownership, preserved requirements and the scope moved out of Phase 8. All three
+reviewers completed; the report discloses the fresh reader's automatic project
+instructions. The two optional navigation nits were addressed without changing
+the planning contract. The owner explicitly accepted ADR-0003 on 2026-11-13.
 
 The later Phase 4A acceptance/demo must show: submit a background task in the
 browser; watch real progress; close/reopen and retrieve it by the same identity;
@@ -108,6 +113,6 @@ administration without rebuilding task orchestration.
 - [Phase 2](../plan/phases/phase-2.md): event observation and reconnect.
 - [Phase 3B](../plan/phases/phase-3b.md): questions, approval and cancellation.
 - [Phase 4](../plan/phases/phase-4.md): gateway and conversation identity.
-- [Proposed Phase 4A](../plan/phases/phase-4a.md): task UI acceptance and demo.
+- [Phase 4A](../plan/phases/phase-4a.md): task UI acceptance and demo.
 - [Phase 8](../plan/phases/phase-8.md): remaining administration scope.
 - [Design decisions](../plan/design-decisions.md): sections 4.9 and 4.12.

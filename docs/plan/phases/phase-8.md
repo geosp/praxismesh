@@ -4,7 +4,7 @@ Part of the PraxisMesh project plan, revision 2.11. Start from the core plan: [P
 
 ## Phase 8: Platform administration UI and API
 
-Proposed split: [Phase 4A](phase-4a.md) supplies the Compose task UI first;
+Accepted sequencing: [Phase 4A](phase-4a.md) supplies the Compose task UI first;
 this phase extends that frontend after Phase 7 Kubernetes deployment and
 Phase 6B verified-workflow capabilities exist. See
 [ADR-0003](../../adr/0003-early-compose-task-ui.md). No Phase 8 functionality is

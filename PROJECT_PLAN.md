@@ -13,8 +13,8 @@
 
 ## Document map
 
-Revision 2.11 proposes a Compose task UI in Phase 4A before GitHub delivery,
-while retaining Kubernetes administration in Phase 8. This sequencing proposal
+Revision 2.11 schedules a Compose task UI in Phase 4A before GitHub delivery,
+while retaining Kubernetes administration in Phase 8. This owner-accepted sequencing decision
 is tracked in [ADR-0003](docs/adr/0003-early-compose-task-ui.md) and issue #56;
 it does not implement a UI or waive any phase gate.
 
@@ -192,7 +192,7 @@ See [docs/plan/schemas.md](docs/plan/schemas.md).
 
 ### 7.0 Process tiers and phase order (rev 2.11)
 
-**Order:** Pre-0 -> §0 -> 0 -> 1 -> 2 -> 3A -> 3B -> 4 -> 4A -> 5 (MVP complete) -> 6 -> 6B -> 7 -> 8 -> 9. Sub-phases 3A, 3B, 4A and 6B are gated like phases, each with its own acceptance criteria, demo and evidence file. [ADR-0003](docs/adr/0003-early-compose-task-ui.md) proposes the split between Compose task interaction in 4A and Kubernetes administration in 8; the draft plan revision requires independent review before approval.
+**Order:** Pre-0 -> §0 -> 0 -> 1 -> 2 -> 3A -> 3B -> 4 -> 4A -> 5 (MVP complete) -> 6 -> 6B -> 7 -> 8 -> 9. Sub-phases 3A, 3B, 4A and 6B are gated like phases, each with its own acceptance criteria, demo and evidence file. [ADR-0003](docs/adr/0003-early-compose-task-ui.md) records the owner-accepted split between Compose task interaction in 4A and Kubernetes administration in 8, after independent planning design review PASS. Each phase still requires its own implementation design approval.
 
 The review protocol should cost roughly what the phase is worth. Two tiers apply:
 

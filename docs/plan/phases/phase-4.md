@@ -4,7 +4,7 @@ Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [P
 
 ## Phase 4: OpenAI-compatible gateway
 
-The proposed [Phase 4A](phase-4a.md) consumes these gateway and task-control
+The planned [Phase 4A](phase-4a.md) consumes these gateway and task-control
 contracts for a Compose task UI. This phase remains responsible for server-side
 identity, authorization, supported inputs and event/reconnect semantics; the UI
 does not create alternate execution paths.
