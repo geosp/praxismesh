@@ -1,0 +1,7 @@
+uv 0.13.5 (x86_64-unknown-linux-gnu)
+Python 3.11.17
+Docker Compose version v5.7.1
+openai-agents 0.24.0
+temporalio 1.36.0
+pytest 9.2.0
+opentelemetry-sdk 1.45.2

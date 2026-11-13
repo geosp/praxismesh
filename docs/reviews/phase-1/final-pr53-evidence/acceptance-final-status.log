@@ -1,0 +1,15 @@
+db                   Up 3 minutes (healthy)
+fake-model           Up 2 minutes
+jaeger               Up 2 minutes
+orchestrator         Up 2 minutes (healthy)
+prometheus           Up 2 minutes
+s3                   Up 3 minutes (healthy)
+temporal             Up 3 minutes (healthy)
+temporal-namespace   Exited (0) 3 minutes ago
+temporal-schema      Exited (0) 2 minutes ago
+temporal-ui          Up 3 minutes (healthy)
+worker-a             Up 2 minutes (healthy)
+worker-b             Up 2 minutes (healthy)
+addresses: Temporal 127.0.0.1:27233, UI http://127.0.0.1:28080, S3 http://127.0.0.1:28333, DB 127.0.0.1:25432
+model endpoint: not configured (VLLM_BASE_URL is empty)
+all services healthy

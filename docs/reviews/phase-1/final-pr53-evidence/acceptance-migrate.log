@@ -1,0 +1,6 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001, Baseline: empty application schema.
+INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, Require the pg_search extension (ADR-0002).
+INFO  [alembic.runtime.migration] Running upgrade 0002 -> 0003, Phase 1 tables: tasks, attempts, checkpoints, idempotency, blob metadata,
+sample orders, and the openai-agents session store (RFC Phase 1, migration 0003).

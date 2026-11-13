@@ -1,0 +1,25 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.17, pytest-9.2.0, pluggy-1.7.0
+rootdir: /tmp/praxismesh-pr53-final-verify
+configfile: pyproject.toml
+plugins: anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 86 items
+
+tests/integration/test_blob_store.py ..                                  [  2%]
+tests/integration/test_blob_store_s3.py .........                        [ 12%]
+tests/integration/test_database.py .......                               [ 20%]
+tests/integration/test_env_check.py ................................     [ 58%]
+tests/integration/test_harness_activity.py ................              [ 76%]
+tests/integration/test_model_endpoints.py ssss.                          [ 82%]
+tests/integration/test_persistence_phase1.py .......                     [ 90%]
+tests/integration/test_task_e2e.py ...                                   [ 94%]
+tests/integration/test_temporal.py ...                                   [ 97%]
+tests/integration/test_tracing.py ..                                     [100%]
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/integration/test_model_endpoints.py:25: VLLM_BASE_URL is unset or empty; model endpoint not configured
+SKIPPED [1] tests/integration/test_model_endpoints.py:31: VLLM_BASE_URL is unset or empty; model endpoint not configured
+SKIPPED [1] tests/integration/test_model_endpoints.py:36: VLLM_BASE_URL is unset or empty; model endpoint not configured
+SKIPPED [1] tests/integration/test_model_endpoints.py:48: VLLM_BASE_URL is unset or empty; model endpoint not configured
+======================== 82 passed, 4 skipped in 31.77s ========================

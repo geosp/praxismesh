@@ -1,0 +1,2 @@
+error: VLLM_BASE_URL is not set; the benchmark needs a real model
+make: *** [Makefile:141: benchmark] Error 2
