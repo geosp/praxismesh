@@ -1,0 +1,112 @@
+---
+id: ADR-0003
+title: Deliver a Compose task UI after the Phase 4 gateway
+status: proposed
+date: 2026-11-13
+issue: "#56"
+related: [PROJECT_PLAN.md sections 7.0 and 7.2, docs/plan/phases/phase-4.md, docs/plan/phases/phase-8.md, docs/plan/design-decisions.md section 4.12]
+supersedes: null
+superseded_by: null
+---
+
+# ADR-0003: Deliver a Compose task UI after the Phase 4 gateway
+
+Proposed sequencing change for [issue #56](https://github.com/geosp/praxismesh/issues/56).
+This ADR and the accompanying plan revision require independent design review.
+
+## Context and problem statement
+
+The owner wants a browser interface for live interaction with tasks earlier than
+Phase 8. The current Phase 8 combines task interaction with Kubernetes-dependent
+administration, so the UI waits for deployment and fleet work in Phase 7.
+Phases 2, 3B and 4 already plan resumable progress, durable task controls,
+questions/approvals, conversation identity, authentication and authorization.
+The project defaults to a local, self-hosted deployment with Docker Compose
+through Phase 6B. An early UI must reuse these contracts rather than create a
+second execution or authorization path.
+
+## Considered options
+
+- Keep the entire UI in Phase 8: smallest change to sequencing, but delays live
+  browser interaction until Kubernetes deployment is complete.
+- Move all of Phase 8 before Phase 7: creates unmet CRD, pod/node, scaling and
+  rollout dependencies, or requires a second Compose fleet-management backend.
+- Split task interaction into Phase 4A; retain Kubernetes administration and
+  later capability views in Phase 8.
+
+## Decision outcome
+
+Proposed option: split out Phase 4A, after Phase 4 and before Phase 5. It is part
+of the MVP and follows the full process tier, like Phase 4. Phase 5 remains the
+MVP completion point. This ADR is a sequencing decision, not the implementation
+RFC or a claim that any UI is available today.
+
+Phase 4A uses the planned TypeScript/React/Vite stack and runs in Docker Compose.
+It provides:
+
+- Authenticated conversation and task submission using Phase 4's supported
+  input types; no new file-upload or tool capability is implied.
+- A stable, visible request/task ID and a task list for returning to background
+  work after closing the browser.
+- Live status, output and tool events, plus plan/dependency progress where
+  provided by the server. Operational events remain distinct from assistant
+  output and do not expose private model reasoning.
+- Retrieval of completed results and existing artifact references.
+- Resumable observation with duplicate suppression and explicit retention-gap
+  indication, using the Phase 2/4 event contracts.
+- Questions and approval actions using Phase 3B's authenticated, audited API;
+  conversation continuation follows Phase 4 identity semantics.
+- Explicit cancellation. Browser disconnect never cancels durable work.
+- A minimal task summary for existing status, attempts and budget fields;
+  broader fleet and performance dashboards stay in Phase 8.
+
+The UI calls trusted server APIs. It gets no direct database, Temporal admin,
+object-store credential or Kubernetes access. It cannot grant tools, bypass
+approval gates or change template capabilities. Authentication and authorization
+are enforced on the API; a hidden button is not an access control.
+
+Phase 8 retains template/profile/MCP administration, cluster/fleet management,
+deployment/rollout/scale controls, GPU placement, full operational dashboards,
+external kubectl reconciliation and verified-workflow views introduced by
+Phase 6B. It extends the same frontend and shared event/identity contracts.
+GitHub delivery views cannot imply Phase 5 capabilities in Phase 4A.
+
+### Consequences
+
+- Good: live browser interaction becomes available on Compose before the
+  Kubernetes phase, while relying on the already tested gateway and controls.
+- Bad: the MVP gains an additional gated phase and frontend testing/maintenance
+  work before GitHub delivery. Phase 5 arrives later in the sequence.
+- Bad: Phase 4A cannot provide future administration features or unsupported
+  request types; the UI must accurately represent the available backend.
+- Follow-up: update the core phase order, phase index, MVP statement, decision
+  log and revision history; add phase-4a.md; split the overlapping Phase 8 tasks;
+  clarify section 4.12's task/API versus Kubernetes administration boundary.
+- Follow-up: write an independently reviewed Phase 4A RFC and OpenSpec change
+  after Phase 4's contracts are established. Preserve full-tier gates.
+- Unknown: exact browser auth mechanism, served UI/API topology, event endpoint
+  shapes and thresholds. Resolve in the Phase 4/4A designs, without inventing
+  unverified API capabilities here.
+
+### Confirmation
+
+Before accepting this ADR, an independent design review checks sequencing,
+ownership, preserved requirements and the scope moved out of Phase 8.
+
+The later Phase 4A acceptance/demo must show: submit a background task in the
+browser; watch real progress; close/reopen and retrieve it by the same identity;
+disconnect/reconnect without duplicate retained events and display gaps
+explicitly; answer a needs_input question; resolve an authorized approval;
+cancel a separate task; retrieve a result; and reject unauthorized API actions.
+It must run locally with Compose, with no Kubernetes prerequisite, and save
+evidence in docs/demos/phase-4a.md. Phase 8 subsequently verifies cluster-specific
+administration without rebuilding task orchestration.
+
+## Links
+
+- PROJECT_PLAN.md: sections 2, 7.0, 7.2 and 8.
+- docs/plan/phases/phase-2.md: live event observation and reconnect semantics.
+- docs/plan/phases/phase-3b.md: questions, approval and cancellation controls.
+- docs/plan/phases/phase-4.md: gateway, background work and conversation identity.
+- docs/plan/phases/phase-8.md: original combined UI scope.
+- docs/plan/design-decisions.md: sections 4.9 and 4.12.
