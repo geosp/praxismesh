@@ -1,7 +1,7 @@
 # Project Plan: PraxisMesh — Durable Agent Platform on Temporal
 
-**Revision:** 2.10  
-**Updated:** 2026-11-10  
+**Revision:** 2.11
+**Updated:** 2026-11-13
 **Product / project name:** PraxisMesh  
 **Tagline:** Durable orchestration for autonomous AI agents  
 **GitHub repository:** https://github.com/geosp/praxismesh (public; clone URL `https://github.com/geosp/praxismesh.git`)  
@@ -12,6 +12,11 @@
 > This document incorporates the approved architectural review of Phases 0–7, the demonstration requirement for **every Phase 0–9**, a proposed repository/OpenSpec/custom-skill bootstrap prerequisite, and a planning-only independent session/review protocol for Phase 0, and a proposed reusable, independently verified workflow capability for runtime agents. Revision 2.9 resequences work without changing the architecture: a pre-bootstrap feasibility spike is added, Phase 3 is split into 3A and 3B, the reusable verified-workflow capability moves to a new Phase 6B, minimal persistence moves forward to Phases 0-2, and early phases use a lighter process tier (§7.0). Phase numbers 0–9 are otherwise preserved. Revision 2.10 adds project CI, an agent benchmark suite, early observability, an approval CLI, cost units, a gateway compatibility matrix, a threat model, retention and backup, release hygiene and a risk register, and splits the plan into a core file plus per-topic files (see the document map). An unchecked task is not evidence of failure: it simply has not yet been completed and validated.
 
 ## Document map
+
+Revision 2.11 schedules a Compose task UI in Phase 4A before GitHub delivery,
+while retaining Kubernetes administration in Phase 8. This owner-accepted sequencing decision
+is tracked in [ADR-0003](docs/adr/0003-early-compose-task-ui.md) and issue #56;
+it does not implement a UI or waive any phase gate.
 
 This file is the core plan. Detail lives in `docs/plan/`. Section numbers are stable across files, so a reference such as §4.16 means that numbered section in the file shown here. Load only what a session needs (§9, item 7).
 
@@ -49,10 +54,10 @@ This file is the core plan. Detail lives in `docs/plan/`. Section numbers are st
 - **Ceph RGW/S3 is another supported alternative**. Implement object storage behind one `BlobStore` contract; do not embed vendor-specific calls into workflows or harness logic.
 - MCP servers and MCP tools run **only on worker nodes**. Orchestrator-side model calls have no MCP or harness tools.
 
-### First-release scope and non-goals (rev 2.9)
+### First-release scope and non-goals (rev 2.11)
 
-- **First release (MVP):** Phases 0, 1, 2, 3A, 3B, 4 and 5 on Docker Compose. The MVP outcome is: an unmodified OpenAI client submits a request, the platform triages, plans, executes and verifies it durably, and repository work arrives as one reviewable GitHub pull request.
-- **Post-MVP increments, in order:** Phase 6 (steward), Phase 6B (reusable verified workflows, §4.15), Phase 7 (Kubernetes), Phase 8 (control-plane UI), Phase 9 (hardening). Items 7, 8 and 9 in the list above are post-MVP.
+- **First release (MVP):** Phases 0, 1, 2, 3A, 3B, 4, 4A and 5 on Docker Compose. The MVP outcome is: an unmodified OpenAI client or the task UI submits a request, the platform triages, plans, executes and verifies it durably, and repository work arrives as one reviewable GitHub pull request. Phase 4A adds live browser interaction after the gateway; Phase 5 remains the MVP completion point.
+- **Post-MVP increments, in order:** Phase 6 (steward), Phase 6B (reusable verified workflows, §4.15), Phase 7 (Kubernetes), Phase 8 (platform administration UI/API and later capability views), Phase 9 (hardening). Items 7, 8 and 9 in the list above are post-MVP. Phase 8 extends the Phase 4A frontend instead of creating a second task UI.
 - **Non-goals for the first release:** a hosted service; hard multi-tenant isolation between mutually untrusted organizations; a UI workflow builder; source forges other than GitHub; worker runtimes other than Python; high-availability Temporal operations guidance; model training or fine-tuning; billing.
 - **Sizing:** This plan carries no effort estimates. Each phase RFC must state a relative size (S/M/L), the hardware it needs, and the external inputs from Pre-0.2 it depends on, so the owner can sequence work with real numbers.
 
@@ -185,9 +190,9 @@ See [docs/plan/schemas.md](docs/plan/schemas.md).
 
 **Entry requirement:** Record the Pre-0 spike decision, then complete the repository, OpenSpec, and specialist-skills bootstrap in §0 before starting Phase 0. This is a project-process dependency, not a new runtime component.
 
-### 7.0 Process tiers and phase order (rev 2.9)
+### 7.0 Process tiers and phase order (rev 2.11)
 
-**Order:** Pre-0 → §0 → 0 → 1 → 2 → 3A → 3B → 4 → 5 (MVP complete) → 6 → 6B → 7 → 8 → 9. Sub-phases 3A, 3B and 6B are gated like phases, each with its own acceptance criteria, demo and evidence file.
+**Order:** Pre-0 -> §0 -> 0 -> 1 -> 2 -> 3A -> 3B -> 4 -> 4A -> 5 (MVP complete) -> 6 -> 6B -> 7 -> 8 -> 9. Sub-phases 3A, 3B, 4A and 6B are gated like phases, each with its own acceptance criteria, demo and evidence file. [ADR-0003](docs/adr/0003-early-compose-task-ui.md) records the owner-accepted split between Compose task interaction in 4A and Kubernetes administration in 8, after independent planning design review PASS. Each phase still requires its own implementation design approval.
 
 The review protocol should cost roughly what the phase is worth. Two tiers apply:
 
@@ -230,11 +235,12 @@ Each phase RFC restates the risks it meets and the measurable signal that means 
 | 3A | Persistence, triage, routing and DAG dispatch | Full | Yes | [docs/plan/phases/phase-3a.md](docs/plan/phases/phase-3a.md) |
 | 3B | Verification, escalation, replanning and bounded execution | Full | Yes | [docs/plan/phases/phase-3b.md](docs/plan/phases/phase-3b.md) |
 | 4 | OpenAI-compatible gateway | Full | Yes | [docs/plan/phases/phase-4.md](docs/plan/phases/phase-4.md) |
+| 4A | Live task interaction UI on Compose | Full | Yes | [docs/plan/phases/phase-4a.md](docs/plan/phases/phase-4a.md) |
 | 5 | GitHub delivery | Full | Yes | [docs/plan/phases/phase-5.md](docs/plan/phases/phase-5.md) |
 | 6 | Agent maintenance (steward) | Full | Post-MVP | [docs/plan/phases/phase-6.md](docs/plan/phases/phase-6.md) |
 | 6B | Reusable, independently verified workflows | Full | Post-MVP | [docs/plan/phases/phase-6b.md](docs/plan/phases/phase-6b.md) |
 | 7 | Kubernetes deployment | Full | Post-MVP | [docs/plan/phases/phase-7.md](docs/plan/phases/phase-7.md) |
-| 8 | Control-plane UI and API | Full | Post-MVP | [docs/plan/phases/phase-8.md](docs/plan/phases/phase-8.md) |
+| 8 | Platform administration UI and API | Full | Post-MVP | [docs/plan/phases/phase-8.md](docs/plan/phases/phase-8.md) |
 | 9 | Hardening | Full | Post-MVP | [docs/plan/phases/phase-9.md](docs/plan/phases/phase-9.md) |
 
 ## 8. Testing rules
@@ -261,7 +267,7 @@ Each phase RFC restates the risks it meets and the measurable signal that means 
 - Demonstrate the new phase **integrated with all prior completed phases**, not a disconnected mock. Any stub or simulated failure must be labeled; never silently replace an essential capability with a mock. In Phase 7, the documented CPU-only profile is an allowed demonstration profile, not evidence of GPU behavior.
 - Document both a **happy path and a meaningful failure/recovery or permission check** when applicable. Capture evidence under `docs/demos/phase-N.md`; include environment versions, test run/link, commands, expected versus observed output, task/workflow/PR identifiers, and demo pass/fail.
 - No demo boxes should be checked before the actual demo has been executed and verified. If a dependency is unavailable (such as a GitHub test repo), record the demo as **blocked**, not passed.
-- Sub-phases 3A, 3B and 6B are each gated as a phase, with evidence in `docs/demos/phase-3a.md`, `phase-3b.md` and `phase-6b.md`. The Pre-0 spike is gated by its write-up, not by a demo.
+- Sub-phases 3A, 3B, 4A and 6B are each gated as a phase, with evidence in `docs/demos/phase-3a.md`, `phase-3b.md`, `phase-4a.md` and `phase-6b.md`. The Pre-0 spike is gated by its write-up, not by a demo.
 
 ## 9. Working agreement for Claude Code
 

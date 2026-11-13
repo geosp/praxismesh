@@ -93,7 +93,8 @@ Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [P
 
 ### 4.12 Control plane is the authoritative configuration writer
 
-- UI speaks only to control-plane API; API validates and updates CRDs/profiles with audit trails. Direct `kubectl` edits may occur; UI reads live Kubernetes state and presents those changes.
+- **Task interaction (Phase 4A, accepted sequencing in ADR-0003):** the Compose-hosted UI uses Phase 4 gateway/task APIs and Phase 3B input/approval actions, with Phase 2/4 event transport. Reads and writes are authenticated and authorized server-side; the browser has no direct database, Temporal admin, object-store admin or Kubernetes access. It does not grant capabilities or run a second orchestrator.
+- **Platform administration (Phase 8):** the UI speaks only to the control-plane API for configuration; that API validates and updates CRDs/profiles with audit trails. Direct `kubectl` edits may occur; the UI reads live Kubernetes state through the API and presents those changes. Phase 8 extends the Phase 4A frontend after the Phase 7 cluster contracts exist.
 - Separate `admin`/`operator`/`viewer` capabilities; enforce permissions server-side.
 
 ### 4.13 Application data and large-payload persistence

@@ -1,8 +1,16 @@
 # PraxisMesh plan: Phase 8
 
-Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [PROJECT_PLAN.md](../../../PROJECT_PLAN.md). Section numbers match the core plan's document map.
+Part of the PraxisMesh project plan, revision 2.11. Start from the core plan: [PROJECT_PLAN.md](../../../PROJECT_PLAN.md). Section numbers match the core plan's document map.
 
-## Phase 8: Control-plane UI and API
+## Phase 8: Platform administration UI and API
+
+Accepted sequencing: [Phase 4A](phase-4a.md) supplies the Compose task UI first;
+this phase extends that frontend after Phase 7 Kubernetes deployment and
+Phase 6B verified-workflow capabilities exist. See
+[ADR-0003](../../adr/0003-early-compose-task-ui.md). No Phase 8 functionality is
+claimed implemented. Existing requirements are allocated as follows: initial
+task/conversation interaction and supported question/approval actions move to
+4A; the tasks below retain administration and later integrations.
 
 **Read first:** `PROJECT_PLAN.md`, then §4.10, §4.12; schemas.
 
@@ -12,8 +20,8 @@ Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [P
 - [ ] **Profiles UI:** profile create/edit and preview of permitted template routing and expected capabilities.
 - [ ] **Fleet UI:** pods, nodes, GPU placement, current task, logs links and drain/restart.
 - [ ] **Dashboard:** task backlog and queue delay, turn p50/p95, throughput, success/failure/escalation, tokens/s and per task, vLLM TTFT and KV cache, GPU use, predicted/actual tier and delivery accuracy; time range and refresh. Builds on the Phase 1 metrics and traces.
-- [ ] **Workflows UI:** live filters, DAG status/tier, attempt events/offsets, links to Temporal Web UI, cancellation/retry.
-- [ ] **Approvals inbox:** plan/tool/merge approvals with context and audited signals; no ability for viewer to change approvals. Reuses the Phase 3B approval API; the CLI stays supported.
+- [ ] **Workflows UI extensions:** reuse Phase 4A's task graph, live progress, attempts/offsets, Temporal links and cancellation; add fleet/tier filters and authorized retry controls supported by later server APIs. Preserve the existing Compose task experience.
+- [ ] **Approvals inbox extensions:** build on Phase 4A's input/approval inbox for plan/tool/merge and Phase 6B stage context, with audited signals; no ability for viewer to change approvals. Reuses the Phase 3B approval API and Phase 5/6B policies; the CLI stays supported.
 - [ ] **Verified workflow views:** display chosen template/version, stage graph, pinned spec and commit, independent reviewer findings, required evidence, blocked/failing gates and authorized retry/approval actions. A workflow editor is explicitly deferred; do not allow UI bypass of policy.
 - [ ] **Audit UI**, including external `kubectl` changes reflected by live cluster reads; SSE reuses Phase 2/4 event transport.
 - [ ] Integrate app PostgreSQL queryable records (requests, plan revisions, attempts, messages, budgets, GitHub deliveries), not only Temporal visibility.

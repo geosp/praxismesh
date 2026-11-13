@@ -4,6 +4,15 @@ Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [P
 
 ### Revision summary
 
+**Revision 2.11 (owner-accepted after planning review):** Add full-tier Phase 4A, a live task interaction UI
+on Docker Compose, after Phase 4 and before Phase 5. Move initial workflow
+observation and supported input/approval controls forward from Phase 8; keep
+Kubernetes configuration/fleet administration, full dashboards and later
+capability views in Phase 8. The MVP now includes Phase 4A and still completes
+at Phase 5. ADR-0003 records the tradeoff and review requirement. Existing
+approved OpenSpec requirements, completed phases and runtime code are unchanged;
+the Phase 4A RFC and detailed OpenSpec contract follow Phase 4.
+
 **Revision 2.10:** Planning-only additions and a file split; no architecture change and no resequencing. Adds project CI and open-source project files to bootstrap; an agent benchmark suite, baseline observability, retention metadata and a first threat model in Phase 1; cost metering, retention enforcement, deletion and a backup drill in Phase 3A; an approval and input CLI in Phase 3B; a gateway compatibility matrix in Phase 4; a completed threat model and the first tagged release in Phase 5; a risk register (§7.1); and harness licensing as an open owner decision. Splits the document into a core plan and `docs/plan/` files with a document map and per-phase reading lists. Numeric defaults introduced here are proposals. **No repository, code, infrastructure or skills were created; all tasks remain unchecked.**
 
 **Revision 2.9:** Planning-only resequencing after an external review; no architecture change. Adds a Pre-0 feasibility spike and open-inputs table; moves minimal persistence into Phases 0–2; splits Phase 3 into 3A and 3B; collects the reusable verified-workflow capability into a post-MVP Phase 6B; defines the first-release MVP (Phases 0–5) and non-goals; adds light and full process tiers; states one build-time precedence rule between this plan and OpenSpec; moves the Worker Versioning strategy to Phase 7 and a security baseline to Phase 5; names sandbox and tenancy as required decisions; adds a fallback for the specialist skills; records web-checked facts and completes the reference list. No task was dropped; moved tasks keep their wording except where a stub note no longer applied. Statements in older revision summaries and decision-log rows about Phase 3, 4, 5 and 6 carrying workflow-template work are superseded by this revision. **No repository, code, infrastructure or skills were created; all tasks remain unchecked.**
