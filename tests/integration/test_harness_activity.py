@@ -30,6 +30,7 @@ from common.blob_store import MemoryBlobStore
 from common.errors import TemplateVersionUnavailable
 from common.observability.logging import JsonFormatter
 from common.persistence.repositories import (
+    AttemptRepository,
     Checkpoint,
     CheckpointRepository,
     TaskRepository,
@@ -37,7 +38,7 @@ from common.persistence.repositories import (
 )
 from common.schemas import BlobRef, CompleteTaskInput, TaskStart, TurnInput
 from harness_activity import workspace as ws
-from harness_activity.activity import CONTINUE_MESSAGE, HarnessActivities
+from harness_activity.activity import CONTINUE_MESSAGE, HarnessActivities, HarnessInputError
 from harness_activity.config import HarnessConfig
 from harness_activity.runner import BeforeModelCall, RunResult, StopRun, Superseded, Usage
 from orchestrator.activities import OrchestratorActivities
@@ -258,6 +259,7 @@ async def test_usage_is_heartbeated_live(engine: AsyncEngine, tmp_path: Path) ->
     await h.run()
     during = [d for t, d in h.heartbeats if t < h.runner.seen.started_at + 2.4]
     assert any(d["tokens_in"] == 100 and d["tool_calls"] == 1 for d in during)
+    assert all(d["attempts"] == 1 for _, d in h.heartbeats)  # the real attempt (M1)
     assert all(
         d.get("checkpoint_id") for t, d in h.heartbeats if t > h.runner.seen.started_at + 0.5
     )
@@ -326,6 +328,30 @@ async def test_finish_does_not_overwrite_a_lost_row(engine: AsyncEngine, tmp_pat
         t=h.task_id,
     )
     assert lost == 1
+
+
+async def test_terminal_failure_does_not_close_a_newer_attempt(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """A stale Activity that fails after its retry starts may close only itself;
+    the newer attempt remains authoritative and open (gate follow-up N1)."""
+
+    async def fail_after_retry_started(
+        seen: Seen, before: BeforeModelCall, usage: Usage, w: Path, s: Session
+    ) -> RunResult:
+        await AttemptRepository(engine).start(seen_task[0], 1, 2, "replacement-worker")
+        raise HarnessInputError("stale attempt failed after its retry started")
+
+    seen_task: list[str] = []
+    h = await harness(engine, tmp_path, fail_after_retry_started)
+    seen_task.append(h.task_id)
+    with pytest.raises(ApplicationError) as raised:
+        await h.run(attempt=1)
+    assert raised.value.type == "HarnessInputError"
+    assert await open_rows(engine, h.task_id) == [
+        (1, "lost", "lost_or_timed_out"),
+        (2, "started", None),
+    ]
 
 
 async def test_finish_shortcut(engine: AsyncEngine, tmp_path: Path) -> None:
@@ -433,9 +459,12 @@ async def test_complete_task_closes_rows_left_open(engine: AsyncEngine, tmp_path
             attempts=3,
             tokens_in=0,
             tokens_out=0,
+            inner_turns=9,
         ),
     )
     assert await open_rows(engine, h.task_id) == [(3, "failed", "task_completed")]
+    row = await TaskRepository(engine).get(h.task_id)
+    assert row is not None and row["result"]["inner_turns"] == 9  # real Activity pass-through (M3)
 
 
 async def test_activity_metrics_are_recorded(engine: AsyncEngine, tmp_path: Path) -> None:
@@ -451,9 +480,18 @@ async def test_activity_metrics_are_recorded(engine: AsyncEngine, tmp_path: Path
         )
         or 0
     )
+    tokens = {"template": "local-default@1", "direction": "in"}
+    tokens_before = REGISTRY.get_sample_value("praxis_tokens_total", tokens) or 0
+    cp_bytes_before = REGISTRY.get_sample_value("praxis_checkpoint_bytes_count") or 0
+    cp_seconds_before = REGISTRY.get_sample_value("praxis_checkpoint_seconds_count") or 0
     h = await harness(engine, tmp_path, done)
     await h.run()
     assert REGISTRY.get_sample_value(count, labels) == before + 1
+    # The token count the spec names, and the checkpoint size and time (M2): the
+    # scripted run uses 20 tokens and takes two checkpoints (seq 0 and the final).
+    assert REGISTRY.get_sample_value("praxis_tokens_total", tokens) == tokens_before + 20
+    assert REGISTRY.get_sample_value("praxis_checkpoint_bytes_count") == cp_bytes_before + 2
+    assert REGISTRY.get_sample_value("praxis_checkpoint_seconds_count") == cp_seconds_before + 2
     lag_after = REGISTRY.get_sample_value(
         "praxis_heartbeat_lag_seconds_count", {"activity": "run_harness_turn"}
     )

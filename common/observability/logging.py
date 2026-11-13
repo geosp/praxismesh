@@ -67,8 +67,10 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(line, default=str)
 
 
-def configure_logging(level: str = "INFO") -> None:
-    handler = logging.StreamHandler(sys.stdout)
+def configure_logging(level: str = "INFO", stream: Any = None) -> None:
+    """JSON lines to `stream` (stdout by default; the CLI uses stderr, so its own
+    output on stdout stays machine-readable)."""
+    handler = logging.StreamHandler(sys.stdout if stream is None else stream)
     handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
     root.handlers[:] = [handler]

@@ -88,6 +88,7 @@ def activities(
     def run_harness_turn(turn: TurnInput) -> TurnOutcome:
         # Synchronous, so a test can block it past its timeouts without
         # blocking the worker's event loop.
+        assert turn.request_id == "req-1"  # handed on from TaskStart (follow-up M4)
         return behavior(turn, activity.info().attempt)
 
     @activity.defn(name="complete_task")
@@ -278,10 +279,25 @@ async def test_wall_time_budget_exhausted() -> None:
 
 async def test_turn_timeout_fails_the_turn() -> None:
     def behavior(t: TurnInput, a: int) -> TurnOutcome:
-        time.sleep(2)  # past start_to_close (1 s); retried until schedule_to_close (6 s)
+        # Heartbeat the attempt, as the real Activity does, then overrun
+        # start_to_close (1 s); retried until schedule_to_close (6 s).
+        activity.heartbeat({"attempts": a, "tokens_in": 10 * a})
+        time.sleep(2)
         return outcome("done")
 
     resolved = RESOLVED.model_copy(update={"turn_timeout": timedelta(seconds=1)})
     result, _ = await run_task(behavior, resolved=resolved)
     assert result.status == "failed"
     assert result.failure_reason == "harness turn 1 failed: TimeoutError"
+    # The last heartbeat's attempt and usage count (follow-up M1).
+    assert result.attempts > 1 and result.tokens_in == 10 * result.attempts
+
+
+async def test_inner_turns_are_summed_over_turns() -> None:
+    """Inner turns of every harness turn reach the TaskResult (follow-up M3)."""
+
+    def behavior(t: TurnInput, a: int) -> TurnOutcome:
+        return TurnOutcome(status="continue" if t.turn == 1 else "done", inner_turns=2 + t.turn)
+
+    result, _ = await run_task(behavior)
+    assert (result.status, result.turns, result.inner_turns) == ("succeeded", 2, 7)
