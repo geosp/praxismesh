@@ -84,3 +84,4 @@ def test_submit_writes_contextual_json_log_to_stderr(monkeypatch: Any, capsys: A
     assert line["msg"] == "task submitted"
     assert line["task_id"] == "task-cli-00000001"
     assert line["request_id"] == "req-cli-00000001"
+    assert line["workflow_id"] == "task-cli-00000001"

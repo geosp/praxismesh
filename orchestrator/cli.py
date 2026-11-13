@@ -79,7 +79,9 @@ async def _submit(data: dict[str, Any], wait: bool) -> int:
         )
         tracer = PROVIDER.get_tracer("praxismesh.cli")
         with (
-            log_context(task_id=start.task_id, request_id=start.request_id),
+            log_context(
+                task_id=start.task_id, request_id=start.request_id, workflow_id=start.task_id
+            ),
             tracer.start_as_current_span(
                 "praxis.task.submit", attributes={"praxis.task_id": start.task_id}
             ),
