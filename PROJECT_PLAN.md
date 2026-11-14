@@ -1,13 +1,13 @@
 # Project Plan: PraxisMesh — Durable Agent Platform on Temporal
 
 **Revision:** 2.12
-**Updated:** 2026-11-13
+**Updated:** 2026-11-14
 **Product / project name:** PraxisMesh  
 **Tagline:** Durable orchestration for autonomous AI agents  
 **GitHub repository:** https://github.com/geosp/praxismesh (public; clone URL `https://github.com/geosp/praxismesh.git`)  
 **Distribution:** Open source under the Apache License 2.0 (`LICENSE`)  
 **Status:** Phases 0 and 1 implemented and closed; Phase 1 independently reviewed and verified. Phase 2 has not started. See [Phase 1 closure](docs/reviews/phase-1/closure.md).
-**Development workflow (rev 2.12):** New work uses the Skill Central implementation-planning suite and `docs/plans/`. OpenSpec is retired from the active development workflow; existing records remain historical and their guarantees are explicitly incorporated by `docs/requirements/baseline.md`. The phase gate and evidence rules remain mandatory. See `docs/development/planning.md`.
+**Development workflow (rev 2.12):** New work uses the Skill Central implementation-planning suite and `docs/plans/`. OpenSpec is retired from the active development workflow; existing records remain historical and their guarantees are explicitly incorporated by `docs/requirements/baseline.md`. The phase gate and evidence rules remain mandatory. See `docs/development/planning.md`. Proposed [ADR-0004](docs/adr/0004-use-implementation-plans-for-development.md) reconciles ADR-0003’s Phase 4A artifact requirement while carrying forward all its other decisions.
 
 **Audience:** Claude Code or another implementation agent. Read the full plan before writing code. Implement phase by phase; do not check a task until its tests, acceptance criteria, and phase demo all pass. Make small, reviewable commits. Record discoveries, substitutions, and deviations in the decision log.
 

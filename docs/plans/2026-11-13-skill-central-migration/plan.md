@@ -13,7 +13,9 @@ adr_review: null
 ## Summary
 
 Use the owner's Skill Central suite for implementation plans and independent
-reviews. Retire active OpenSpec development tooling while retaining completed
+reviews, after its Codex and bundled-export prerequisites are merged and verified.
+Replace OpenSpec CI with public local contract validation. Retire active OpenSpec
+development tooling while retaining completed
 phase records and their existing guarantees. The main risk is losing discovery
 or weakening phase gates during cutover; install and verify the merged suite
 before the owner merges the PraxisMesh cutover.
@@ -41,6 +43,16 @@ active OpenSpec changes; Phases 0 and 1 are closed and Phase 2 has not started.
 - **Suite**: impl-plan, design-review and impl-review plus their helper and reviewer agents.
 - **Cutover**: switching new PraxisMesh work to the verified canonical suite.
 - **Baseline**: existing Phase 0/1 guarantees incorporated by reference.
+- **Harness variant**: a native agent configuration for one supported coding tool.
+- **Owned installation**: links or Codex references tracked by Skill Central;
+  unmanaged destinations are refused rather than overwritten.
+- **Protected review**: required review and CI before owner merge to protected main.
+- **Doctor**: Skill Central's installation health check; not a model invocation test.
+- **Coordinator**: the session checking immutable evidence and refusing closure
+  when gates are incomplete, under docs/reviews/README.md.
+- **Latest-head approval**: the owner approves delivery only after required checks
+  and evidence linkage cover the current PR head. Operational rules are in
+  [the workflow](../../development/planning.md) and [review protocol](../../reviews/README.md).
 
 ## Requirements
 
@@ -62,7 +74,9 @@ Retiring OpenSpec must preserve completed evidence and explicitly incorporate ex
 ### R4 · Phase gates remain mandatory
 
 Fresh-session frozen-commit reviews, independent verification, tests, demos and latest-head approval must remain required.
-- **Given** an incomplete review or demo, **when** closure is requested, **then** the coordinator refuses completion.
+- **Given** a missing reviewer or unrun demo, **when** closure is requested, **then** the coordinator refuses completion.
+- **Given** failed acceptance tests or verification, **when** closure is requested, **then** the coordinator refuses completion.
+- **Given** mismatched evidence SHAs or stale-head checks, **when** delivery approval is requested, **then** the coordinator refuses completion until the current head is covered.
 
 ### R5 · Public CI has no private dependency
 
@@ -74,8 +88,8 @@ Public CI must validate local implementation contracts without fetching Skill Ce
 ### D1 · Share the suite through owned user installations
 
 Keep one portable canonical suite and explicit harness variants. Skills and most
-agent variants use owned links; Codex reviewer variants use owned config_file
-references to canonical regular TOML files, because Codex refuses symlinked role
+agent variants use owned links. Codex reviewer variants use owned config_file
+references to canonical regular TOML files because Codex refuses symlinked role
 configuration. Rejected: copying
 skills into PraxisMesh, because project copies drift. Details: notes.md#d1
 
@@ -84,11 +98,18 @@ skills into PraxisMesh, because project copies drift. Details: notes.md#d1
 Retain the master plan's scope/gate authority; an approved implementation plan
 carries detailed contracts and design. Rejected: maintaining parallel RFC/OpenSpec
 requirements for every new phase, because the selected suite already owns those contracts.
+ADR-0003 currently requires separate Phase 4A RFC/OpenSpec artifacts. Proposed
+[ADR-0004](../../adr/0004-use-implementation-plans-for-development.md) supersedes
+that artifact requirement while carrying forward every other ADR-0003 decision.
+The owner must accept that reconciliation with this cutover; it does not approve
+Phase 4A's future implementation design.
 
 ### D3 · Validate repository contracts locally in CI
 
-Use a small project-owned validator for repository-specific structure and closure
-references. Rejected: fetching a private helper in public fork CI, because it would
+Use a small project-owned validator for requirement coverage and scenarios,
+phase status, task Verify steps and completion evidence references. See
+[public validation](../../development/planning.md#public-validation) for its
+commands and boundary. Rejected: fetching a private helper in public fork CI, because it would
 require new credentials and exclude contributors. It does not prove execution evidence.
 
 ## Assumptions
@@ -106,9 +127,16 @@ require new credentials and exclude contributors. It does not prove execution ev
 
 Review/merge Skill Central prerequisites, then the suite; install only merged content
 and run doctor and fresh-session Linux/macOS checks. Record the protected suite SHA
-in the cutover PR. The owner merges PraxisMesh only after those gates pass. Git
-revert of the cutover restores prior project definitions and CI; preserve external
-sources and installation ownership records rather than deleting them.
+in the cutover PR. The owner merges PraxisMesh only after those gates pass.
+
+A repository revert restores prior project definitions and CI. It leaves the
+canonical Skill Central checkout and owned user installation intact; use the
+restored project skill names explicitly. If a shared registration conflicts with
+a restored project reviewer, stop and preview the manager's owned uninstall for
+that harness before choosing recovery. That operation affects the user-wide
+installation and other repositories, so it is a separate owner decision; never
+force-remove destinations. Preserve source exports and ownership records. See
+[installation and recovery](../../development/planning.md#installation-and-cutover).
 
 ## Open questions
 
