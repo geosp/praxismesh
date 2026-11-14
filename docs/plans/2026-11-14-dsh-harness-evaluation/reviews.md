@@ -118,3 +118,32 @@ a temporary reversion of its fix, then the restored suite passed (22 tests).
 F1 additionally passed fresh locked-install reproduction in a second directory.
 The first report is frozen; metadata stays changes-requested pending fresh review.
 No acceptance condition, scanner policy or production configuration was waived.
+
+
+## 2026-11-14 · impl-review · phase 01 · round 2 · changes-requested
+
+- Frozen code_sha: 35ac465bf2618f1e6031bc325be885800cbf9c2c.
+- Diff base: 952d01e097332905ba56d6c26e1e342431f8f394.
+- [Final full independent review report](../../reviews/general-dsh-harness-evaluation/implementation-review-02.md).
+- Reviewers: Contract completed; Failure and retry completed; Scope and composition completed.
+  Contract and Scope disclosed exposure to the correction summary in the as-built
+  report before their complete assessments. They saw no other reviewer verdict;
+  Failure and retry confirmed no prior-correction exposure. This is an explicit
+  independence limitation, not a claim of fully isolated fresh assessment.
+- Verdict: FAIL; two open Majors. All seven round-1 defects were addressed and
+  none reopened as the same defect. The four findings below concern additional paths.
+- Mechanical checks: zero plan errors/warnings, public validation passed, diff
+  and syntax checks passed. Embedded evidence digests and source/configuration
+  hashes matched the frozen revision. Runtime checks were not independently run.
+- All task boxes remain open. Phase 02 remains unstarted.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F1 | Major | Failure and retry | A truncated fixture log can raise before mandatory container cleanup and result persistence (task 1.3). | open |
+| F2 | Major | Scope and composition; Contract subset | Code/configuration are mounted from mutable source after manifest hashing; granted skill has no content digest (R1). | open |
+| F3 | Nit | Scope and composition | Gateway and container cleanup start separate clocks and may exceed the original five-second grace (task 1.2). | open |
+| F4 | Nit | Contract | manifest_sha256 hashes canonical JSON without the newline added to the persisted file (R1). | open |
+
+This was the second and final full review round. Owner selection of corrections
+is the next checkpoint; no third full review is planned. Any correction validation
+must remain explicitly targeted and does not erase this report or its limitations.
