@@ -63,9 +63,27 @@ this task is not a benchmark comparison or TaskResult conformance result.
 
 ## Preliminary observations
 
-The final reproducible run table and frozen source reference are recorded below
-after the Phase 01 walkthrough. Each result must include its pre-run manifest
-digest, actual model-boundary observations and container absence check.
+The implementer walkthrough below tested source commit
+`6eec0b0d19580113477286b6cfbe627235d07ac3`. Sanitized
+[run manifests/results](dsh-phase01-evidence.json) retain per-run source hashes,
+artifact/configuration digests, gateway observations and fixture admissions.
+Every container was absent after cleanup. These are execution results, not an
+independent review or verification verdict.
+
+| Probe | Outcome | Seconds | Completion requests | Container absent |
+| --- | --- | --- | --- | --- |
+| startup | pass | 1.268 | 0 | yes |
+| catalog | pass | 2.166 | 1 | yes |
+| capability | pass | 2.274 | 4 | yes |
+| poison | pass | 2.102 | 4 | yes |
+| denied-tool | pass | 2.353 | 2 | yes |
+| native-text | pass | 2.049 | 2 | yes |
+| local | pass | 8.854 | 3 | yes |
+
+Repository checks passed: locked sync, Ruff lint/format, mypy (90 files), generated
+agent sync, plan validation, and 165 tests (91 deselected integration tests). The
+isolated controller suite passed 15 tests. The full root suite uses deterministic
+fixtures; only the `local` walkthrough above establishes real-model capability.
 
 | Probe | Required observation |
 | --- | --- |

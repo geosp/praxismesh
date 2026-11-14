@@ -1,0 +1,748 @@
+{
+  "date": "2026-11-14",
+  "purpose": "Phase 01 implementer walkthrough; independent verification still due",
+  "runs": [
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "648ca948427e7ea969ad0fca653f805f708c7fd66ebe230e51cbd8cb54d3de21",
+        "case": "startup",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "4fd0ad64a87c83a9ac69c94b819805566104ca7e816539be73e3b1983b2799e5",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": "Docker container praxis-dsh-12dd08888d07",
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-12dd08888d07",
+        "session": "probe",
+        "source_commit": "6eec0b0d19580113477286b6cfbe627235d07ac3",
+        "sources": {
+          "container_driver.py": "e2f0507529a2b263fca4222392d67101fdf46820e5b5f80bf73fe91fb449f993",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "3b2f546c6ae9f26859bdb55d7a97cd9e346660ec31e6cb12579102f1201459b6",
+          "preflight.py": "470659547106c404b4bb4db05512ab9433eb5a11985c1077e3495c9d173a3924",
+          "run_probe.py": "142b3d9e7fb942726ff426eddcd3e7b3722b1ed6616ad842349dc24625062dc1",
+          "test_probe.py": "850019e3fcf4536791b2c02a28dfeef7d715dfc6b9e6bd029476f0c673b41e98"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "cc63ff38d3289accacb5b8e8035cd6f12f161a1785e787dbb0dcfa65e927e2a6",
+      "result": {
+        "case": "startup",
+        "exit": 0,
+        "manifest_sha256": "cc63ff38d3289accacb5b8e8035cd6f12f161a1785e787dbb0dcfa65e927e2a6",
+        "seconds": 1.268,
+        "cleanup_command_exit": 0,
+        "container_absent": true,
+        "candidate_summary": {
+          "case": "startup",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "648ca948427e7ea969ad0fca653f805f708c7fd66ebe230e51cbd8cb54d3de21",
+        "case": "catalog",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "4fd0ad64a87c83a9ac69c94b819805566104ca7e816539be73e3b1983b2799e5",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": "Docker container praxis-dsh-4f456fe8c359",
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-4f456fe8c359",
+        "session": "probe",
+        "source_commit": "6eec0b0d19580113477286b6cfbe627235d07ac3",
+        "sources": {
+          "container_driver.py": "e2f0507529a2b263fca4222392d67101fdf46820e5b5f80bf73fe91fb449f993",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "3b2f546c6ae9f26859bdb55d7a97cd9e346660ec31e6cb12579102f1201459b6",
+          "preflight.py": "470659547106c404b4bb4db05512ab9433eb5a11985c1077e3495c9d173a3924",
+          "run_probe.py": "142b3d9e7fb942726ff426eddcd3e7b3722b1ed6616ad842349dc24625062dc1",
+          "test_probe.py": "850019e3fcf4536791b2c02a28dfeef7d715dfc6b9e6bd029476f0c673b41e98"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "473bfce1c9a8ed7b025df2ff08d4eea7e687152908ab038e11989f2f3338aa60",
+      "result": {
+        "case": "catalog",
+        "exit": 0,
+        "manifest_sha256": "473bfce1c9a8ed7b025df2ff08d4eea7e687152908ab038e11989f2f3338aa60",
+        "seconds": 2.166,
+        "cleanup_command_exit": 0,
+        "container_absent": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "34c21eef7f24009cb4b3f4b588470e765c735ea32d47ecba45bed6c99356cc8f",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": false
+          }
+        ],
+        "tool_executions": [],
+        "candidate_summary": {
+          "case": "catalog",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "e7f099332273bb2648ff5ac9c4b14e5d7abe7f977ca9a1097001ce7bd93bb286"
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "648ca948427e7ea969ad0fca653f805f708c7fd66ebe230e51cbd8cb54d3de21",
+        "case": "capability",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "4fd0ad64a87c83a9ac69c94b819805566104ca7e816539be73e3b1983b2799e5",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": "Docker container praxis-dsh-3e2daa47d34d",
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-3e2daa47d34d",
+        "session": "probe",
+        "source_commit": "6eec0b0d19580113477286b6cfbe627235d07ac3",
+        "sources": {
+          "container_driver.py": "e2f0507529a2b263fca4222392d67101fdf46820e5b5f80bf73fe91fb449f993",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "3b2f546c6ae9f26859bdb55d7a97cd9e346660ec31e6cb12579102f1201459b6",
+          "preflight.py": "470659547106c404b4bb4db05512ab9433eb5a11985c1077e3495c9d173a3924",
+          "run_probe.py": "142b3d9e7fb942726ff426eddcd3e7b3722b1ed6616ad842349dc24625062dc1",
+          "test_probe.py": "850019e3fcf4536791b2c02a28dfeef7d715dfc6b9e6bd029476f0c673b41e98"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "2a053b2260841db51a096579cbd667d1bd0b2d684f5c09a990b520b07cbba53d",
+      "result": {
+        "case": "capability",
+        "exit": 0,
+        "manifest_sha256": "2a053b2260841db51a096579cbd667d1bd0b2d684f5c09a990b520b07cbba53d",
+        "seconds": 2.274,
+        "cleanup_command_exit": 0,
+        "container_absent": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "34c21eef7f24009cb4b3f4b588470e765c735ea32d47ecba45bed6c99356cc8f",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": false
+          },
+          {
+            "sequence": 2,
+            "path": "/v1/chat/completions",
+            "request_hash": "4fddd27dbda0825f0cd439dd10861173e78c5944403bec8bb7053432ab08ffa7",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          },
+          {
+            "sequence": 3,
+            "path": "/v1/chat/completions",
+            "request_hash": "5f83a1a8d3c4c54a8adbfbdd2dbc92ad0c2958024015fc43cc967c510fed541a",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          },
+          {
+            "sequence": 4,
+            "path": "/v1/chat/completions",
+            "request_hash": "182ebabc4752406030d56c36ebb2002bda65229440d4fe362093097805fcd7e5",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          }
+        ],
+        "tool_executions": [
+          {
+            "tool": "lookup_price",
+            "admitted": true
+          },
+          {
+            "tool": "lookup_stock",
+            "admitted": true
+          }
+        ],
+        "candidate_summary": {
+          "case": "capability",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "e7f099332273bb2648ff5ac9c4b14e5d7abe7f977ca9a1097001ce7bd93bb286",
+          "quote_matches": true
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "648ca948427e7ea969ad0fca653f805f708c7fd66ebe230e51cbd8cb54d3de21",
+        "case": "poison",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "4fd0ad64a87c83a9ac69c94b819805566104ca7e816539be73e3b1983b2799e5",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": "Docker container praxis-dsh-889d0d7be279",
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-889d0d7be279",
+        "session": "probe",
+        "source_commit": "6eec0b0d19580113477286b6cfbe627235d07ac3",
+        "sources": {
+          "container_driver.py": "e2f0507529a2b263fca4222392d67101fdf46820e5b5f80bf73fe91fb449f993",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "3b2f546c6ae9f26859bdb55d7a97cd9e346660ec31e6cb12579102f1201459b6",
+          "preflight.py": "470659547106c404b4bb4db05512ab9433eb5a11985c1077e3495c9d173a3924",
+          "run_probe.py": "142b3d9e7fb942726ff426eddcd3e7b3722b1ed6616ad842349dc24625062dc1",
+          "test_probe.py": "850019e3fcf4536791b2c02a28dfeef7d715dfc6b9e6bd029476f0c673b41e98"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "9b9c59cbf948504907c6f457e34a9baf5546b875337f2757cdded88c4d40d997",
+      "result": {
+        "case": "poison",
+        "exit": 0,
+        "manifest_sha256": "9b9c59cbf948504907c6f457e34a9baf5546b875337f2757cdded88c4d40d997",
+        "seconds": 2.102,
+        "cleanup_command_exit": 0,
+        "container_absent": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "34c21eef7f24009cb4b3f4b588470e765c735ea32d47ecba45bed6c99356cc8f",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": false
+          },
+          {
+            "sequence": 2,
+            "path": "/v1/chat/completions",
+            "request_hash": "4fddd27dbda0825f0cd439dd10861173e78c5944403bec8bb7053432ab08ffa7",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          },
+          {
+            "sequence": 3,
+            "path": "/v1/chat/completions",
+            "request_hash": "5f83a1a8d3c4c54a8adbfbdd2dbc92ad0c2958024015fc43cc967c510fed541a",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          },
+          {
+            "sequence": 4,
+            "path": "/v1/chat/completions",
+            "request_hash": "182ebabc4752406030d56c36ebb2002bda65229440d4fe362093097805fcd7e5",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          }
+        ],
+        "tool_executions": [
+          {
+            "tool": "lookup_price",
+            "admitted": true
+          },
+          {
+            "tool": "lookup_stock",
+            "admitted": true
+          }
+        ],
+        "candidate_summary": {
+          "case": "poison",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "e7f099332273bb2648ff5ac9c4b14e5d7abe7f977ca9a1097001ce7bd93bb286",
+          "quote_matches": true
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "648ca948427e7ea969ad0fca653f805f708c7fd66ebe230e51cbd8cb54d3de21",
+        "case": "denied-tool",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "4fd0ad64a87c83a9ac69c94b819805566104ca7e816539be73e3b1983b2799e5",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": "Docker container praxis-dsh-9e1f171d2265",
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-9e1f171d2265",
+        "session": "probe",
+        "source_commit": "6eec0b0d19580113477286b6cfbe627235d07ac3",
+        "sources": {
+          "container_driver.py": "e2f0507529a2b263fca4222392d67101fdf46820e5b5f80bf73fe91fb449f993",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "3b2f546c6ae9f26859bdb55d7a97cd9e346660ec31e6cb12579102f1201459b6",
+          "preflight.py": "470659547106c404b4bb4db05512ab9433eb5a11985c1077e3495c9d173a3924",
+          "run_probe.py": "142b3d9e7fb942726ff426eddcd3e7b3722b1ed6616ad842349dc24625062dc1",
+          "test_probe.py": "850019e3fcf4536791b2c02a28dfeef7d715dfc6b9e6bd029476f0c673b41e98"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "a3b2cb21230913ab4248b3e629a4c3d257f754f76bb7aa335869d47e5f617cc1",
+      "result": {
+        "case": "denied-tool",
+        "exit": 0,
+        "manifest_sha256": "a3b2cb21230913ab4248b3e629a4c3d257f754f76bb7aa335869d47e5f617cc1",
+        "seconds": 2.353,
+        "cleanup_command_exit": 0,
+        "container_absent": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "34c21eef7f24009cb4b3f4b588470e765c735ea32d47ecba45bed6c99356cc8f",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": false
+          },
+          {
+            "sequence": 2,
+            "path": "/v1/chat/completions",
+            "request_hash": "4759a094f7f76d839b329738c694ae9fdb041361b7747b71e70196dac7960281",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": true
+          }
+        ],
+        "tool_executions": [],
+        "candidate_summary": {
+          "case": "denied-tool",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "e7f099332273bb2648ff5ac9c4b14e5d7abe7f977ca9a1097001ce7bd93bb286"
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "648ca948427e7ea969ad0fca653f805f708c7fd66ebe230e51cbd8cb54d3de21",
+        "case": "native-text",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "4fd0ad64a87c83a9ac69c94b819805566104ca7e816539be73e3b1983b2799e5",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": "Docker container praxis-dsh-2f6ec361b2bb",
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-2f6ec361b2bb",
+        "session": "probe",
+        "source_commit": "6eec0b0d19580113477286b6cfbe627235d07ac3",
+        "sources": {
+          "container_driver.py": "e2f0507529a2b263fca4222392d67101fdf46820e5b5f80bf73fe91fb449f993",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "3b2f546c6ae9f26859bdb55d7a97cd9e346660ec31e6cb12579102f1201459b6",
+          "preflight.py": "470659547106c404b4bb4db05512ab9433eb5a11985c1077e3495c9d173a3924",
+          "run_probe.py": "142b3d9e7fb942726ff426eddcd3e7b3722b1ed6616ad842349dc24625062dc1",
+          "test_probe.py": "850019e3fcf4536791b2c02a28dfeef7d715dfc6b9e6bd029476f0c673b41e98"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "0c64f4647c8d1d9b2a15bdd8f7d3af37fae4bec46a667a039046398dc129cc62",
+      "result": {
+        "case": "native-text",
+        "exit": 0,
+        "manifest_sha256": "0c64f4647c8d1d9b2a15bdd8f7d3af37fae4bec46a667a039046398dc129cc62",
+        "seconds": 2.049,
+        "cleanup_command_exit": 0,
+        "container_absent": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "86dbe153d68d6aadb5a05607e907046bb1774328e80a3eadca5af06f3738c088",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": true,
+            "skill_body_seen": false,
+            "denial_seen": false
+          },
+          {
+            "sequence": 2,
+            "path": "/v1/chat/completions",
+            "request_hash": "848eb5802c4314f44a0ed5d5bf2efafeefdc71b23d7391972b1092e940c830b4",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": true,
+            "skill_body_seen": false,
+            "denial_seen": true
+          }
+        ],
+        "tool_executions": [],
+        "candidate_summary": {
+          "case": "native-text",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "e7f099332273bb2648ff5ac9c4b14e5d7abe7f977ca9a1097001ce7bd93bb286"
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "648ca948427e7ea969ad0fca653f805f708c7fd66ebe230e51cbd8cb54d3de21",
+        "case": "local",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "4fd0ad64a87c83a9ac69c94b819805566104ca7e816539be73e3b1983b2799e5",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": "Docker container praxis-dsh-ff283a7d4fce",
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-ff283a7d4fce",
+        "session": "probe",
+        "source_commit": "6eec0b0d19580113477286b6cfbe627235d07ac3",
+        "sources": {
+          "container_driver.py": "e2f0507529a2b263fca4222392d67101fdf46820e5b5f80bf73fe91fb449f993",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "3b2f546c6ae9f26859bdb55d7a97cd9e346660ec31e6cb12579102f1201459b6",
+          "preflight.py": "470659547106c404b4bb4db05512ab9433eb5a11985c1077e3495c9d173a3924",
+          "run_probe.py": "142b3d9e7fb942726ff426eddcd3e7b3722b1ed6616ad842349dc24625062dc1",
+          "test_probe.py": "850019e3fcf4536791b2c02a28dfeef7d715dfc6b9e6bd029476f0c673b41e98"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 180.0
+      },
+      "manifest_sha256": "449da3ac7487ea5d7bc3345bc03f23bf529b71b29a2bd2a2a6c16fb033d6fc50",
+      "result": {
+        "case": "local",
+        "exit": 0,
+        "manifest_sha256": "449da3ac7487ea5d7bc3345bc03f23bf529b71b29a2bd2a2a6c16fb033d6fc50",
+        "seconds": 8.854,
+        "cleanup_command_exit": 0,
+        "container_absent": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "34c21eef7f24009cb4b3f4b588470e765c735ea32d47ecba45bed6c99356cc8f",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": false,
+            "provider_status": 200,
+            "provider_usage": {
+              "prompt_tokens": 1068,
+              "total_tokens": 1129,
+              "completion_tokens": 61,
+              "completion_tokens_details": {
+                "reasoning_tokens": 32
+              }
+            }
+          },
+          {
+            "sequence": 2,
+            "path": "/v1/chat/completions",
+            "request_hash": "7120532655cbf5af1c718b702471f5d58e890f0ceb230bd081c932ab4260b27c",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false,
+            "provider_status": 200,
+            "provider_usage": {
+              "prompt_tokens": 1401,
+              "total_tokens": 1560,
+              "completion_tokens": 159,
+              "completion_tokens_details": {
+                "reasoning_tokens": 89
+              }
+            }
+          },
+          {
+            "sequence": 3,
+            "path": "/v1/chat/completions",
+            "request_hash": "a64695400a01c1591c872ffd7d40d7ecbb378359296247f9c530a4cec7e9ef5a",
+            "tools": [
+              "list_mcp_resource_templates",
+              "list_mcp_resources",
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "read_mcp_resource",
+              "skill"
+            ],
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false,
+            "provider_status": 200,
+            "provider_usage": {
+              "prompt_tokens": 1585,
+              "total_tokens": 1676,
+              "completion_tokens": 91,
+              "completion_tokens_details": {
+                "reasoning_tokens": 72
+              }
+            }
+          }
+        ],
+        "tool_executions": [
+          {
+            "tool": "lookup_price",
+            "admitted": true
+          },
+          {
+            "tool": "lookup_stock",
+            "admitted": true
+          }
+        ],
+        "candidate_summary": {
+          "case": "local",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "122075797970321a08deecb7bb8afe7dbe8437bf989266e4f7cc2d5923d55bd9",
+          "quote_matches": true
+        }
+      }
+    }
+  ]
+}
