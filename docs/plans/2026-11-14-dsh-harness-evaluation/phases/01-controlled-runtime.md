@@ -1,9 +1,9 @@
 ---
 phase: 1
 title: Establish an isolated controlled runtime
-status: approved
-branch: null
-base: null
+status: in-progress
+branch: spike/62-dsh-harness-evaluation
+base: 952d01e097332905ba56d6c26e1e342431f8f394
 delivers: [R1, R2, R3, R10]
 design_review: { status: passed, rounds: 2, last: 2026-11-14 }
 impl_review: { status: none, rounds: 0, last: null }

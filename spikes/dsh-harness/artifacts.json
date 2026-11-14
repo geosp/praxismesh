@@ -1,0 +1,61 @@
+{
+  "research_revision": "39163dd30f703a79079e2d2446545cff3c453738",
+  "release_revision": "ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c",
+  "release_tag": "dsh-v0.2.2-rc.2",
+  "package_version": "0.2.2rc2",
+  "observed_cli_version": "0.2.2-rc.2",
+  "carrier_manifest_version": "0.0.0-dev",
+  "provenance": "Source tag association and exact wheel digests; no verified build attestation or source rebuild. SDK api.py and client.py byte-match the release sources.",
+  "license": "MIT (upstream); bundled dependencies retain their own notices",
+  "platform": "linux-x86_64, glibc >= 2.28, CPython 3.11",
+  "base_image": "python@sha256:a83ba18aef0f865b1a4a611c2cf460fe446f2795673bbb9fe43be570439e3b39",
+  "observed_image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+  "installed_sha256": {
+    "deepseek_harness/api.py": "9c772909775196fc4070182191738ad227a3bfdccc68d1b6f4e8b90dec08430b",
+    "deepseek_harness/client.py": "e0bdbf82d5932d38bb38a2eb8b2ae123487c7c520444c64c859c70e4504028da",
+    "deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-linux-x64": "1cc41d5a8745a5b9d47c8604e44f23eb8af2d8ca02b2afa0be101d5f71be6ea4",
+    "deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-linux-x64-rg": "193906679498de4d939345b937fa24e0e69a03c244bd70c859f5e41232713f21"
+  },
+  "wheels": {
+    "deepseek-harness-runtime-bin": [
+      {
+        "url": "https://files.pythonhosted.org/packages/27/3c/3af58301dc7a71e5deb7807fa7f084c82609feca777ee0c3696ce80f27f1/deepseek_harness_runtime_bin-0.2.2rc2-py3-none-macosx_14_0_arm64.whl",
+        "hash": "sha256:76ac8fe84e6999e14a2229e20cbcaa819dc22b5bfaa40abb0fe810db8a31abc7",
+        "size": 91559131,
+        "upload-time": "2026-11-11T12:54:55.076Z"
+      },
+      {
+        "url": "https://files.pythonhosted.org/packages/1d/58/0b17819770412a9ef3ba2ee473d516d2819ff7bd6498a310b45740a82516/deepseek_harness_runtime_bin-0.2.2rc2-py3-none-macosx_14_0_x86_64.whl",
+        "hash": "sha256:3abb396390e34fc699119060302531d71ec0df6a79adf070572d77715ba1f395",
+        "size": 94953513,
+        "upload-time": "2026-11-11T12:54:58.72Z"
+      },
+      {
+        "url": "https://files.pythonhosted.org/packages/52/7d/2e3718bd653d61f244d77ded9122efd924d45e03c5c74a035af26adb9285/deepseek_harness_runtime_bin-0.2.2rc2-py3-none-manylinux_2_28_aarch64.whl",
+        "hash": "sha256:dc8f6e2c463c9c174b8fbafa394ada62351ff16b9febde4b90dca6b57f1b4e84",
+        "size": 99239965,
+        "upload-time": "2026-11-11T12:55:02.487Z"
+      },
+      {
+        "url": "https://files.pythonhosted.org/packages/95/37/ba779ea8e90daa84f9f1ea9982521e9e1f6d99223857efc6f9cf739b4b85/deepseek_harness_runtime_bin-0.2.2rc2-py3-none-manylinux_2_28_x86_64.whl",
+        "hash": "sha256:3c8f15a7a92b12857032995ec5dbcc105f192c36218e9b6bb2c5b54b4ee7db17",
+        "size": 97364370,
+        "upload-time": "2026-11-11T12:55:06.098Z"
+      },
+      {
+        "url": "https://files.pythonhosted.org/packages/4e/87/cc1080f32f3835637d93d265ff94d2b24a1ec6b96780894a7e7eeb0a0b5a/deepseek_harness_runtime_bin-0.2.2rc2-py3-none-win_amd64.whl",
+        "hash": "sha256:a791af95a97be205a73354c6819e95b5fe2ff40a57ef8a78d53c188ee33e9aea",
+        "size": 86959936,
+        "upload-time": "2026-11-11T12:55:11.67Z"
+      }
+    ],
+    "deepseek-harness-sdk": [
+      {
+        "url": "https://files.pythonhosted.org/packages/b0/d5/819b94ecdb652217170a423280e09630cf4dde5e21e40fa1173e27cc98bf/deepseek_harness_sdk-0.2.2rc2-py3-none-any.whl",
+        "hash": "sha256:ad14f1b1fccb29f7d97e5a7e0ee9dbb96d8af11292308bba66bf19a623d31899",
+        "size": 24513,
+        "upload-time": "2026-11-11T12:56:30.948Z"
+      }
+    ]
+  }
+}
