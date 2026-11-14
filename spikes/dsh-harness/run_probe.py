@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import ipaddress
 import json
 import math
@@ -21,6 +22,60 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 IMAGE = "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb"
 ALLOWED_TOOLS = {"skill", "mcp__sample-shop__lookup_price", "mcp__sample-shop__lookup_stock"}
+
+
+def runtime_identity(source: Path, skill: Path) -> dict:
+    from preflight import digest
+
+    files = sorted(source.glob("*.py")) + [
+        source / name for name in ("composition.yaml", "artifacts.json", "uv.lock")
+    ]
+
+    def skill_identity(root):
+        entries = {}
+        for path in sorted(root.rglob("*")):
+            if path.is_symlink():
+                raise RuntimeError("blocked: runtime input symlink")
+            if path.is_file():
+                entries[path.relative_to(root).as_posix()] = digest(path)
+        return entries
+
+    if any(path.is_symlink() for path in files):
+        raise RuntimeError("blocked: runtime input symlink")
+    return {
+        "runtime_inputs": {p.name: digest(p) for p in files},
+        "skill_inputs": skill_identity(skill),
+    }
+
+
+def stage_inputs(
+    scratch: Path,
+    expected: dict,
+    *,
+    source: Path = HERE,
+    skill: Path = ROOT / "registry/skills/order-desk",
+) -> None:
+    code = scratch / "code"
+    code.mkdir(parents=True)
+    for name in expected["runtime_inputs"]:
+        shutil.copy2(source / name, code / name, follow_symlinks=False)
+    shutil.copytree(skill, scratch / "skill", symlinks=True)
+    staged = runtime_identity(code, scratch / "skill")
+    if any(staged[key] != expected[key] for key in ("runtime_inputs", "skill_inputs")):
+        raise RuntimeError("blocked: runtime input changed during staging")
+
+
+def save_manifest(path: Path, manifest: dict) -> str:
+    encoded = json.dumps(manifest, sort_keys=True).encode() + b"\n"
+    path.write_bytes(encoded)
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def snapshot_gateway(code: Path):
+    spec = importlib.util.spec_from_file_location("dsh_frozen_gateway", code / "model_gateway.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.Boundary
 
 
 def auxiliary_inventory() -> dict:
@@ -52,12 +107,25 @@ def auxiliary_inventory() -> dict:
 
 
 def cleanup_container(
-    name: str, *, runner=subprocess.run, clock=time.monotonic, sleep=time.sleep, window: float = 10
+    name: str,
+    *,
+    runner=subprocess.run,
+    clock=time.monotonic,
+    sleep=time.sleep,
+    window: float = 10,
+    trigger: float | None = None,
+    grace: float = 5,
 ) -> dict:
-    started = clock()
+    started = clock() if trigger is None else trigger
     result = {"container_absent": False, "cleanup_ok": True, "observations": 0}
     try:
-        removal = runner(["docker", "rm", "-f", name], capture_output=True, text=True, timeout=5)
+        remaining = grace - (clock() - started)
+        removal = runner(
+            ["docker", "rm", "-f", name],
+            capture_output=True,
+            text=True,
+            timeout=max(0.01, remaining),
+        )
         result["cleanup_command_exit"] = removal.returncode
     except (OSError, subprocess.TimeoutExpired):
         result["cleanup_ok"] = False
@@ -86,6 +154,10 @@ def cleanup_container(
             absent = False
         result["observations"] += 1
         result["container_absent"] = absent
+        if "grace_met" not in result:
+            result["grace_met"] = absent and clock() - started <= grace
+            if not result["grace_met"]:
+                result["cleanup_ok"] = False
         if not absent:
             result["cleanup_ok"] = False
         elapsed = clock() - started
@@ -94,6 +166,58 @@ def cleanup_container(
         sleep(min(0.5, window - elapsed))
     result["observation_seconds"] = round(clock() - started, 3)
     return result
+
+
+def finish_run(
+    record: dict,
+    name: str,
+    run: Path,
+    boundary,
+    result_path: Path,
+    *,
+    trigger: float,
+    runner=subprocess.run,
+    clock=time.monotonic,
+    sleep=time.sleep,
+    window: float = 10,
+) -> None:
+    # Mandatory teardown is independent of decoding untrusted, possibly partial
+    # evidence. Never let evidence failures skip removal or result persistence.
+    try:
+        if boundary is not None:
+            boundary.close()
+            record["gateway_stopped"] = not boundary.owned_work_alive()
+            if not record["gateway_stopped"]:
+                record.update(exit=1, error="host gateway survived cleanup")
+    except Exception as error:
+        record.update(exit=1, gateway_stopped=False, gateway_error_type=type(error).__name__)
+    finally:
+        try:
+            record.update(
+                cleanup_container(
+                    name, runner=runner, clock=clock, sleep=sleep, window=window, trigger=trigger
+                )
+            )
+            if not record["cleanup_ok"]:
+                record.update(exit=1, error="cleanup unknown, late or surviving work observed")
+        except Exception as error:
+            record.update(exit=1, cleanup_ok=False, cleanup_error_type=type(error).__name__)
+    try:
+        if boundary is not None:
+            record["model_requests"] = boundary.requests
+            calls = run / "fixture-calls.jsonl"
+            record["tool_executions"] = (
+                [json.loads(line) for line in calls.read_text().splitlines()]
+                if calls.exists()
+                else []
+            )
+            error = evidence_error(record["case"], boundary.requests, record["tool_executions"])
+            if error:
+                record.update(exit=1, error=error)
+    except Exception as error:
+        record.update(exit=1, evidence_error_type=type(error).__name__)
+    finally:
+        result_path.write_text(json.dumps(record, indent=2) + "\n")
 
 
 def positive_seconds(value: str) -> float:
@@ -159,6 +283,8 @@ def run_manifest(case: str, name: str, deadline: float, image: str = IMAGE) -> d
         "session": "probe",
         "activity_attempt": 1,
         **verify(),
+        **runtime_identity(HERE, ROOT / "registry/skills/order-desk"),
+        "manifest_hash_policy": "SHA-256 of exact persisted UTF-8 bytes including final newline",
         "image": image,
         "template": "local-default@1",
         "profile": profile["name"],
@@ -229,14 +355,14 @@ def command(name: str, run: Path, case: str, image: str = IMAGE) -> list[str]:
             )
             for item in (
                 "--mount",
-                f"type=bind,src={HERE / filename},dst=/opt/spike/{filename},readonly",
+                f"type=bind,src={run.parent / 'code' / filename},"
+                f"dst=/opt/spike/{filename},readonly",
             )
         ],
         "--mount",
         f"type=bind,src={run},dst=/run",
         "--mount",
-        f"type=bind,src={ROOT / 'registry/skills/order-desk'},"
-        "dst=/opt/granted-skills/order-desk,readonly",
+        f"type=bind,src={run.parent / 'skill'},dst=/opt/granted-skills/order-desk,readonly",
         "--env",
         "PYTHONPATH=/opt/site",
         "--env",
@@ -317,21 +443,21 @@ def main() -> int:
     name = "praxis-dsh-" + uuid.uuid4().hex[:12]
     started = time.monotonic()
     manifest = run_manifest(args.case, name, args.deadline, args.image)
-    encoded = json.dumps(manifest, sort_keys=True).encode()
-    manifest_hash = hashlib.sha256(encoded).hexdigest()
-    (output / (name + "-manifest.json")).write_bytes(encoded + b"\n")
+    manifest_hash = save_manifest(output / (name + "-manifest.json"), manifest)
     scratch = Path(manifest["scratch_directory"])
     scratch.mkdir()  # UUID name; never reuse or overwrite an earlier run.
     try:
+        stage_inputs(scratch, manifest)
         shutil.copytree(
             HERE / ".venv/lib/python3.11/site-packages",
             scratch / "environment",
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
             symlinks=True,
         )
-        from preflight import verify
+        from preflight import environment_digest
 
-        verify(scratch / "environment")
+        if environment_digest(scratch / "environment") != manifest["environment_sha256"]:
+            raise RuntimeError("blocked: dependency snapshot changed during staging")
         run = scratch / "state"
         run.mkdir()
         (run / "home").mkdir()
@@ -339,12 +465,14 @@ def main() -> int:
         (run / "ipc").mkdir()
         boundary = None
         if args.case != "startup":
-            from model_gateway import Boundary
+            Boundary = snapshot_gateway(scratch / "code")
 
             upstream, api_key = local_provider() if args.case == "local" else (None, "")
             boundary = Boundary(run / "ipc/model.sock", args.case, upstream, api_key)
             boundary.start()
         record = {"case": args.case, "exit": 1, "manifest_sha256": manifest_hash}
+        candidate_started = time.monotonic()
+        stop_trigger = None
         try:
             result = subprocess.run(
                 command(name, run, args.case, args.image),
@@ -361,32 +489,20 @@ def main() -> int:
                 }
             )
         except subprocess.TimeoutExpired:
+            stop_trigger = candidate_started + args.deadline
             record.update(exit=124, error="controller deadline exceeded")
         except Exception as error:
             record.update(exit=1, error=type(error).__name__)
         finally:
-            if boundary is not None:
-                boundary.close()
-                record["gateway_stopped"] = not boundary.owned_work_alive()
-                if not record["gateway_stopped"]:
-                    record.update(exit=1, error="host gateway survived cleanup")
-                record["model_requests"] = boundary.requests
-                calls = run / "fixture-calls.jsonl"
-                record["tool_executions"] = (
-                    [json.loads(line) for line in calls.read_text().splitlines()]
-                    if calls.exists()
-                    else []
-                )
-                error = evidence_error(args.case, boundary.requests, record["tool_executions"])
-                if error:
-                    record["exit"] = 1
-                    record["error"] = error
-            record.update(cleanup_container(name))
-            if not record["cleanup_ok"]:
-                record.update(exit=1, error="container cleanup unknown or surviving work observed")
-        (output / (args.case + "-" + name.removeprefix("praxis-dsh-") + ".json")).write_text(
-            json.dumps(record, indent=2) + "\n"
-        )
+            stop_trigger = time.monotonic() if stop_trigger is None else stop_trigger
+            finish_run(
+                record,
+                name,
+                run,
+                boundary,
+                output / (args.case + "-" + name.removeprefix("praxis-dsh-") + ".json"),
+                trigger=stop_trigger,
+            )
         print(json.dumps(record, indent=2))
         return int(record["exit"] != 0)
     finally:

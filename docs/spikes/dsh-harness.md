@@ -163,3 +163,20 @@ tests deselected); lint/format, mypy, locked sync, agent sync, plan validation a
 offline links passed. The earlier artifact-hash gitleaks false positive remains
 unresolved; scanner policy was not changed. Final independent review and
 verification remain due.
+
+
+## Second-round corrections and targeted validation
+
+The owner approved the four additional findings from the final full review.
+Mandatory cleanup and result persistence now precede decoding of potentially
+truncated tool evidence. Runtime code, composition, dependency files and the
+complete granted skill tree execute from private verified snapshots; the host
+gateway also loads its snapshot. Cleanup measures gateway and container shutdown
+against one original stop trigger. The manifest digest identifies the exact saved
+bytes, including the newline; earlier records retain their original hashing policy.
+
+Eight targeted regression cases failed before implementation. The full isolated
+suite now has 30 cases. Four temporary reversions each made the corresponding
+regression fail. Both full review reports remain frozen, including the disclosed
+correction-summary exposure. Subsequent review is limited to these four findings;
+there is no third full review or claim that the earlier limitation disappeared.

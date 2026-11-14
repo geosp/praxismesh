@@ -139,11 +139,21 @@ No acceptance condition, scanner policy or production configuration was waived.
 
 | ID | Sev | Lens | Finding | Resolution |
 | --- | --- | --- | --- | --- |
-| F1 | Major | Failure and retry | A truncated fixture log can raise before mandatory container cleanup and result persistence (task 1.3). | open |
-| F2 | Major | Scope and composition; Contract subset | Code/configuration are mounted from mutable source after manifest hashing; granted skill has no content digest (R1). | open |
-| F3 | Nit | Scope and composition | Gateway and container cleanup start separate clocks and may exceed the original five-second grace (task 1.2). | open |
-| F4 | Nit | Contract | manifest_sha256 hashes canonical JSON without the newline added to the persisted file (R1). | open |
+| F1 | Major | Failure and retry | A truncated fixture log can raise before mandatory container cleanup and result persistence (task 1.3). | fixed: test_bad_evidence_cannot_bypass_cleanup_or_failed_result; unconditional finish_run cleanup and persisted failure; targeted validation pending |
+| F2 | Major | Scope and composition; Contract subset | Code/configuration are mounted from mutable source after manifest hashing; granted skill has no content digest (R1). | fixed: test_changed_runtime_input_is_rejected_during_staging and test_mounts_use_snapshot_after_originals_change; verified runtime and skill snapshots; targeted validation pending |
+| F3 | Nit | Scope and composition | Gateway and container cleanup start separate clocks and may exceed the original five-second grace (task 1.2). | fixed: test_shared_trigger_detects_gateway_plus_removal_exceeding_grace; shared monotonic trigger; targeted validation pending |
+| F4 | Nit | Contract | manifest_sha256 hashes canonical JSON without the newline added to the persisted file (R1). | fixed: test_manifest_digest_identifies_exact_persisted_bytes; save_manifest hashes saved bytes; targeted validation pending |
 
 This was the second and final full review round. Owner selection of corrections
 is the next checkpoint; no third full review is planned. Any correction validation
 must remain explicitly targeted and does not erase this report or its limitations.
+
+
+## 2026-11-14 · approved corrections · implementation round 2
+
+The owner directed “All of them.” All four additional findings are corrected.
+Eight new regression cases failed first; four temporary reversions each made the
+corresponding regression fail, then restored code passed the complete suite.
+Both frozen reports and the second-round independence limitation are preserved.
+Only a targeted check of these corrections is authorized next; no third full
+review is planned. Phase metadata stays changes-requested pending that check.

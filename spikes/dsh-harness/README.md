@@ -39,9 +39,11 @@ spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_probe.py native-text 
 spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_probe.py local --deadline 180 --image "$spike_image"
 ```
 
-The image content ID, source commit/file hashes, composition, lock and selected
+The image content ID, source commit/file hashes, skill-tree hashes, composition, lock and selected
 limits are frozen in `.runs/praxis-dsh-*-manifest.json` before candidate startup.
-Each `.runs/<case>-*.json` result references that manifest digest. Rebuilt images
+Each `.runs/<case>-*.json` result references SHA-256 of the exact persisted
+manifest bytes, including their final newline. Earlier pre-correction records used
+canonical JSON-object hashes and retain their original evidence. Rebuilt images
 may have a different content ID; pass the trusted local build ID explicitly.
 Without `--image`, the controller uses the exact image in artifacts.json.
 Unavailable/mismatched dependencies or images prevent a successful run.
@@ -65,10 +67,13 @@ tool-body entries and `container_absent: true`. `startup` has no model requests;
 ## Isolation and limits
 
 The container has no IP network, host credentials or Docker socket. It mounts
-only a verified private dependency snapshot, four reviewed code/config files, the granted
+only a verified private dependency snapshot, four verified snapshot code/config files, the snapshotted granted
 `order-desk` directory, and one disposable state directory. The dependency snapshot is a sibling of that
 state directory and is never exposed through its writable mount. Bytecode caches
-are excluded and Python uses a separate empty scratch cache prefix. Its root is read-only;
+are excluded and Python uses a separate empty scratch cache prefix. Code,
+composition and the complete skill tree are also copied into private snapshots
+and checked against the pre-run manifest. Docker and the host gateway load those
+snapshots; later edits to source directories do not change the run. Its root is read-only;
 capabilities are dropped; no-new-privileges, 1 GiB memory, two CPUs and 128 PIDs
 are enforced. A dedicated unprivileged account has a disposable real home.
 Native addon loading requires executable scratch tmpfs; other mounts stay read-only.
@@ -83,9 +88,12 @@ deliberately uses a subset of the production template's capabilities.
 
 The controller bounds each run by its declared wall deadline. It closes and joins
 the host gateway listener, handlers and provider sockets, attempts container
-removal within five seconds, then observes the exact container name through the
-ten-second window. Absence requires a successful Docker daemon listing; daemon
-errors are unknown state and fail the run. Forced
+removal within the remaining five-second grace, then observes the exact
+container name through the ten-second window. Both bounds use the same original
+stop-trigger timestamp, including time spent shutting down the gateway. Absence requires a successful Docker daemon listing; daemon
+errors are unknown state and fail the run. Mandatory cleanup and result
+persistence run independently of tool-log decoding; truncated or invalid evidence
+marks the result failed after teardown. Forced
 cleanup cannot turn a failed/deadline run into a pass. This is **not** the Phase 02
 R5 cancellation/barrier-injection test or the R6 token-budget test.
 The full Phase 02 stop oracle is explicitly marked pending. No heartbeat or
@@ -94,7 +102,7 @@ Temporal Activity is launched in Phase 01.
 ## Checks and cleanup
 
 ```bash
-spikes/dsh-harness/.venv/bin/python -m pytest -c spikes/dsh-harness/pyproject.toml spikes/dsh-harness/test_probe.py spikes/dsh-harness/test_corrections.py -q
+spikes/dsh-harness/.venv/bin/python -m pytest -c spikes/dsh-harness/pyproject.toml spikes/dsh-harness/test_probe.py spikes/dsh-harness/test_corrections.py spikes/dsh-harness/test_final_corrections.py -q
 uv run ruff check --no-respect-gitignore --exclude '' spikes/dsh-harness/*.py
 uv run ruff format --check --no-respect-gitignore --exclude '' spikes/dsh-harness/*.py
 ```
