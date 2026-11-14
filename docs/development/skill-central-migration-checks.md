@@ -78,7 +78,46 @@ Original ZIPs were retained. No quarantine, source deletion, repository-setting
 change or merge was performed by this session. No private installation-state or
 session-log files are included in this record.
 
-Fresh model-backed invocation checks remain pending explicit authorization. Registry
-listing, symlink health and helper execution do not establish that an agent invoked
-a skill correctly. User confirmation from fresh Linux/macOS harness sessions and
-independent cutover review remain required before the owner merges PraxisMesh #59.
+At installation time, fresh model-backed invocation was pending explicit
+authorization. The owner subsequently authorized these checks; results follow.
+Registry listing, symlink health and helper execution alone do not establish
+correct skill invocation or reviewer loading.
+
+
+## Fresh Linux session checks, 2026-11-14
+
+The owner explicitly authorized sending the installed skill instructions and temporary
+migration plan to the four model services. All sessions used the same temporary plan;
+its files remained byte-for-byte unchanged. No reviewer verdict or task completion was
+claimed from these installation smoke tests. Raw session logs are not committed.
+
+| Harness | Observed result | Verdict |
+| --- | --- | --- |
+| Codex | Discovered impl-plan normally, ran its helper, reported the expected title, draft state, 0/3 phases and tasks, and design-review next step; both review skills were available | Planning skill passed |
+| Claude Code | Invoked /impl-plan status, ran the helper, and reported the same expected state and next step without edits | Planning skill passed |
+| Copilot | Registry discovery passed, but model invocation exited with No supported model available | Invocation blocked by model configuration/availability |
+| Antigravity | Skill expansion reached a Bash helper call; headless command approval was denied, so the response was empty; a session-only narrow allow-rule retry was also denied | Invocation incomplete; not passed |
+
+### Codex reviewer-agent incompatibility
+
+Normal custom design-reader invocation failed with agent type currently not
+available. The CLI diagnostic was Symbolic link loop (os error 40) while applying
+the role configuration. No built-in agent was substituted.
+
+This is consistent with the current official Codex implementation:
+[role loading](https://github.com/openai/codex/blob/main/codex-rs/core/src/agent/role.rs)
+uses [a sensitive-file reader](https://github.com/openai/codex/blob/main/codex-rs/exec-server/src/regular_file.rs)
+that refuses a symlink at the final path component. The native TOML is valid;
+owned symlink delivery is incompatible with this observed Codex build.
+
+A separate fresh session with a session-only agents.design-reader.config_file
+override pointing directly at the canonical regular file succeeded: design-reader
+read only the specified plan and returned its summary. No installed link or
+persistent user configuration was changed. This is a successful diagnostic of a
+possible direct-reference approach, not a completed installer fix.
+
+Before cutover, correct and independently review Codex agent delivery through the
+protected Skill Central workflow, then activate and rerun normal reviewer loading.
+The public PraxisMesh cutover must remain draft. Copilot and Antigravity invocation,
+user Linux/macOS confirmation, and independent cutover review also remain pending.
+Doctor passing is insufficient to claim those capabilities work.

@@ -36,8 +36,11 @@ private credentials for fork CI.
 The protected suite revision `5cfdf5f4d25769dcffaecd47c40f2c87c1e167cc` is now
 installed locally; doctor and repeat-install checks pass. See the
 [activation evidence](skill-central-migration-checks.md#local-activation-2026-11-14).
-Fresh-session invocation, user Linux/macOS confirmation and independent cutover
-review remain pending; those are still merge prerequisites.
+Fresh Linux tests pass for Codex and Claude planning-skill invocation, but Codex
+reviewer loading fails through the installed symlink. A direct canonical-file
+reference worked only in a session-level diagnostic. A protected installer fix,
+remaining harness invocation checks, user Linux/macOS confirmation and independent
+cutover review remain merge prerequisites; doctor alone does not satisfy them.
 
 ## Authoritative documents
 
