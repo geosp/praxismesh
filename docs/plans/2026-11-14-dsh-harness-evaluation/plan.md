@@ -3,7 +3,7 @@ title: Evaluate DSH as the primary agent harness
 status: draft
 created: 2026-11-14
 updated: 2026-11-14
-design_review: { status: none, rounds: 0, last: null }
+design_review: { status: changes-requested, rounds: 1, last: 2026-11-14 }
 approved: null
 adr_review: null
 ---
@@ -50,7 +50,16 @@ before committing future designs to either runtime.
 - **Cordis**: its plugin framework for composing services and runtime hooks.
 - **Activity**: Temporal's I/O boundary hosting a bounded agent invocation.
 - **Composition**: explicit DSH profile, plugins and configuration for an experiment.
-- **Local model**: the existing template-selected spark model through vLLM.
+- **Local model**: spark is the existing model identifier in
+  registry/templates/local-default.yaml, served through the configured vLLM endpoint.
+- **Worker profile/template**: registry/profiles/default.yaml selects task policy;
+  registry/templates/local-default.yaml grants execution capabilities and limits.
+  registry/registry.lock pins template versions; this differs from a DSH profile.
+- **TaskResult**: the validated task-level output in common/schemas/task.py, with
+  succeeded, failed or needs_input status and artifact references. Runner outcomes
+  done/continue/needs_input remain internal to the existing task lifecycle.
+- **Runtime phases**: Phase 1 is the closed harness/session recovery baseline;
+  Phase 2 is the unstarted events and agent-communications work.
 - **Checkpoint**: consistent session state/position and workspace snapshot referenced durably.
 - **Attempt fencing**: preventing superseded execution from publishing authoritative state.
 - **Capability**: a tool, skill, MCP server or other access granted by a trusted template.
@@ -87,13 +96,15 @@ under the existing side-effect and attempt-ownership guarantees.
 ### R5 · Activity execution remains bounded
 
 Turn limits, cancellation and wall-time controls must stop the runtime and its
-owned work within configured bounds and documented cleanup grace.
+owned work within the predeclared [probe bounds and cleanup policy](notes.md#stop-and-cleanup-policy).
 - **Given** a stalled request, blocked tool or cancelled Activity, **when** a bound fires, **then** owned work terminates and the probe detects any surviving child process.
 
 ### R6 · Usage covers admitted work
 
 Accounting must include retries and auxiliary requests admitted by the composition,
-with budget enforcement before further requests are admitted.
+with budget enforcement before further requests are admitted. The independent
+[usage ledger](notes.md#independent-usage-ledger) defines the observation point,
+units and exhaustion oracle.
 - **Given** retries or compaction, **when** usage is reconciled against a model-boundary ledger, **then** totals match and exhaustion prevents another request.
 
 ### R7 · Completion follows the result contract
@@ -105,7 +116,8 @@ completion mechanism rather than accepting arbitrary assistant text as success.
 ### R8 · Benchmark comparison uses the existing regression rule
 
 The candidate must run the same ten task checks and apply the existing
-at-most-one-lost-task threshold against the recorded 10/10 baseline.
+at-most-one-lost-task threshold against the recorded 10/10 baseline. Use the
+labelled [comparison checks](notes.md#benchmark-comparison-checks) for evidence.
 - **Given** benchmark outcomes, **when** two or more tasks are lost, **then** the existing regression limit is exceeded.
 - **Given** a comparison, **when** recorded, **then** model, prompts, composition, hardware, pass counts, tokens, tool calls and time are identified without overwriting the baseline.
 
@@ -115,12 +127,14 @@ The recommendation must distinguish passed, failed and blocked checks, integrati
 changes and unresolved risks before owner adoption approval.
 - **Given** a failed hard gate, **when** recommending next steps, **then** immediate adoption is not recommended.
 - **Given** an unavailable dependency, **when** a check cannot run, **then** it remains blocked instead of passing through a mock or hosted fallback.
+- **Given** an evaluated runtime without a usable consistency barrier, **when** classified, **then** R4 fails; unavailable prerequisites preventing evaluation are blocked.
 
 ### R10 · Durable orchestration remains outside DSH
 
 Temporal and PraxisMesh must retain durable task dispatch, retries and coordination
 throughout the experiment.
-- **Given** a composition inventory, **when** reviewed, **then** scheduling, delegation and runtime management cannot create unaccounted work outside the experiment's controls.
+- **Given** a composition inventory, **when** reviewed, **then** durable dispatch, retries and task coordination remain owned by PraxisMesh/Temporal, with competing paths disabled.
+- **Given** admitted auxiliary work, **when** inventoried, **then** it has identified R5 bounds and R6 accounting checks.
 
 ## Decisions
 
@@ -202,8 +216,8 @@ Adoption follows the normal decision-log, ADR and independent gates.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | Establish an isolated controlled runtime | draft | 0/3 |
-| 02 | Prove recovery and assess suitability | draft | 0/4 |
+| 01 | [Establish an isolated controlled runtime](phases/01-controlled-runtime.md) | draft | 0/3 |
+| 02 | [Prove recovery and assess suitability](phases/02-recovery-and-decision.md) | draft | 0/4 |
 
 ## Decision log
 

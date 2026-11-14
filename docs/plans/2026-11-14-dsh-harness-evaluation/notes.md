@@ -83,12 +83,123 @@ prompts. Any custom integration plugin must disclose its supported hooks and cos
 Stateful-process restoration, snapshot export and relocation remain questions for
 execution, not claims established by these documents.
 
+## Stop and cleanup policy
+
+Before every probe, write a sanitized run manifest under the isolated spike's
+verification output, freeze its digest with the tested code/configuration SHA,
+and refuse to start if a field below is missing, nonpositive or inconsistent.
+The manifest is a test input, not values reconstructed after the outcome.
+
+| Field | Selection rule before execution |
+| --- | --- |
+| Probe identity | Run, root session, Activity attempt and composition/artifact digests |
+| Effective limits | Actual selected profile/template limits and remaining task budgets; record the derived minima and units |
+| Stop trigger | Model-step limit, wall deadline or explicit cancel; identify the trusted barrier that triggers it |
+| Cleanup grace | 5 seconds after the trigger for owned runtime/child work to cease |
+| Observation deadline | 10 seconds after the trigger; continue observing after early shutdown to detect restarted work |
+| Owned work | Record process-group/cgroup identity and descendants; never signal unrelated processes by a reused PID |
+| Clock and oracle | Independent monotonic observer timestamps and process/fixture observations, separate from candidate notifications |
+
+Current local-default@1 has eight inner model turns, a ten-minute turn timeout,
+and a 30-second heartbeat timeout; derive actual task-level minima from the
+selected profile and remaining budget rather than copying those ceilings blindly.
+Live-task probes retain those inherited limits. The deterministic stall fixtures
+use a two-second wall deadline; the turn-limit fixture admits at most two model
+steps. Explicit-cancel fixtures wait for independent request/tool-entry evidence,
+then record and send cancellation immediately. Declare all overrides in the
+manifest; no probe may silently widen production-derived ceilings.
+
+Pass requires stopping owned work within the five-second grace and observing no
+surviving/restarted work through the ten-second deadline. A runtime return or RPC
+timeout alone cannot pass. If graceful cancellation fails, safely terminate only
+the recorded disposable process group and mark R5 failed even if forced cleanup
+succeeds. A surviving process or continued fixture operation is a failure.
+The controller enforces the observation deadline even when the candidate hangs.
+These are explicit spike control-test bounds, not a new production performance SLA.
+
+## Independent usage ledger
+
+All experiment model traffic must pass through a trusted observer outside the DSH
+process: an instrumented local HTTP gateway in front of the deterministic provider
+or approved vLLM endpoint. Restrict model egress to that gateway; reject alternate
+routes. Inventory main, retry and auxiliary providers before running. Candidate
+notifications are comparison data, never the ledger's authority.
+
+The gateway records candidate ingress attempts (including denials) separately
+from physical upstream provider dispatches, response dispositions and provider
+usage. No unexpected ingress request may disappear from evidence. An admission
+guard may live in the trusted bridge/gateway, but its decisions and location must
+be explicit; it cannot turn dispatched work into an apparent denial afterward. A trusted fixture executor independently
+records each admitted tool-body entry, including an execution that later errors;
+model-proposed calls and denied calls are separate observations. Every granted
+model-facing tool needs this execution observation; missing coverage fails R6.
+
+| Quantity | Authoritative unit and reconciliation |
+| --- | --- |
+| Provider attempts | One upstream provider HTTP dispatch, including retries; keep denied candidate ingress attempts in a separate counter |
+| Input/output tokens | Separate integer provider usage fields observed at the boundary; never add total_tokens again or double-count cache breakdowns |
+| Tools | Admitted tool-body entries observed by the trusted fixture executor, not proposal count |
+| Logical steps | Separate diagnostic identity; do not equate it with physical retry attempts |
+| Correlation | Run/session/Activity-attempt plus gateway-issued physical-request ID; propagate a trusted logical-step/purpose tag where supported |
+| Outcomes | Success, known pre-generation failure, cancellation or unknown usage, retaining all attempts |
+
+Order ledger records by observer sequence. Match candidate counters and plugin
+telemetry to request IDs or an explicitly unambiguous serialized fixture sequence;
+reconcile sums for the complete root activity and any admitted descendants or
+auxiliary requests. An unmatched request, ambiguous join, unobserved tool execution,
+or unexplained nonzero difference fails the probe. Capture IDs, counts, hashes and
+sanitized outcomes, not credentials or raw user transcripts.
+
+Never convert missing usage to zero. Deterministic fixtures declare whether failure
+preceded generation; live records without an authoritative usage result remain
+unknown. Deny further model admission while unresolved usage prevents a safe budget
+decision, and do not claim R6 passes with an unresolved accounting gap. Demonstrated
+missing control/observability is a failed gate; infrastructure preventing evaluation
+is blocked. A matching candidate self-report cannot resolve missing boundary data.
+
+Required deterministic probes use scripted providers with independently known
+usage; these establish control behavior, not real-model compatibility:
+
+1. Exhaustion: budget 10 total input-plus-output tokens. The first response reports
+   7 input and 3 output tokens and requires continuation. The next model admission
+   must be denied; upstream provider-dispatch count stays exactly one, with any denied ingress attempts reported separately. A watchdog ends the
+   probe and checks that no late request arrives during the observation window.
+2. Retry: first dispatch fails before generation (fixture-proven zero usage), then
+   one retry returns 7 input plus 3 output tokens. Expect two upstream provider dispatches,
+   total usage 10, and denial of any third provider dispatch. Record any denied candidate ingress separately. Record retry and logical-step
+   counts separately.
+3. Auxiliary: after a separately recorded setup stage, force one known auxiliary
+   request such as compaction with a fresh measured budget of 10. Its scripted
+   usage is 4 input plus 6 output tokens. The same admission guard must prevent a
+   subsequent main or auxiliary request; retain setup costs separately rather than
+   hiding them. Failure to route this path through the observer is an R6 failure.
+
+Record the expected request sequence and fixture responses in the pre-run manifest.
+Exercise tool success, tool failure and policy denial to verify the separate tool
+counter semantics. For live local runs, use the same gateway path and reconcile
+observed provider usage; do not infer live counts from the deterministic fixture.
+
+## Benchmark comparison checks
+
+- **B1 Identity:** the same ten existing task checks and selected local model;
+  identify template/prompt/composition/hardware differences.
+- **B2 Regression:** the preserved recorded baseline is 10/10; at most one lost
+  task is the existing threshold, independent of mandatory hard gates.
+- **B3 Completeness:** record every pass, failure and blocked task; an incomplete
+  run cannot claim benchmark acceptance.
+- **B4 Provenance and metrics:** retain original baseline files; record candidate
+  pins, prompts/hashes, request/tool/token counts and wall time separately.
+
 ## Evidence and decision
 
 R1–R7 and R10 are hard gates before adoption is recommended. Apply the existing
 R8 regression rule without overwriting docs/benchmarks/baseline.json. Report time,
 usage and complexity without inventing latency/cost tolerance. The owner assesses
 those trade-offs after measurement; a failed hard gate cannot be traded away.
+
+A demonstrated lack of a usable session/workspace barrier fails R4. If a missing
+prerequisite prevents evaluating the barrier, mark it blocked rather than declaring
+it absent. The report must identify which case occurred.
 
 Missing dependencies remain blocked. Deterministic stubs establish control behavior
 only; local-model execution and benchmark acceptance require the real endpoint.
