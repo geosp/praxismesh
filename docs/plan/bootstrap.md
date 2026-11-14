@@ -1,5 +1,7 @@
 # PraxisMesh plan: feasibility spike and bootstrap (Pre-0, §0)
 
+> Historical bootstrap workflow: revision 2.12 retires OpenSpec for new development. See [current planning guidance](../development/planning.md); do not repeat the installation steps below.
+
 Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [PROJECT_PLAN.md](../../PROJECT_PLAN.md). Section numbers match the core plan's document map.
 
 ## Pre-0. Feasibility spike and open inputs (before bootstrap)

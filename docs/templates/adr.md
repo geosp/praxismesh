@@ -4,7 +4,7 @@ title: <Short title naming the problem and the chosen solution>
 status: proposed          # proposed | accepted | superseded
 date: <YYYY-MM-DD>
 issue: null               # "#N" if there is one
-related: []               # RFCs, openspec/changes/<id>/design.md, plan sections
+related: []               # RFCs, docs/plans/<plan>/plan.md, plan sections
 supersedes: null          # ADR-NNNN this decision replaces, if any
 superseded_by: null       # set (front matter only) when a later ADR replaces this one
 ---
@@ -37,4 +37,4 @@ Chosen option: "<Option 1>", because <justification tied to requirements, not pr
 
 ## Links
 
-- <Issue, RFC, OpenSpec change, plan sections, external references>
+- <Issue, RFC, implementation plan, plan sections, external references>

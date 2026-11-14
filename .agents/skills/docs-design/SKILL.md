@@ -12,6 +12,8 @@ description: >-
 
 # Design documents (RFC / ADR)
 
+For new phase planning, use Skill Central `impl-plan`; its reviewed plan replaces a mandatory separate phase RFC. Use this skill for standalone RFCs and ADRs when requested.
+
 Design docs live in the repository as Markdown and are reviewed on a **draft GitHub pull request**. Merging the PR records the approved revision. This follows plan §4.17 (documentation lifecycle) and §7.0 (process tiers). Follow the branch, commit and attribution rules in `AGENTS.md`.
 
 > **Provisional:** this skill and its templates were brought forward from the Phase 0 documentation-skill task and are pending review (see the decision log). It covers RFCs and ADRs only, not as-built architecture.
@@ -20,8 +22,8 @@ Design docs live in the repository as Markdown and are reviewed on a **draft Git
 
 | Type | When | Template | Path |
 |---|---|---|---|
-| **Full RFC** | Phase 3A onward, or any material change with real alternatives or a need for team agreement | `docs/templates/rfc.md` | `docs/rfcs/phase-N-<topic>.md` |
-| **Short RFC** | Light-tier Phases 0-2, or when the solution is already clear and needs recording more than debating | `docs/templates/rfc-short.md` | `docs/rfcs/phase-N-<topic>.md` |
+| **Full RFC** | A requested standalone design for a material change with real alternatives or a need for team agreement | `docs/templates/rfc.md` | `docs/rfcs/phase-N-<topic>.md` |
+| **Short RFC** | A requested standalone design when the solution is already clear and needs recording more than debating | `docs/templates/rfc-short.md` | `docs/rfcs/phase-N-<topic>.md` |
 | **ADR** | One consequential decision is being made or superseded (not a whole design) | `docs/templates/adr.md` | `docs/adr/NNNN-<decision>.md` |
 
 For a change not tied to a phase, use `general` in place of `phase-N` (`docs/rfcs/general-<topic>.md`).
@@ -34,15 +36,15 @@ An ADR captures **one** architecturally significant decision, its rationale, tra
 - **Significant only.** The decision affects structure, quality attributes, constraints or evolution. No transient implementation details, meeting notes or trivial choices (plan §4.17). If significance is unclear, ask what a future maintainer will need to know.
 - **Known facts only.** Capture context, requirements, constraints, options, rationale and consequences as they are. Write `Unknown`, or ask one focused question, rather than inventing context, options or quality attributes.
 - **No sales pitch.** List at least two considered options, including the rejected one and why it lost, and write real downsides as well as benefits.
-- **Rationale tied to requirements** (plan, OpenSpec, RFC), not preference.
+- **Rationale tied to requirements** (project plan, implementation plan, RFC), not preference.
 - **Confirmation is required:** say how compliance will be checked (a test, CI check, review item or demo step).
 - **Too little evidence?** Do not draft an ADR headed for acceptance. Record the open questions on the issue or PR and come back when the facts are in.
 
 **Statuses** (plan §4.17): `proposed` (under review), `accepted` (merged after a passing independent review), `superseded` (replaced by a later ADR). There is no `rejected` status: a rejected proposal is a PR closed without merging, with a comment giving the reason.
 
-**Supersession:** the new ADR sets `supersedes: ADR-NNNN`. In the same PR, the old ADR gets a **front-matter-only** edit: `status: superseded` and `superseded_by: ADR-MMMM`. Never change an old ADR's body; git keeps the history.
+**Supersession:** the new ADR sets `supersedes: ADR-NNNN`. Never edit the existing ADR. Determine supersession by the new ADR's `supersedes` link.
 
-**Reconcile:** if an ADR changes an approved requirement, update OpenSpec, `PROJECT_PLAN.md` and `docs/plan/decision-log.md` through their normal process, in the same PR or a linked one (plan §4.17).
+**Reconcile:** if an ADR changes an approved requirement, update the approved implementation plan, `PROJECT_PLAN.md` and `docs/plan/decision-log.md` through their normal process, in the same PR or a linked one (plan §4.17).
 
 ## Workflow
 
@@ -52,8 +54,8 @@ Use what the conversation already holds, then fill gaps from the repository befo
 
 - **The GitHub issue:** `gh issue view <n> --json title,body,labels`. Every design doc should have one; offer to create it if missing (confirm first).
 - **The plan:** `PROJECT_PLAN.md`, the phase file in `docs/plan/phases/` and the design sections it lists under *Read first* (plan §9.7). Do not load all of `docs/plan/`.
-- **The OpenSpec change,** if one exists (`openspec/changes/`).
-- **For an ADR:** the RFC or `openspec/changes/<id>/design.md` that prompted the decision. Link it in `related`. If none exists, ask whether to proceed without one; do not block, because some ADRs stand alone (e.g. the sandbox ADR, the §0.3 fallback ADR).
+- **The implementation plan,** if one exists (`docs/plans/<plan>/plan.md`).
+- **For an ADR:** the RFC or `docs/plans/<plan>/plan.md` that prompted the decision. Link it in `related`. If none exists, ask whether to proceed without one; do not block, because some ADRs stand alone (e.g. the sandbox ADR, the §0.3 fallback ADR).
 
 Then ask the user about what is still unclear:
 
@@ -93,7 +95,7 @@ As soon as there is enough context for a meaningful title, create it. Do not wai
 1. Create a branch: `docs/<issue>-rfc-<topic>` or `docs/<issue>-adr-<topic>`.
 2. Copy the template to its path. For an ADR, use the next free `NNNN` in `docs/adr/` (file `NNNN-<decision>.md`, `id: ADR-NNNN`); if a parallel PR takes the same number first, renumber before merge.
 3. Fill in the front matter.
-   - RFC: `status: draft`, phase, tier, issue, OpenSpec change, plan sections, date, authors, and for phase RFCs size, hardware and Pre-0.2 inputs.
+   - RFC: `status: draft`, phase, tier, issue, implementation plan, plan sections, date, authors, and for phase RFCs size, hardware and Pre-0.2 inputs.
    - ADR: `id`, title, `status: proposed` (ADRs have no draft status; the draft PR is the draft), date, issue, `related`, `supersedes`.
 4. Commit the file (no attribution, per `AGENTS.md`).
 5. **Confirm with the user, then publish:**
@@ -140,7 +142,7 @@ For an **ADR** (follow the ADR rules above): context and problem statement; cons
 When all sections are filled:
 
 - Read the whole document back and check:
-  - it is internally consistent, and agrees with the plan and OpenSpec;
+  - it is internally consistent, and agrees with the project plan and implementation contract;
   - the title matches the content;
   - no template placeholders remain;
   - the "Possible solutions" working section has been emptied and removed.
@@ -167,12 +169,12 @@ When all sections are filled:
 | Several decisions in one ADR | Split them. |
 | Sales pitch | Add rejected options and negative consequences. |
 | Invented context | Mark `Unknown` or ask. |
-| Editing an old ADR's body to reflect a new decision | Write a new ADR with `supersedes`; change only the old ADR's `status` and `superseded_by`. |
+| Editing an old ADR's body to reflect a new decision | Write a new ADR with `supersedes`; leave the old file unchanged. |
 | Omitting alternatives under time pressure | Include at least the rejected option and why it lost. |
 | No way to check the decision is followed | Add a Confirmation: test, CI check, review item or demo step. |
 - With their agreement, set `status: proposed`, push, and mark the PR ready: `gh pr ready` (confirm first).
 
-**You are the author, not the reviewer.** Never set `status: accepted` and never approve or merge the PR. Approval comes from an **independent design review in a fresh session** (plan §0.3, §7.0) that receives only the approved inputs and this document: run the `review-design` skill in gate mode there (see `docs/reviews/README.md`). The review is saved under `docs/reviews/phase-N/design-review.md`. Status becomes `accepted` in the commit that merges after a passing review.
+**You are the author, not the reviewer.** Never set `status: accepted` and never approve or merge the PR. Approval comes from an **independent design review in a fresh session** (plan §0.3, §7.0) that receives only the approved inputs and this document: follow the PraxisMesh gate protocol there; use `design-review` for implementation-plan contracts (see `docs/reviews/README.md`). The review is saved under `docs/reviews/phase-N/design-review.md`. Status becomes `accepted` in the commit that merges after a passing review.
 
 Give the user the PR URL and tell them they can keep chatting to make further edits.
 
@@ -180,7 +182,7 @@ Give the user the PR URL and tell them they can keep chatting to make further ed
 
 Offer to turn the implementation plan into GitHub issues. Confirm first, then create one per checklist item with `gh issue create --title ... --body "<scope, acceptance criteria; Part of #N; RFC: <path>>"`, and link the new numbers back into the RFC checklist in a follow-up PR.
 
-For an ADR that supersedes another, see **Supersession** under ADR rules: front-matter-only edit of the old ADR, in the same PR.
+For an ADR that supersedes another, see **Supersession** under ADR rules: a new ADR naming the old one in `supersedes`, without editing the old file.
 
 ## Style
 

@@ -3,7 +3,7 @@ name: github-pr
 description: >-
   Prepares and opens a GitHub pull request for PraxisMesh: gets the work onto a
   feature branch with clean commits, links the GitHub issue it resolves, fills in
-  .github/pull_request_template.md from the diff (plan/OpenSpec trace, tests, demo
+  .github/pull_request_template.md from the diff (plan/requirement trace, tests, demo
   evidence), and optionally pushes and runs `gh pr create`. Use when the user asks
   to open, create, prepare or write up a PR, or to write a PR description.
 ---
@@ -66,7 +66,7 @@ Run `git log --oneline <base>..HEAD` and `git diff <base>...HEAD`, and read them
 
 Check the branch, the commits, the issue and `docs/` before asking. Ask only for what is still missing, typically:
 
-- **Plan and spec trace:** the phase (e.g. Phase 1, 3A), the plan sections, the OpenSpec change ID, and any RFC or ADR.
+- **Plan and spec trace:** the phase (e.g. Phase 1, 3A), the plan sections, the implementation plan path, and any RFC or ADR.
 - **Testing:** which suites ran (unit, replay, integration, e2e) and their results. Do not claim a test passed unless it was run.
 - **Demo evidence:** the `docs/demos/phase-N.md` entry, if this PR closes a phase task.
 - **Whether the PR fully resolves the issue or is one part of it.**

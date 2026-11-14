@@ -4,7 +4,7 @@ Thank you for your interest. PraxisMesh is in its planning and bootstrap stage, 
 
 ## Ground rules
 
-- [PROJECT_PLAN.md](PROJECT_PLAN.md) governs scope, sequencing, constraints and gates. Approved OpenSpec specifications in `openspec/` govern detailed requirement text, and each requirement traces to plan sections (plan §4.16).
+- [PROJECT_PLAN.md](PROJECT_PLAN.md) governs scope, sequencing, constraints and gates. Approved implementation plans in `docs/plans/` govern detailed requirement text, and each requirement traces to plan sections (plan §4.16).
 - Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 - Report security problems privately, as described in [SECURITY.md](SECURITY.md).
 
@@ -12,7 +12,7 @@ Thank you for your interest. PraxisMesh is in its planning and bootstrap stage, 
 
 1. **Issue first.** Open or pick a GitHub issue for any non-trivial change. Use the issue forms; they ask for the phase, the plan sections and acceptance criteria.
 2. **Branch** from `main` as `<type>/<issue>-<short-slug>`, where `<type>` is one of `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci` or `spike` (for example `feat/42-blob-store`).
-3. **Design before building** when a change is material. Write an RFC or ADR in `docs/rfcs/` or `docs/adr/` from the templates in `docs/templates/`, and propose requirement changes as an OpenSpec change.
+3. **Design before building** when a change is material. Write an RFC or ADR in `docs/rfcs/` or `docs/adr/` from the templates in `docs/templates/`, and propose requirement changes in an implementation plan.
 4. **Commit** in small, reviewable steps. Commit messages describe the change. Do not add tool or agent attribution (no `Co-Authored-By` lines for tools, no "Generated with" footers).
 5. **Check locally** before pushing (see "Checks" in the [README](README.md#checks)).
 6. **Open a pull request** into `main`. The template asks for the issue, the plan and spec trace, the tests actually run and any demo evidence. Use `Closes #N` only for the issue the PR fully resolves; use `Part of #N` otherwise.

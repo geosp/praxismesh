@@ -1,23 +1,22 @@
 # Skills
 
-Each skill is a folder here: `<domain>-<capability>/SKILL.md`, plus optional `scripts/`, `references/` and `assets/`.
-Names follow the [skill naming convention](../README.md#skill-naming-convention). Start from [../templates/skill/SKILL.md](../templates/skill/SKILL.md).
-
-This folder is read by Codex directly and by Claude Code and GitHub Copilot through the `.claude/skills` symlink.
+Project-owned skills live here and are read by Codex directly and by Claude Code
+and Copilot through `.claude/skills -> ../.agents/skills`.
 
 | Skill | Purpose |
-|---|---|
-| [docs-design](docs-design/SKILL.md) | Write a full RFC, short RFC or ADR on a draft PR (provisional) |
-| [review-design](review-design/SKILL.md) | Independent design review of an OpenSpec change and its RFC; informal or phase-gate mode |
-| [review-implementation](review-implementation/SKILL.md) | Independent review of code and tests against the change's contract; informal or phase-gate mode |
-| [verify-phase](verify-phase/SKILL.md) | Independent verification: reproduce acceptance tests and demo, check as-built claims, in a disposable checkout of the frozen commit |
-| [github-pr](github-pr/SKILL.md) | Prepare and open a pull request linked to a GitHub issue |
-| `openspec-*` (6) | OpenSpec workflows: explore, propose, apply-change, update-change, sync-specs, archive-change. **Generated** by OpenSpec; do not edit (see below) |
+| --- | --- |
+| [docs-design](docs-design/SKILL.md) | Standalone RFCs and durable ADRs |
+| [verify-phase](verify-phase/SKILL.md) | Independent executable verification and demo evidence |
+| [github-pr](github-pr/SKILL.md) | Prepare issue-linked pull requests |
+
+The reusable `impl-plan`, `design-review` and `impl-review` suite and reviewer
+agents are maintained and installed from Skill Central. Do not copy them here.
+See [planning and installation](../../docs/development/planning.md) and
+[phase-gate rules](../../docs/reviews/README.md).
 
 ## OpenSpec skills (generated)
 
-The `openspec-*` folders and `.openspec-target` are written by `openspec init --tools agents` / `openspec update` (OpenSpec 1.17.0, delivery `skills`, profile `core`). Do not edit them by hand; `openspec update` overwrites them. They need the `openspec` CLI on PATH.
-
-Use only the `agents` target. Do not run `openspec init` with `claude` or `codex`: through the `.claude/skills` symlink both write the same files, and each `openspec update` then rewrites them with alternating wording. Do not add `github-copilot` either; it creates a duplicate set in `.github/skills/` (Copilot already reads `.claude/skills`). `openspec update` prints "Detected new tool: GitHub Copilot" because `.github/` exists; ignore it. It also reports `Tools: claude, agents`: it sees the Claude target through the `.claude/skills` symlink. That is expected; the files stay identical across updates (CI checks this).
-
-The review and verification skills (`review-design`, `review-implementation`, `verify-phase`) are installed; see [../README.md](../README.md) for their provenance.
+Historical note: OpenSpec 1.17.0 generated the former `openspec-*` skills using the
+shared agents target. Revision 2.12 retires this workflow and removes those
+folders and target metadata. Do not run OpenSpec init/update to recreate them.
+Historical specs and archives remain under openspec/.

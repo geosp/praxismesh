@@ -5,7 +5,7 @@ tier: full                  # full (Phase 3A onward, material changes) | see rfc
 status: draft               # draft | proposed | accepted | superseded
 phase: <e.g. 3A, or n/a>
 issue: <#N>
-openspec_change: <openspec/changes/<id>, or n/a>
+implementation_plan: <docs/plans/<plan>, or n/a>
 plan_sections: [<e.g. §4.3, §5>]
 size: <S | M | L>
 hardware: <what this needs to build, test and demo>
@@ -42,7 +42,7 @@ Before review, move the chosen one to section 3 and the rest to section 7, then 
 
 ### Components and contracts
 
-<Systems involved, interfaces, schemas, API shapes. Link plan §5 and OpenSpec where relevant.>
+<Systems involved, interfaces, schemas, API shapes. Link plan §5 and implementation plans where relevant.>
 
 ### Data flow
 

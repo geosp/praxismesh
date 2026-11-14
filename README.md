@@ -21,7 +21,8 @@ PraxisMesh is an open-source, self-hosted platform that exposes an OpenAI-compat
 ```
 PROJECT_PLAN.md        core plan; detail in docs/plan/
 docs/                  plan, RFCs, ADRs, architecture, reviews, demos, templates
-openspec/              OpenSpec specifications and changes
+docs/plans/            implementation contracts for new work
+openspec/              historical specifications and archived changes
 .agents/               skills and agent definitions shared by Claude Code, Copilot and Codex
 .github/               CI workflows, issue and PR templates, CODEOWNERS
 infra/                 local stack: docker-compose.yml, database init, .env.example
@@ -38,7 +39,6 @@ Product code (gateway, orchestrator, workers and so on) arrives phase by phase; 
 
 - `git` and the GitHub CLI `gh` (logged in with `gh auth login`)
 - [`uv`](https://docs.astral.sh/uv/) for Python
-- [`fnm`](https://github.com/Schniz/fnm) (or another Node version manager) for Node.js, which the OpenSpec CLI needs
 
 ### Set up
 
@@ -50,20 +50,9 @@ cd praxismesh
 uv python install 3.11
 uv sync --locked
 
-# Node: version from .node-version; add fnm's shell hook so it is on PATH in new shells
-fnm install
-line='eval "$(fnm env --use-on-cd --version-file-strategy=recursive --shell bash)"'
-grep -qxF "$line" ~/.bashrc || echo "$line" >> ~/.bashrc
-source ~/.bashrc
-
-# OpenSpec CLI, pinned, with the settings this repository uses
-npm install -g @fission-ai/openspec@1.17.0
-openspec config set telemetry.enabled false
-openspec config set delivery skills
-openspec --version
 ```
 
-The OpenSpec settings are per machine (`~/.config/openspec/`). This repository uses only OpenSpec's shared `agents` target. Refresh the generated skills with `openspec update`; never re-run `openspec init` with other tool IDs. See [.agents/skills/README.md](.agents/skills/README.md).
+Planning and review skills are maintained in Skill Central; see [the development workflow](docs/development/planning.md). Python/runtime development and CI do not require that private repository.
 
 You also need Docker with the Compose plugin to run the local stack (below).
 
@@ -76,8 +65,7 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pytest
 uv run .agents/sync_agents.py --check
-openspec validate --all
-openspec update --dry-run      # expect "No changes"
+uv run .github/scripts/check_plans.py
 gitleaks git --config .gitleaks.toml --redact .   # if gitleaks is installed
 ```
 

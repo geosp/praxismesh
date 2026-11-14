@@ -4,6 +4,14 @@ Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [P
 
 ### Revision summary
 
+**Revision 2.12 (owner-approved migration scope, 2026-11-13):** Replace the active
+OpenSpec and project-owned review workflows with Skill Central's impl-plan,
+design-review and impl-review suite. New requirements/designs live in docs/plans;
+retain historical records and the Phase 0/1 regression baseline. Preserve fresh
+sessions, frozen commits, verification, demos and latest-head coordinator gates.
+The private skill repository is not required by public runtime CI.
+
+
 **Revision 2.11 (owner-accepted after planning review):** Add full-tier Phase 4A, a live task interaction UI
 on Docker Compose, after Phase 4 and before Phase 5. Move initial workflow
 observation and supported input/approval controls forward from Phase 8; keep

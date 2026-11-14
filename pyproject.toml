@@ -39,7 +39,7 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = [".agents/sync_agents.py", ".github/scripts/ci_gate.py", "common", "registry", "orchestrator", "harness_activity", "sample_mcp", "workers", "tests"]
+files = [".agents/sync_agents.py", ".github/scripts/ci_gate.py", ".github/scripts/check_plans.py", "common", "registry", "orchestrator", "harness_activity", "sample_mcp", "workers", "tests"]
 mypy_path = ".agents:.github/scripts:."
 explicit_package_bases = true
 

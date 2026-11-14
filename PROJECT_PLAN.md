@@ -1,12 +1,14 @@
 # Project Plan: PraxisMesh — Durable Agent Platform on Temporal
 
-**Revision:** 2.11
+**Revision:** 2.12
 **Updated:** 2026-11-13
 **Product / project name:** PraxisMesh  
 **Tagline:** Durable orchestration for autonomous AI agents  
 **GitHub repository:** https://github.com/geosp/praxismesh (public; clone URL `https://github.com/geosp/praxismesh.git`)  
 **Distribution:** Open source under the Apache License 2.0 (`LICENSE`)  
 **Status:** Phases 0 and 1 implemented and closed; Phase 1 independently reviewed and verified. Phase 2 has not started. See [Phase 1 closure](docs/reviews/phase-1/closure.md).
+**Development workflow (rev 2.12):** New work uses the Skill Central implementation-planning suite and `docs/plans/`. OpenSpec is retired from the active development workflow; existing records remain historical and their guarantees are explicitly incorporated by `docs/requirements/baseline.md`. The phase gate and evidence rules remain mandatory. See `docs/development/planning.md`.
+
 **Audience:** Claude Code or another implementation agent. Read the full plan before writing code. Implement phase by phase; do not check a task until its tests, acceptance criteria, and phase demo all pass. Make small, reviewable commits. Record discoveries, substitutions, and deviations in the decision log.
 
 > This document incorporates the approved architectural review of Phases 0–7, the demonstration requirement for **every Phase 0–9**, a proposed repository/OpenSpec/custom-skill bootstrap prerequisite, and a planning-only independent session/review protocol for Phase 0, and a proposed reusable, independently verified workflow capability for runtime agents. Revision 2.9 resequences work without changing the architecture: a pre-bootstrap feasibility spike is added, Phase 3 is split into 3A and 3B, the reusable verified-workflow capability moves to a new Phase 6B, minimal persistence moves forward to Phases 0-2, and early phases use a lighter process tier (§7.0). Phase numbers 0–9 are otherwise preserved. Revision 2.10 adds project CI, an agent benchmark suite, early observability, an approval CLI, cost units, a gateway compatibility matrix, a threat model, retention and backup, release hygiene and a risk register, and splits the plan into a core file plus per-topic files (see the document map). An unchecked task is not evidence of failure: it simply has not yet been completed and validated.
@@ -59,7 +61,7 @@ This file is the core plan. Detail lives in `docs/plan/`. Section numbers are st
 - **First release (MVP):** Phases 0, 1, 2, 3A, 3B, 4, 4A and 5 on Docker Compose. The MVP outcome is: an unmodified OpenAI client or the task UI submits a request, the platform triages, plans, executes and verifies it durably, and repository work arrives as one reviewable GitHub pull request. Phase 4A adds live browser interaction after the gateway; Phase 5 remains the MVP completion point.
 - **Post-MVP increments, in order:** Phase 6 (steward), Phase 6B (reusable verified workflows, §4.15), Phase 7 (Kubernetes), Phase 8 (platform administration UI/API and later capability views), Phase 9 (hardening). Items 7, 8 and 9 in the list above are post-MVP. Phase 8 extends the Phase 4A frontend instead of creating a second task UI.
 - **Non-goals for the first release:** a hosted service; hard multi-tenant isolation between mutually untrusted organizations; a UI workflow builder; source forges other than GitHub; worker runtimes other than Python; high-availability Temporal operations guidance; model training or fine-tuning; billing.
-- **Sizing:** This plan carries no effort estimates. Each phase RFC must state a relative size (S/M/L), the hardware it needs, and the external inputs from Pre-0.2 it depends on, so the owner can sequence work with real numbers.
+- **Sizing:** This plan carries no effort estimates. Each phase implementation plan must state a relative size (S/M/L), the hardware it needs, and the external inputs from Pre-0.2 it depends on, so the owner can sequence work with real numbers.
 
 ## 2. Hard constraints
 
@@ -174,7 +176,8 @@ See [docs/plan/schemas.md](docs/plan/schemas.md).
 /deploy                Helm, CRDs, kind/k3d bootstrap, NetworkPolicies
 /tests                 unit, replay/time-skipping, integration, e2e, failure/chaos
 /docs                  README.md, rfcs/, adr/, architecture/, templates/, plan/, reviews/, demos/, spikes/, benchmarks/, security/, api/, operations/, release.md
-/openspec              specs/, changes/, config.yaml (created at bootstrap)
+/docs/plans            reviewed implementation contracts for new work
+/openspec              historical specs/ and archived changes/; no active workflow
 /.agents               the one real copy for coding harnesses: skills/<name>/SKILL.md (reviewed specialist
                        skills and Phase 0 documentation skill, when installed), agents/*.md, templates/,
                        sync_agents.py (see .agents/README.md)
@@ -198,8 +201,8 @@ The review protocol should cost roughly what the phase is worth. Two tiers apply
 
 | | Light tier (Phases 0, 1, 2) | Full tier (Phase 3A onward) |
 |---|---|---|
-| Specification | One OpenSpec change tracing to plan requirements | Same |
-| Design | Short RFC from the simple template; one independent design review | Full RFC and independent design review (§4.17) |
+| Specification | One implementation plan tracing to project-plan requirements | Same |
+| Design | Readable plan with design decisions; one independent design review | Plan with full design depth and independent design review (§4.17) |
 | Implementation review and verification | **One** fresh independent session that runs the implementation-review skill and then the verification skill against the same `code_sha` | Separate fresh sessions, neither seeing the other's verdict |
 | As-built documentation | A section added to `docs/architecture/overview.md` | Cumulative as-built update, independently validated |
 | Evidence linkage | `code_sha` and final `head_sha` in the PR record; `docs_sha` only if docs land in a separate commit | Full `code_sha` / `docs_sha` / `head_sha` protocol (§4.17) |
@@ -209,7 +212,7 @@ Both tiers keep the non-negotiables: reviewers never share the implementation se
 
 ### 7.1 Risk register and rethink triggers (rev 2.10)
 
-Each phase RFC restates the risks it meets and the measurable signal that means "stop and rethink". Thresholds are owner-set (Pre-0.2) before the phase runs. Hitting a trigger opens a decision-log entry; it does not fail the phase by itself.
+Each phase implementation plan restates the risks it meets and the measurable signal that means "stop and rethink". Thresholds are owner-set (Pre-0.2) before the phase runs. Hitting a trigger opens a decision-log entry; it does not fail the phase by itself.
 
 | Risk | First exposed | Rethink trigger | Fallback |
 |---|---|---|---|
@@ -261,7 +264,7 @@ Each phase RFC restates the risks it meets and the measurable signal that means 
 
 ### Phase demo gate (applies to Phases 0–9)
 
-- Before implementation, independently approve a phase RFC against current OpenSpec requirements; record material decisions in ADRs as they arise. After implementing and preliminarily testing a phase, draft its **cumulative as-built architecture overview**, then independently verify the claims before closure. Reference the approved `code_sha`, documentation revision `docs_sha`, OpenSpec revision, demo evidence and ADRs; attach final `head_sha` linkage externally or through a non-self-referential record and require latest-head checks. The reviewed docs must describe observed behavior, not just plans.
+- Before implementation, independently approve the phase implementation plan against project requirements; record material decisions in ADRs as they arise. After implementing and preliminarily testing a phase, draft its **cumulative as-built architecture overview**, then independently verify the claims before closure. Reference the approved `code_sha`, documentation revision `docs_sha`, implementation-contract revision, demo evidence and ADRs; attach final `head_sha` linkage externally or through a non-self-referential record and require latest-head checks. The reviewed docs must describe observed behavior, not just plans.
 - A phase is **not complete** until its implementation tasks, automated acceptance suite, **and** hands-on demo checklist all pass. A test suite alone is insufficient; demonstration alone does not substitute for tests.
 - Each demo must be **runnable from documented prerequisites**, with a named entry point (command, API request, or UI navigation), realistic input, clearly visible outcome, and a cleanup/reset method. Prefer a short 3–10 minute presentation with a repeatable script.
 - Demonstrate the new phase **integrated with all prior completed phases**, not a disconnected mock. Any stub or simulated failure must be labeled; never silently replace an essential capability with a mock. In Phase 7, the documented CPU-only profile is an allowed demonstration profile, not evidence of GPU behavior.
@@ -272,7 +275,7 @@ Each phase RFC restates the risks it meets and the measurable signal that means 
 ## 9. Working agreement for Claude Code
 
 1. Begin only after the §0 repository and specialist-skills bootstrap has passed and the Pre-0 spike decision is recorded. Start each phase by summarizing tasks, dependencies, open decisions and API versions requiring verification. Ask before a materially irreversible choice; otherwise follow these decisions.
-2. Implement small, reviewable commits per logical task, starting from an independently reviewed human-readable RFC. Record significant decisions as ADRs; after implementation and preliminary tests, draft the cumulative as-built architecture and independently verify it. Preserve distinct tested source, docs and final delivery-head references under §4.17 (or the §7.0 light-tier equivalent for Phases 0–2); run required checks on the latest head and record evidence before checking off work.
+2. Implement small, reviewable commits per logical task, starting from an independently reviewed human-readable implementation plan. Record significant decisions as ADRs; after implementation and preliminary tests, draft the cumulative as-built architecture and independently verify it. Preserve distinct tested source, docs and final delivery-head references under §4.17 (or the §7.0 light-tier equivalent for Phases 0–2); run required checks on the latest head and record evidence before checking off work.
 3. Check official current docs/PyPI/repositories for SDK APIs. When claims differ, follow the actual API, provide a compatible adapter, and record the deviation and consequence.
 4. No new hosted dependencies beyond GitHub, optional Anthropic API, and **optional explicitly opted-in GCS storage**. Always keep the default deployment local.
 5. No secrets committed/logged. Prompt content, repository files, tool output and webhook bodies are untrusted; tool/capability privileges come from validated system configuration.

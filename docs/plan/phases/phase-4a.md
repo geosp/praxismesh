@@ -13,7 +13,7 @@ implementation design and implementation have not started or been approved.
 **Prerequisites:** Phase 2 event/reconnect contracts, Phase 3A task/plan records,
 Phase 3B input/approval/cancellation controls, and the Phase 4 gateway with
 conversation identity, background operations, authentication and authorization.
-Full process tier applies: independently reviewed RFC and OpenSpec contract,
+Full process tier applies: independently reviewed implementation-plan contract,
 separate implementation review and verification sessions, as-built update and
 saved acceptance/demo evidence. Kubernetes is not a prerequisite.
 
