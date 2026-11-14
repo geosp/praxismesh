@@ -11,8 +11,6 @@ claude:
   model: inherit
 copilot:
   tools: [read, search, execute]
-codex:
-  sandbox_mode: workspace-write
 ---
 
 You are verifying work you did not build. You have no conversation history and

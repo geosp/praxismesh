@@ -1,8 +1,0 @@
-{
-  "name": "praxismesh-ci-tools",
-  "private": true,
-  "description": "Node tools used by CI, installed with npm ci from package-lock.json so the whole tree is pinned with integrity hashes. Dependabot proposes updates.",
-  "dependencies": {
-    "@fission-ai/openspec": "1.17.0"
-  }
-}

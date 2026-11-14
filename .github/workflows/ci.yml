@@ -1,8 +1,7 @@
 # Project CI (plan §0.1, §8). Runs on every PR and on pushes to main.
 # Fork safety: only `pull_request` (never `pull_request_target`), a read-only
 # token, and no secrets referenced anywhere in this file.
-# Pins: every action by full commit SHA and OpenSpec's whole npm tree through
-# .github/tools/package-lock.json, both updated by Dependabot. uv, gitleaks and
+# Pins: every action by full commit SHA, updated by Dependabot. uv, gitleaks and
 # actionlint are pinned below and bumped by hand (Dependabot cannot see them): for
 # uv, set UV_VERSION; for the others, set *_VERSION and *_SHA256 from the
 # release's checksums file.
@@ -140,37 +139,18 @@ jobs:
       # (tests/test_tool_pins.py keeps its PyYAML equal to uv.lock's).
       - run: uv run --locked .agents/sync_agents.py --check
 
-  openspec:
+  plans:
     runs-on: ubuntu-latest
-    env:
-      OPENSPEC_TELEMETRY: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          node-version-file: .node-version
-      - name: Install OpenSpec from the lockfile (integrity-checked, no install scripts)
-        run: |
-          npm ci --prefix .github/tools --ignore-scripts --no-audit --no-fund
-          echo "$GITHUB_WORKSPACE/.github/tools/node_modules/.bin" >> "$GITHUB_PATH"
-      - run: openspec --version
-      - run: openspec validate --all
-      # Generated openspec-* skills must match what this OpenSpec version
-      # produces with the project's settings (shared `agents` target, skills only):
-      # regenerate them all and fail on any difference. `config set` writes the
-      # runner's user config, which is discarded with the runner.
-      - name: Generated skills are up to date
-        run: |
-          openspec config set delivery skills
-          openspec update --force
-          git diff --stat
-          if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
-            git status --porcelain --untracked-files=all
-            echo "Generated OpenSpec files differ: run 'openspec update --force' and commit." >&2
-            exit 1
-          fi
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - run: uv sync --locked
+      - run: uv run .github/scripts/check_plans.py
 
   secrets:
     runs-on: ubuntu-latest
@@ -269,7 +249,7 @@ jobs:
           persist-credentials: false
       # Checks dependencies added or changed by the PR: licenses must be
       # compatible with Apache-2.0, and no high-severity known vulnerabilities.
-      # Every entry in uv.lock and .github/tools/package-lock.json reaches main
+      # Every entry in uv.lock reaches main
       # through a PR, so each was scanned when it was added or changed (all of
       # uv.lock in PR #7). The sync script's own lock pins the same PyYAML as
       # uv.lock (tests/test_tool_pins.py). gitleaks and lychee are CI-only
@@ -301,7 +281,7 @@ jobs:
   # `licenses` on main itself (see .github/scripts/ci_gate.py and its tests).
   ci-ok:
     if: always()
-    needs: [lint, workflows, types, tests, stack, agents-sync, openspec, secrets, links, licenses]
+    needs: [lint, workflows, types, tests, stack, agents-sync, plans, secrets, links, licenses]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

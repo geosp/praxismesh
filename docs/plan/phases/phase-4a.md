@@ -13,7 +13,7 @@ implementation design and implementation have not started or been approved.
 **Prerequisites:** Phase 2 event/reconnect contracts, Phase 3A task/plan records,
 Phase 3B input/approval/cancellation controls, and the Phase 4 gateway with
 conversation identity, background operations, authentication and authorization.
-Full process tier applies: independently reviewed RFC and OpenSpec contract,
+Full process tier applies: independently reviewed implementation-plan contract,
 separate implementation review and verification sessions, as-built update and
 saved acceptance/demo evidence. Kubernetes is not a prerequisite.
 
@@ -46,7 +46,8 @@ saved acceptance/demo evidence. Kubernetes is not a prerequisite.
 - [ ] Add browser/API acceptance tests for submission, retrieval, live events,
   reload/reconnect/gaps, continuation, approval decisions, cancellation and
   unauthorized access. Freeze browser authentication/session details and
-  measurable UI acceptance thresholds in the phase RFC after Phase 4 contracts
+  measurable UI acceptance thresholds in the independently reviewed implementation
+  plan after Phase 4 contracts
   are established; no new mechanism is asserted verified by this plan.
 - **Accept:** a user submits useful work in the browser, sees live progress,
   returns by a stable ID after disconnect, answers a question and retrieves a
@@ -77,3 +78,9 @@ browser without shell access or Kubernetes.
 - [ ] Save reproduction, exact commands/actions, IDs, environment/versions,
   expected versus observed behavior, cleanup and pass/fail in
   `docs/demos/phase-4a.md`.
+
+The development artifact follow-up in ADR-0003 is reconciled by proposed
+[ADR-0004](../../adr/0004-use-implementation-plans-for-development.md): use an
+independently reviewed implementation plan, preserving every other ADR-0003
+requirement and full-tier gate. This takes effect with owner acceptance of the
+workflow cutover.

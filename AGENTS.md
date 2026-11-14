@@ -46,15 +46,14 @@ uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pytest
 uv run .agents/sync_agents.py --check
-openspec validate --all
-openspec update --dry-run      # expect "No changes"
+uv run .github/scripts/check_plans.py
 ```
 
 CI also runs gitleaks (config `.gitleaks.toml`), actionlint, an offline link check and, on PRs, dependency review; the gitleaks and link checks each run a canary. The `ci-ok` rule is `.github/scripts/ci_gate.py`. Python is pinned to the 3.11 floor (`.python-version`) and Node to `.node-version`.
 
 ## Agent tooling layout
 
-`.agents/` is the **only source of truth** for skills and agent definitions. See [.agents/README.md](.agents/README.md).
+`.agents/` owns project-specific skills and agents. Reusable planning/review skills and reviewer agents come from Skill Central; do not copy them into this repository. See [.agents/README.md](.agents/README.md).
 
 | What | Edit here | Read by tools from |
 |---|---|---|
@@ -64,6 +63,6 @@ CI also runs gitleaks (config `.gitleaks.toml`), actionlint, an offline link che
 
 After editing anything in `.agents/agents/`, run `uv run .agents/sync_agents.py`. Never edit the generated agent files directly.
 
-**Reviews:** use `review-design` before implementing, `review-implementation` after, and `verify-phase` to close a phase. Phase gates follow `docs/reviews/README.md` (fresh session, pinned commit, saved report with verdict, then the coordinator approval gate).
+**Reviews:** use Skill Central `design-review` before implementing, `impl-review` after, and `verify-phase` to close a phase. Phase gates follow `docs/reviews/README.md` (fresh session, pinned commit, saved report with verdict, then the coordinator approval gate).
 
-**OpenSpec** (requirements and changes) lives in `openspec/`. Its `openspec-*` skills are generated in `.agents/skills/`; they need the `openspec` CLI (1.17.0, installed with npm under fnm-managed Node). Refresh them with `openspec update`; do not edit them or re-run `openspec init` with other tool IDs (see `.agents/skills/README.md`).
+**Planning:** use Skill Central's `impl-plan`, `design-review` and `impl-review` suite for new work in `docs/plans/`. Read [docs/development/planning.md](docs/development/planning.md) for installation, immutable review inputs and phase gates. `openspec/` is historical; do not regenerate its skills or create new OpenSpec changes. Existing guarantees remain incorporated through [docs/requirements/baseline.md](docs/requirements/baseline.md).

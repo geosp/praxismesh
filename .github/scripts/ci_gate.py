@@ -26,7 +26,7 @@ REQUIRED_JOBS = (
     "tests",
     "stack",
     "agents-sync",
-    "openspec",
+    "plans",
     "secrets",
     "links",
     "licenses",

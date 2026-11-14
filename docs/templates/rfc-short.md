@@ -5,7 +5,7 @@ tier: light                 # light tier: Phases 0-2 (plan §7.0)
 status: draft               # draft | proposed | accepted | superseded
 phase: <0 | 1 | 2>
 issue: <#N>
-openspec_change: <openspec/changes/<id>, or n/a>
+implementation_plan: <docs/plans/<plan>, or n/a>
 plan_sections: [<e.g. §4.1>]
 size: <S | M | L>
 hardware: <what this needs to build, test and demo>

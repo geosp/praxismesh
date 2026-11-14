@@ -1,13 +1,13 @@
 ---
 review: design            # design | implementation | verification
 phase: <N, bootstrap, or general-<topic>>
-change: <openspec/changes/<id>, or n/a>
+change: <docs/plans/<plan>, or n/a>
 rfc: <docs/rfcs/..., or n/a>
 adrs: []
 commit_sha: <full SHA reviewed; code_sha for implementation reviews and verification>
 docs_sha: <as-built documentation revision; verification only, else n/a>
 diff_base: <SHA, implementation reviews only; else n/a>
-session: fresh            # verification in the light tier after review-implementation: fresh (shared with implementation review, independence between them waived per §7.0)
+session: fresh            # verification in the light tier after impl-review: fresh (shared with implementation review, independence between them waived per §7.0)
 date: <YYYY-MM-DD>
 verdict: <PASS | FAIL>    # verification: pass | fail | blocked
 reviewers:

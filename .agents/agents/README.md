@@ -14,7 +14,7 @@ One Markdown file per agent: `<agent-name>.md`. `uv run .agents/sync_agents.py` 
 ---
 name: design-reviewer            # required; lowercase kebab-case; must match the file name
 description: >-                  # required; when to use this agent
-  Reviews an RFC against approved OpenSpec requirements. Use for independent design review.
+  Reviews an implementation contract against project requirements. Use for independent design review.
 
 # Optional per-harness blocks. Keys are copied verbatim into that harness's file.
 # Tool names are NOT translated, so each block uses its own harness's names.
@@ -26,7 +26,6 @@ copilot:
   tools: [read, search]
 codex:
   model_reasoning_effort: high
-  sandbox_mode: read-only
 ---
 
 Instructions for the agent, in Markdown. This body is shared by all harnesses,

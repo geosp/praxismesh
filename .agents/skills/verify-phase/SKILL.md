@@ -5,7 +5,7 @@ description: >-
   reproduces the acceptance tests and the phase demo from the documented
   instructions, and checks the as-built architecture claims, in a disposable
   checkout of the frozen code_sha. Saves the verification report and demo
-  evidence with a pass/fail/blocked verdict. Use after review-implementation to
+  evidence with a pass/fail/blocked verdict. Use after impl-review to
   close a phase (gate mode), or to dry-run a phase's tests and demo (informal).
 ---
 
@@ -13,7 +13,7 @@ description: >-
 
 Design review reads the design and implementation review reads the code; neither runs anything. Verification is the step that **executes**: it reproduces the acceptance tests and the demo from what the documentation says, and checks that the as-built documentation describes what actually happens. It answers one question: does the frozen system really behave as claimed?
 
-Order of work: `review-design` -> implementation -> `review-implementation` -> **`verify-phase`** -> coordinator approval gate (`docs/reviews/README.md`) -> merge.
+Order of work: `design-review` -> implementation -> `impl-review` -> **`verify-phase`** -> coordinator approval gate (`docs/reviews/README.md`) -> merge.
 
 This skill was written for this project from plan §0.3, §4.15, §4.17 and §8; it is not adapted from an earlier skill (see the decision log).
 
@@ -22,7 +22,7 @@ This skill was written for this project from plan §0.3, §4.15, §4.17 and §8;
 - **Informal:** a dry run during development. Uses the current commit (uncommitted changes are not verified; say so), reports in chat, and writes no files in the repository.
 - **Gate:** closes a phase. Follow every rule in `docs/reviews/README.md`:
   - **Fresh session:** if this session implemented, reviewed or discussed the work, stop.
-  - **Light-tier exception:** in Phases 0-2, the same fresh session may run `review-implementation` first and then this skill against the same `code_sha`. The report then states that independence between the two was waived (§7.0).
+  - **Light-tier exception:** in Phases 0-2, the same fresh session may run `impl-review` first and then this skill against the same `code_sha`. The report then states that independence between the two was waived (§7.0).
   - **Pinned revisions:** the user names `code_sha` (the tested implementation) and `docs_sha` (the as-built documentation revision). Both must be commits that exist on the remote (`git branch -r --contains <sha>`).
   - **Evidence files:** `docs/reviews/phase-N/verification.md` and `docs/demos/phase-N.md`. They identify `code_sha` and `docs_sha`, but need not contain the SHA of the later commit that adds them (phase file, independent verification session).
   - **No fixing:** findings go back to the implementer.
@@ -37,8 +37,8 @@ If the user doesn't say, ask which mode. Use gate mode only when they confirm. N
    - informal mode: both are `git rev-parse HEAD`.
 3. **Documentation to check:** at `docs_sha`, read
    - `docs/architecture/overview.md` (or the phase's as-built section);
-   - the phase RFC in `docs/rfcs/`;
-   - the documented demo and setup instructions (README, `docs/operations/`, the RFC's demo section).
+   - the approved implementation plan and phase file in `docs/plans/` (or the historical RFC for a completed phase);
+   - the documented demo and setup instructions (README, `docs/operations/`, the implementation plan's demo section).
 
    If the as-built documentation does not exist, it is a gate Blocker for Phase 0 onward (§4.17). For the bootstrap stage it does not apply.
 
@@ -126,13 +126,13 @@ that directory; write logs and captured output only under
 <verification checkout>/.verify.
 
 Read the requirements: <phase file path> (tasks, "Accept" criteria and "Demo
-checklist"), and the RFC's acceptance tests: <RFC path, or "none">.
+checklist"), and the implementation contract's acceptance tests: <plan/phase path, or historical RFC>.
 Read the setup and demo instructions: <documentation paths>.
 
 1. Prerequisites. Using only the documented setup steps, prepare the
    environment. List every step you ran. A step the run needs but the
    documentation does not mention is a finding.
-2. Acceptance tests. Run every automated acceptance suite the phase or RFC
+2. Acceptance tests. Run every automated acceptance suite the phase or implementation plan
    names, with the documented commands. For each, record the command, the
    exit status and the summary lines of the output.
 3. Demo. Walk the demo checklist in order, using the documented commands or

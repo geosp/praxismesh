@@ -14,7 +14,7 @@ Closes #
 
 - **Phase:** <!-- e.g. Phase 1, 3A; or "bootstrap", "n/a" -->
 - **Plan sections:** <!-- e.g. §4.3, §5 -->
-- **OpenSpec change:** <!-- openspec/changes/<id>, or n/a -->
+- **Implementation plan:** <!-- docs/plans/<plan>/plan.md and phase, or n/a -->
 - **RFC / ADR:** <!-- docs/rfcs/..., docs/adr/..., or n/a -->
 
 ## Changes
