@@ -180,3 +180,28 @@ suite now has 30 cases. Four temporary reversions each made the corresponding
 regression fail. Both full review reports remain frozen, including the disclosed
 correction-summary exposure. Subsequent review is limited to these four findings;
 there is no third full review or claim that the earlier limitation disappeared.
+
+Targeted walkthrough source: `8772f7d95f73f5325d5c79a79f56311c08650780`.
+[Complete targeted evidence](dsh-phase01-targeted-evidence.json) retains both
+real-model attempts as well as all deterministic probes and mutation checks.
+
+| Probe | Outcome | Completion requests | Shared grace met | Observation seconds |
+| --- | --- | --- | --- | --- |
+| startup | pass | 0 | True | 10.014 |
+| catalog | pass | 1 | True | 10.019 |
+| capability | pass | 4 | True | 10.014 |
+| poison | pass | 5 | True | 10.018 |
+| denied-tool | pass | 2 | True | 10.065 |
+| native-text | pass | 2 | True | 10.014 |
+| local attempt 1 | fail: empty final answer | 3 | True | 10.012 |
+| local attempt 2 | pass | 3 | True | 10.013 |
+
+The first local run completed skill and tool use but returned an empty final
+answer; its strict quote check failed. One unchanged recheck passed. Both runs had
+the same first provider-request hash, so no prompt/composition adjustment explains
+the recheck. This is evidence of intermittent final-answer behavior, not a claim
+of stable local-model completion or Phase 02 TaskResult conformance. Both attempts
+met cleanup checks. All 30 isolated tests, lint/format, mypy, locked sync, agent
+sync, plan validation and offline links passed. Independent targeted review remains
+due; the previous full review verdicts and the scanner false positive remain
+preserved.
