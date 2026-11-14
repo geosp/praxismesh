@@ -46,3 +46,28 @@ design-review record remains pending at this point.
 
 All round-1 findings are resolved by the authoring changes; design-review status
 remains changes-requested until fresh follow-up of the affected design.
+
+
+## 2026-11-14 · design-review · phase 03 · round 2 · passed
+
+- Frozen design: 96aa6670531251509bb53a70c229c57e0eb922c8.
+- Reviewers: reader completed; codebase-fit completed; zoom-out completed.
+- [Independent report and verbatim paraphrases](../../reviews/skill-central-migration/design-02.md).
+- Mechanical helper: zero errors and warnings. Reader/zoom-out automatic project
+  guidance limitations remain disclosed. No Blocker or Major remains open.
+- ADR-0004 remains proposed, requiring owner acceptance with the cutover; neither
+  the author nor reviewer accepts it on the owner's behalf.
+
+| ID | Severity | Reviewer | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| N1 | Nit | Reader | Summary could identify docs/plans, user-wide installation and ADR acceptance. | fixed: Summary names all three. |
+| N2 | Nit | Reader | Bundled exports and former OpenSpec role need short definitions. | fixed: Terms adds both definitions. |
+| N3 | Nit | Reader | Phase 4A purpose is implicit. | fixed: D2 identifies the Compose task-interaction UI. |
+| N4 | Nit | Reader | Codex delivery and rationale share one sentence. | fixed: D1 separates the mechanism and symlink rationale. |
+| N5 / round-1 F6 | Nit | Reader | Gate rules remain bundled. | fixed: R4.a–d independently label reviews, execution, demo and delivery, with separate refusal scenarios. |
+| N6 | Nit | Reader | Discovery gate repeats across sections. | fixed: Summary, risk mitigation and rollout now refer to R2 while retaining operational ordering. |
+
+The report's C1–C7 are explicitly contested and closed with evidence in the
+independent report; those dispositions remain unchanged. These final edits are
+readability changes only. The second and final round is complete; no third round
+was run and no runtime phase is closed.

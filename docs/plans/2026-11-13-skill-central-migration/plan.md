@@ -12,13 +12,13 @@ adr_review: null
 
 ## Summary
 
-Use the owner's Skill Central suite for implementation plans and independent
-reviews, after its Codex and bundled-export prerequisites are merged and verified.
-Replace OpenSpec CI with public local contract validation. Retire active OpenSpec
-development tooling while retaining completed
-phase records and their existing guarantees. The main risk is losing discovery
-or weakening phase gates during cutover; install and verify the merged suite
-before the owner merges the PraxisMesh cutover.
+Use the owner's Skill Central suite through a user-wide installation for
+implementation plans in docs/plans and independent reviews, after its Codex and
+bundled-export prerequisites are merged and verified. Replace OpenSpec CI with
+public local contract validation. Retire active OpenSpec development tooling
+while retaining completed phase records and guarantees. The main risk is losing
+discovery or weakening phase gates; R2 defines the cutover gate. Owner acceptance
+of ADR-0004 reconciles the Phase 4A artifact requirement.
 
 ## Why
 
@@ -41,6 +41,10 @@ active OpenSpec changes; Phases 0 and 1 are closed and Phase 2 has not started.
 ## Terms
 
 - **Suite**: impl-plan, design-review and impl-review plus their helper and reviewer agents.
+- **Bundled-export prerequisites**: Skill Central support for importing the chosen
+  ZIP exports and their explicit harness variants before suite installation.
+- **OpenSpec**: the former repository requirements/change format and its generated
+  development skills and CI checks; existing records remain historical.
 - **Cutover**: switching new PraxisMesh work to the verified canonical suite.
 - **Baseline**: existing Phase 0/1 guarantees incorporated by reference.
 - **Harness variant**: a native agent configuration for one supported coding tool.
@@ -73,10 +77,22 @@ Retiring OpenSpec must preserve completed evidence and explicitly incorporate ex
 
 ### R4 · Phase gates remain mandatory
 
-Fresh-session frozen-commit reviews, independent verification, tests, demos and latest-head approval must remain required.
-- **Given** a missing reviewer or unrun demo, **when** closure is requested, **then** the coordinator refuses completion.
-- **Given** failed acceptance tests or verification, **when** closure is requested, **then** the coordinator refuses completion.
-- **Given** mismatched evidence SHAs or stale-head checks, **when** delivery approval is requested, **then** the coordinator refuses completion until the current head is covered.
+The coordinator refuses closure unless every independently traceable gate below
+passes under the linked review protocol.
+
+- **Given** a missing reviewer, **when** closure is requested, **then** the coordinator refuses completion (R4.a).
+- **Given** failed acceptance tests or verification, **when** closure is requested, **then** the coordinator refuses completion (R4.b).
+- **Given** an unrun demo, **when** closure is requested, **then** the coordinator refuses completion (R4.c).
+- **Given** mismatched evidence SHAs or stale-head checks, **when** delivery approval is requested, **then** the coordinator refuses completion (R4.d).
+
+Gate definitions:
+
+- **R4.a Reviews:** fresh-session reviews use frozen commits; a missing reviewer
+  prevents completion.
+- **R4.b Execution:** acceptance tests and independent verification must pass.
+- **R4.c Demo:** the required demo must actually run and pass before completion.
+- **R4.d Delivery:** evidence SHAs must match their inputs, and required checks and
+  owner approval must cover the latest head.
 
 ### R5 · Public CI has no private dependency
 
@@ -89,8 +105,8 @@ Public CI must validate local implementation contracts without fetching Skill Ce
 
 Keep one portable canonical suite and explicit harness variants. Skills and most
 agent variants use owned links. Codex reviewer variants use owned config_file
-references to canonical regular TOML files because Codex refuses symlinked role
-configuration. Rejected: copying
+references to canonical regular TOML files. This avoids the symlinked role
+configuration that Codex refuses. Rejected: copying
 skills into PraxisMesh, because project copies drift. Details: notes.md#d1
 
 ### D2 · Use implementation plans for future requirements and designs
@@ -98,7 +114,8 @@ skills into PraxisMesh, because project copies drift. Details: notes.md#d1
 Retain the master plan's scope/gate authority; an approved implementation plan
 carries detailed contracts and design. Rejected: maintaining parallel RFC/OpenSpec
 requirements for every new phase, because the selected suite already owns those contracts.
-ADR-0003 currently requires separate Phase 4A RFC/OpenSpec artifacts. Proposed
+Phase 4A is the Compose task-interaction UI. ADR-0003 currently requires separate
+Phase 4A RFC/OpenSpec artifacts. Proposed
 [ADR-0004](../../adr/0004-use-implementation-plans-for-development.md) supersedes
 that artifact requirement while carrying forward every other ADR-0003 decision.
 The owner must accept that reconciliation with this cutover; it does not approve
@@ -119,15 +136,15 @@ require new credentials and exclude contributors. It does not prove execution ev
 
 ## Risks
 
-- Discovery fails or duplicates persist: verify fresh sessions before final cutover merge.
+- Discovery fails or duplicates persist: enforce R2 and record activation results.
 - Shared defaults weaken gates: document mandatory repository overrides and check evidence.
 - Private suite unavailable to a contributor: allow direct contract authoring and public checks.
 
 ## Rollout & rollback
 
-Review/merge Skill Central prerequisites, then the suite; install only merged content
-and run doctor and fresh-session Linux/macOS checks. Record the protected suite SHA
-in the cutover PR. The owner merges PraxisMesh only after those gates pass.
+Review/merge Skill Central prerequisites, then the suite. Install the protected
+revision and satisfy R2 using doctor and fresh-session Linux/macOS checks. Record
+the protected suite SHA in the cutover PR before owner merge.
 
 A repository revert restores prior project definitions and CI. It leaves the
 canonical Skill Central checkout and owned user installation intact; use the

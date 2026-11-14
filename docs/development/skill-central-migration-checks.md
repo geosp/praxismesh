@@ -155,3 +155,26 @@ invocations, the owner replied: “All passed.” This records owner confirmatio
 the supported harness/platform matrix. It does not replace the earlier observed
 Linux results or claim those headless failures were reproduced as passing here.
 Independent cutover review and latest-head CI remain required before owner merge.
+
+
+## Independent cutover reviews and corrective checks, 2026-11-14
+
+Fresh read-only sessions completed the three-lens implementation review at
+`5da23105ed20156e33b0a225dc3d3876218e5ddb` and two design-review rounds, ending in
+PASS at `96aa6670531251509bb53a70c229c57e0eb922c8`. All required reviewers completed;
+reports disclose automatic project-instruction visibility. The reports and
+resolutions are linked from the migration plan's reviews.md.
+
+The implementation Nit correction rejects completed parent plans with unfinished
+phases. Both regression cases failed before the fix, passed afterward, and failed
+again when the fix was removed. The full suite passed: 165 tests, 91 integration
+cases deselected by normal configuration. Ruff, formatting, mypy, public/shared
+plan checks and offline links passed. No later runtime or validator code changed;
+subsequent changes record evidence and clarify the reviewed documentation.
+
+Design review identified ADR-0003's old Phase 4A artifact requirement. Proposed
+ADR-0004 reconciles it while carrying every other ADR-0003 decision and required
+demo forward. ADR-0003 remains unchanged. ADR-0004 requires owner acceptance with
+the cutover; the review does not accept it for the owner. Migration task boxes
+remain unticked and no runtime phase closure is claimed. Require CI on the final
+PR head and owner merge approval.
