@@ -85,6 +85,8 @@ def test_container_has_no_ip_route_or_host_environment(tmp_path):
     envs = [args[i + 1] for i, value in enumerate(args) if value == "--env"]
     assert envs == ["PYTHONPATH=/opt/site", "PRAXIS_SPIKE_MODEL_KEY=spike-fixture-only"]
     assert all("docker.sock" not in arg for arg in args)
+    assert all("dst=/opt/spike,readonly" not in arg for arg in args)
+    assert all(".runs" not in arg for arg in args if "dst=/opt/spike" in arg)
 
 
 def test_manifest_fixes_identity_limits_and_bytes_before_execution():

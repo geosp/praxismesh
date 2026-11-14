@@ -138,8 +138,19 @@ def command(name: str, run: Path, case: str, image: str = IMAGE) -> list[str]:
         f"/home/spike:rw,exec,nosuid,nodev,uid={os.getuid()},gid={os.getgid()},mode=700",
         "--mount",
         f"type=bind,src={site},dst=/opt/site,readonly",
-        "--mount",
-        f"type=bind,src={HERE},dst=/opt/spike,readonly",
+        *[
+            item
+            for filename in (
+                "container_driver.py",
+                "model_gateway.py",
+                "mcp_fixture.py",
+                "composition.yaml",
+            )
+            for item in (
+                "--mount",
+                f"type=bind,src={HERE / filename},dst=/opt/spike/{filename},readonly",
+            )
+        ],
         "--mount",
         f"type=bind,src={run},dst=/run",
         "--mount",

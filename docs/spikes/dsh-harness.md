@@ -1,0 +1,105 @@
+# DSH primary-harness compatibility evaluation
+
+Date: 2026-11-14. Tracking: [issue #62](https://github.com/geosp/praxismesh/issues/62).
+Contract: [approved implementation plan](../plans/2026-11-14-dsh-harness-evaluation/plan.md).
+
+The isolated runtime can execute the local quote task with the granted skill and
+MCP tools. This is preliminary Phase 01 evidence. Recovery, cancellation, complete
+accounting, TaskResult mapping and benchmark suitability have not been established.
+No adoption recommendation or production replacement follows from these results.
+
+## Reproduction and identity
+
+Use the [spike README](../../spikes/dsh-harness/README.md) for setup, probes,
+expected output and teardown. [artifacts.json](../../spikes/dsh-harness/artifacts.json)
+records exact published wheels, native executable/sidecar and SDK source hashes,
+container base/image IDs and platform. The isolated
+[uv.lock](../../spikes/dsh-harness/uv.lock) pins transitive dependencies.
+
+The research snapshot was `39163dd30f703a79079e2d2446545cff3c453738`.
+Execution uses published SDK/runtime 0.2.2rc2, associated with official tag
+[`dsh-v0.2.2-rc.2`](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.2-rc.2)
+at `ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c`. The research snapshot is 614
+commits ahead of that release. Relevant release SDK `api.py`/`client.py`
+byte-match the installed wheel. This establishes source correspondence for those
+files, not a verified source build of the native binary. PyPI provenance endpoints
+returned 404; no build attestation is claimed. Runtime `--version` reported
+`0.2.2-rc.2`; its carrier manifest reports `0.0.0-dev`.
+
+Executed platform: Linux x86_64, CPython 3.11, Docker, unprivileged UID/GID 1000.
+The SDK is imported and native runtime launched only in Docker. uv stages its
+separate environment on the host. Production dependencies and registry are unchanged.
+
+## Composition inventory
+
+The release's [minimal profile](https://github.com/deepseek-ai/deepseek-harness/blob/ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c/packages/bundle/sdk-minimal/cordis.patch.yml)
+is overlaid by [composition.yaml](../../spikes/dsh-harness/composition.yaml).
+The following inventory distinguishes services present from model-visible tools.
+
+| Component | Effective behavior in Phase 01 |
+| --- | --- |
+| SDK app/server, inventory, logging | Explicit `sdk-minimal`; disposable home; normal run completion API |
+| LLM services, retry, token meter | Local pi-ai provider through gateway; provider retry count zero; DeepSeek provider disabled |
+| Session, projection, title, JSONL persistence, checkpoint policy | Present; fallback title configuration; durable recovery consistency untested |
+| Agent/loop, native tool executor, system prompt | One root session, empty agent definitions, one parallel tool call; no child-agent tool |
+| Timer and jobs services | Present as internal facilities; no scheduler/job tools granted; no competing durable coordinator exercised |
+| Filesystem, sandbox, working-directory, attachment, subprocess and terminal services | Internal dependencies remain; workspace-write policy; file/directory and persistent shell tools disabled |
+| Compaction/image offload | Disabled; auxiliary accounting probes belong to Phase 02 |
+| Skill services | Only read-only granted `order-desk`; default roots and watching disabled |
+| MCP client | Disposable stdio fixture; only price/stock tools; no database or order mutation |
+| MCP resource tools | List/read resource tools advertised; fixture supplies no resources |
+
+Observed model-visible tools are `skill`, `mcp__sample-shop__lookup_price`,
+`mcp__sample-shop__lookup_stock`, `list_mcp_resources`,
+`list_mcp_resource_templates` and `read_mcp_resource`. These observations and the
+profile inventory do not prove every latent service path is fully accounted for;
+R6/R10 auxiliary reconciliation remains Phase 02 work. Temporal/PraxisMesh retains
+production orchestration. This spike does not instantiate another durable coordinator.
+
+The prompt includes the DSH minimal persona and skill catalog plus a trusted
+ordinary-text prefix and the quote task as a separate data block. It does not use
+the production `finish_task` prompt. Prompt request hashes are retained per run;
+this task is not a benchmark comparison or TaskResult conformance result.
+
+## Preliminary observations
+
+The final reproducible run table and frozen source reference are recorded below
+after the Phase 01 walkthrough. Each result must include its pre-run manifest
+digest, actual model-boundary observations and container absence check.
+
+| Probe | Required observation |
+| --- | --- |
+| startup | Real SDK/runtime initializes without provider traffic |
+| catalog | Actual declared tool catalog reaches the boundary |
+| capability | Scripted provider causes actual granted skill read and both MCP calls |
+| poison | Workspace/home/user discovery poison absent from model context |
+| denied-tool | Actual unknown-tool rejection, zero fixture tool-body entries |
+| native-text | Command-shaped text reaches model as task data; no policy expansion |
+| local | Real spark requests, skill read, both MCP calls, exact JSON quote |
+
+The first real local attempt loaded the skill and executed price/stock, but its
+final answer failed strict JSON parsing. It remains a failed attempt. Tightening
+the instruction to require raw JSON produced a passing recheck. Completion text
+alone is never evidence of Phase 02 TaskResult conformance.
+
+Other exploratory failures were preserved in ignored local results: Docker's
+default noexec tmpfs prevented native addon loading; a numeric UID with no home
+caused a native cache failure; an early low-level idle event initially yielded
+zero model requests. Remediation uses executable disposable scratch, a dedicated
+account and supported high-level run completion with independent boundary evidence.
+The zero-request result is invalid evidence, even though its old controller exited
+zero. A regression test now rejects that case. The dependency environment was also
+rebuilt from the lock after an overly broad lint invocation touched staged files;
+artifact verification passed before subsequent execution.
+
+## Remaining gates
+
+Phase 01 independent review/verification and owner completion approval remain due.
+Phase 02 has not started. Its approved tasks cover clean-worker session/workspace
+recovery and side-effect/attempt fencing (R4), bounded stop (R5), independent
+complete accounting (R6), explicit structured completion semantics (R7), the same
+ten-task benchmark (R8), and the final recommendation (R9/R10). Missing prerequisites
+must be blocked; a demonstrated missing runtime guarantee must be failed.
+
+There is no new production harness adapter, schema, template version, event
+mapping, ADR or change to the closed Phase 1 evidence in this spike.
