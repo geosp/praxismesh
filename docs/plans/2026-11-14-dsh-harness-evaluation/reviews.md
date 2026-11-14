@@ -139,10 +139,10 @@ No acceptance condition, scanner policy or production configuration was waived.
 
 | ID | Sev | Lens | Finding | Resolution |
 | --- | --- | --- | --- | --- |
-| F1 | Major | Failure and retry | A truncated fixture log can raise before mandatory container cleanup and result persistence (task 1.3). | fixed: test_bad_evidence_cannot_bypass_cleanup_or_failed_result; unconditional finish_run cleanup and persisted failure; targeted validation pending |
-| F2 | Major | Scope and composition; Contract subset | Code/configuration are mounted from mutable source after manifest hashing; granted skill has no content digest (R1). | fixed: test_changed_runtime_input_is_rejected_during_staging and test_mounts_use_snapshot_after_originals_change; verified runtime and skill snapshots; targeted validation pending |
-| F3 | Nit | Scope and composition | Gateway and container cleanup start separate clocks and may exceed the original five-second grace (task 1.2). | fixed: test_shared_trigger_detects_gateway_plus_removal_exceeding_grace; shared monotonic trigger; targeted validation pending |
-| F4 | Nit | Contract | manifest_sha256 hashes canonical JSON without the newline added to the persisted file (R1). | fixed: test_manifest_digest_identifies_exact_persisted_bytes; save_manifest hashes saved bytes; targeted validation pending |
+| F1 | Major | Failure and retry | A truncated fixture log can raise before mandatory container cleanup and result persistence (task 1.3). | fixed: test_bad_evidence_cannot_bypass_cleanup_or_failed_result; unconditional finish_run cleanup and persisted failure; independently addressed in targeted-follow-up-01.md |
+| F2 | Major | Scope and composition; Contract subset | Code/configuration are mounted from mutable source after manifest hashing; granted skill has no content digest (R1). | fixed: test_changed_runtime_input_is_rejected_during_staging and test_mounts_use_snapshot_after_originals_change; verified runtime and skill snapshots; independently addressed in targeted-follow-up-01.md |
+| F3 | Nit | Scope and composition | Gateway and container cleanup start separate clocks and may exceed the original five-second grace (task 1.2). | fixed: test_shared_trigger_detects_gateway_plus_removal_exceeding_grace; shared monotonic trigger; independently addressed in targeted-follow-up-01.md |
+| F4 | Nit | Contract | manifest_sha256 hashes canonical JSON without the newline added to the persisted file (R1). | fixed: test_manifest_digest_identifies_exact_persisted_bytes; save_manifest hashes saved bytes; independently addressed in targeted-follow-up-01.md |
 
 This was the second and final full review round. Owner selection of corrections
 is the next checkpoint; no third full review is planned. Any correction validation
@@ -157,3 +157,27 @@ corresponding regression fail, then restored code passed the complete suite.
 Both frozen reports and the second-round independence limitation are preserved.
 Only a targeted check of these corrections is authorized next; no third full
 review is planned. Phase metadata stays changes-requested pending that check.
+
+
+## 2026-11-14 · targeted implementation follow-up · phase 01 · passed corrections
+
+- Frozen code_sha: 33a532b2fd039e3d715dae6e64290190e84ecd2c.
+- Correction diff base: 35ac465bf2618f1e6031bc325be885800cbf9c2c.
+- [Fresh targeted report](../../reviews/general-dsh-harness-evaluation/targeted-follow-up-01.md).
+- Reviewer: fresh impl-reviewer completed; scope explicitly limited to round-2 F1–F4.
+- Verdict: PASS for those four corrections only; all addressed, no residual
+  correction-specific findings. All eight targeted manifest hashes identify exact
+  newline-terminated bytes; runtime/skill/source identities matched frozen blobs.
+- This is not a third full review or a replacement full-gate verdict. Both full
+  reports retain FAIL at their reviewed revisions. The round-2 correction-summary
+  exposure remains disclosed. No independence waiver or phase closure is recorded.
+- Execution evidence: 30 isolated tests passed; all four temporary reversions were
+  detected. Six deterministic walkthroughs passed. One local-model attempt failed
+  on an empty final answer; one unchanged recheck passed. Both local attempts met
+  cleanup/grace checks and are preserved in the targeted evidence. The fresh
+  reviewer inspected these records but did not independently reproduce them.
+- Mechanical helper, public validator, diff/syntax and evidence-linkage checks passed.
+- Independent verification, the scanner false-positive disposition and required
+  latest-head checks remain due. Phase metadata remains changes-requested rather
+  than claiming the limited targeted verdict establishes the full gate. Tasks
+  remain unticked; Phase 02 remains unstarted.

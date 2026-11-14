@@ -205,3 +205,12 @@ met cleanup checks. All 30 isolated tests, lint/format, mypy, locked sync, agent
 sync, plan validation and offline links passed. Independent targeted review remains
 due; the previous full review verdicts and the scanner false positive remain
 preserved.
+
+
+The [fresh targeted follow-up](../reviews/general-dsh-harness-evaluation/targeted-follow-up-01.md)
+passed all four second-round corrections at
+`33a532b2fd039e3d715dae6e64290190e84ecd2c`, with no residual correction-specific
+findings. It inspected the committed evidence without executing the candidate.
+This limited PASS preserves both earlier full-review verdicts and their stated
+independence limitation. It does not establish independent runtime verification,
+stable local-model completion, scanner clearance, phase closure or adoption.
