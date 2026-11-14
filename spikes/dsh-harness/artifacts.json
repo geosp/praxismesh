@@ -57,5 +57,7 @@
         "upload-time": "2026-11-11T12:56:30.948Z"
       }
     ]
-  }
+  },
+  "environment_sha256": "c581df47358cb4972ea951c6ffe715b5d0218a702c5c9311d93d9ab47f2fa421",
+  "environment_hash_policy": "Sorted relative paths and SHA-256 of every regular installed file, excluding bytecode caches; symlinks rejected. dist-info RECORD hashes canonicalize sorted in-tree rows, omitting entries for launchers outside the mounted tree. Candidate uses a verified private copy with a separate empty bytecode-cache prefix."
 }

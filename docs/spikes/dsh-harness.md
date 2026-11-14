@@ -40,18 +40,20 @@ The following inventory distinguishes services present from model-visible tools.
 | --- | --- |
 | SDK app/server, inventory, logging | Explicit `sdk-minimal`; disposable home; normal run completion API |
 | LLM services, retry, token meter | Local pi-ai provider through gateway; provider retry count zero; DeepSeek provider disabled |
-| Session, projection, title, JSONL persistence, checkpoint policy | Present; fallback title configuration; durable recovery consistency untested |
+| Session, projection, JSONL persistence, checkpoint policy | Present; title generation disabled; durable recovery consistency untested |
 | Agent/loop, native tool executor, system prompt | One root session, empty agent definitions, one parallel tool call; no child-agent tool |
-| Timer and jobs services | Present as internal facilities; no scheduler/job tools granted; no competing durable coordinator exercised |
+| Timer and jobs services | Internal timer only; jobs service disabled; no competing durable coordinator exercised |
 | Filesystem, sandbox, working-directory, attachment, subprocess and terminal services | Internal dependencies remain; workspace-write policy; file/directory and persistent shell tools disabled |
 | Compaction/image offload | Disabled; auxiliary accounting probes belong to Phase 02 |
 | Skill services | Only read-only granted `order-desk`; default roots and watching disabled |
 | MCP client | Disposable stdio fixture; only price/stock tools; no database or order mutation |
-| MCP resource tools | List/read resource tools advertised; fixture supplies no resources |
+| MCP resource tools | Disabled |
 
-Observed model-visible tools are `skill`, `mcp__sample-shop__lookup_price`,
-`mcp__sample-shop__lookup_stock`, `list_mcp_resources`,
-`list_mcp_resource_templates` and `read_mcp_resource`. These observations and the
+The corrected model-visible tool catalog is exactly `skill`,
+`mcp__sample-shop__lookup_price` and `mcp__sample-shop__lookup_stock`.
+Gateway admission and result validation reject any catalog or model change.
+`auxiliary_inventory` in each manifest identifies disabled producers and the
+bounds/accounting observation points for admitted internal timer, skill and MCP paths. These observations and the
 profile inventory do not prove every latent service path is fully accounted for;
 R6/R10 auxiliary reconciliation remains Phase 02 work. Temporal/PraxisMesh retains
 production orchestration. This spike does not instantiate another durable coordinator.
@@ -63,7 +65,7 @@ this task is not a benchmark comparison or TaskResult conformance result.
 
 ## Preliminary observations
 
-The implementer walkthrough below tested source commit
+The initial pre-review walkthrough below tested source commit
 `6eec0b0d19580113477286b6cfbe627235d07ac3`. Sanitized
 [run manifests/results](dsh-phase01-evidence.json) retain per-run source hashes,
 artifact/configuration digests, gateway observations and fixture admissions.
@@ -121,3 +123,22 @@ must be blocked; a demonstrated missing runtime guarantee must be failed.
 
 There is no new production harness adapter, schema, template version, event
 mapping, ADR or change to the closed Phase 1 evidence in this spike.
+
+
+## Approved review corrections
+
+The owner approved all seven round-1 findings. The corrected controller verifies
+all executable dependency bytes in a private read-only snapshot, fails on unknown
+Docker state, and observes the full ten-second cleanup window. Host gateway sockets
+and handlers are tracked and stopped; run manifests identify the exact UUID scratch
+path. Title/jobs/resource producers are disabled. Config/plugin/provider poisons and
+an attempted introduced plugin operation supplement skill discovery probes; both
+the gateway and evidence oracle enforce the exact tool/model grants.
+
+Seven regression tests failed before correction. Temporarily reverting each fix
+made its own test fail; restoring the fixes returned the suite to green. The full
+corrected suite has 22 tests. A second independently located locked uv install
+reproduced the complete environment digest after canonicalizing RECORD entries
+for unmounted launcher scripts. No executable source or native file is excluded.
+Fresh frozen-run evidence and the final implementation review follow these changes;
+the original pre-review results above remain preserved.

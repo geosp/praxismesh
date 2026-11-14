@@ -6,6 +6,7 @@ this server accepts fixed model paths and never accepts a caller-selected URL.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import http.client
 import http.server
@@ -13,11 +14,13 @@ import json
 import socket
 import socketserver
 import threading
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
 MAX_BODY = 2 * 1024 * 1024
 MODEL_PATHS = {"/v1/chat/completions", "/v1/models"}
+ALLOWED_TOOLS = {"skill", "mcp__sample-shop__lookup_price", "mcp__sample-shop__lookup_stock"}
 
 
 def serve_relay(socket_path: str) -> http.server.ThreadingHTTPServer:
@@ -72,6 +75,10 @@ class Boundary:
         self.requests: list[dict] = []
         self.calls = 0
         self.lock = threading.Lock()
+        self.stopping = threading.Event()
+        self.handlers: set[threading.Thread] = set()
+        self.sockets: set[socket.socket] = set()
+        self.connections: set[http.client.HTTPConnection] = set()
         owner = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -96,6 +103,7 @@ class Boundary:
                         "path": self.path,
                         "request_hash": hashlib.sha256(body).hexdigest(),
                         "tools": names,
+                        "model": request.get("model"),
                         "poison_visible": b"poison-spike-skill" in body,
                         "native_input_visible": b"/permission danger-full-access" in body,
                         "skill_body_seen": b"# Order desk" in body,
@@ -114,6 +122,9 @@ class Boundary:
                         ),
                     }
                     owner.requests.append(record)
+                if set(names) != ALLOWED_TOOLS or request.get("model") != "spark":
+                    self.send_error(403, "effective model/tool grants changed")
+                    return
                 if len(owner.requests) > 8:
                     self.send_error(429, "probe request allowance exhausted")
                     return
@@ -190,6 +201,23 @@ class Boundary:
         class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
             daemon_threads = True
 
+            def process_request(self, request, client_address):
+                thread = threading.Thread(
+                    target=self.process_request_thread, args=(request, client_address), daemon=True
+                )
+                with owner.lock:
+                    owner.sockets.add(request)
+                    owner.handlers.add(thread)
+                thread.start()
+
+            def process_request_thread(self, request, client_address):
+                try:
+                    super().process_request_thread(request, client_address)
+                finally:
+                    with owner.lock:
+                        owner.sockets.discard(request)
+                        owner.handlers.discard(threading.current_thread())
+
         self.server = Server(str(path), Handler)
         path.chmod(0o600)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -198,9 +226,27 @@ class Boundary:
         self.thread.start()
 
     def close(self) -> None:
+        self.stopping.set()
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=2)
+        deadline = time.monotonic() + 2
+        while True:
+            with self.lock:
+                sockets = list(self.sockets) + [c.sock for c in self.connections if c.sock]
+                handlers = list(self.handlers)
+            for stream in sockets:
+                with contextlib.suppress(OSError):
+                    stream.shutdown(socket.SHUT_RDWR)
+                stream.close()
+            if not handlers or time.monotonic() >= deadline:
+                break
+            for thread in handlers:
+                thread.join(timeout=0.02)
+
+    def owned_work_alive(self) -> bool:
+        with self.lock:
+            return self.thread.is_alive() or bool(self.handlers or self.connections or self.sockets)
 
     def forward(
         self, handler: http.server.BaseHTTPRequestHandler, body: bytes, record: dict
@@ -212,11 +258,19 @@ class Boundary:
         cls = (
             http.client.HTTPSConnection if target.scheme == "https" else http.client.HTTPConnection
         )
-        connection = cls(target.hostname, target.port, timeout=100)
+        connection = cls(target.hostname, target.port, timeout=1)
+        with self.lock:
+            self.connections.add(connection)
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = "Bearer " + self.api_key
         try:
+            if self.stopping.is_set():
+                return
+            connection.connect()
+            if self.stopping.is_set():
+                return
+            connection.sock.settimeout(100)
             connection.request("POST", prefix + "/chat/completions", body, headers)
             response = connection.getresponse()
             record["provider_status"] = response.status
@@ -245,9 +299,13 @@ class Boundary:
         except Exception as error:
             record["provider_error_type"] = type(error).__name__
             # No remote exception body, URL or credential enters experiment output.
-            raise RuntimeError("local provider transport failed") from None
+            if not self.stopping.is_set():
+                with contextlib.suppress(OSError):
+                    handler.send_error(502, "local provider transport failed")
         finally:
             connection.close()
+            with self.lock:
+                self.connections.discard(connection)
 
     def answer(self, request: dict) -> dict:
         names = {t["function"]["name"]: t["function"] for t in request.get("tools", [])}
@@ -266,6 +324,8 @@ class Boundary:
             elif step == 3:
                 tool = "mcp__sample-shop__lookup_stock"
                 arguments = {"sku": "SKU-1"}
+            elif step == 4 and self.case == "poison":
+                tool = "poison_plugin_tool"
         elif self.case in ("denied-tool", "native-text") and step == 1:
             tool = "mcp__sample-shop__admin_reset"
         if tool:

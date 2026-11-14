@@ -45,6 +45,9 @@ Each `.runs/<case>-*.json` result references that manifest digest. Rebuilt image
 may have a different content ID; pass the trusted local build ID explicitly.
 Without `--image`, the controller uses the exact image in artifacts.json.
 Unavailable/mismatched dependencies or images prevent a successful run.
+Preflight hashes every mounted dependency file; installer RECORD entries for
+unmounted launchers are canonicalized, as documented in artifacts.json. A clean
+locked install into a second directory reproduced the same environment digest.
 
 Only `local` calls a real model. It reads `VLLM_BASE_URL` and optional
 `VLLM_API_KEY` from the environment or ignored `infra/.env` as data, accepts only
@@ -62,8 +65,10 @@ tool-body entries and `container_absent: true`. `startup` has no model requests;
 ## Isolation and limits
 
 The container has no IP network, host credentials or Docker socket. It mounts
-only staged dependencies, four reviewed code/config files, the granted
-`order-desk` directory, and one disposable run directory. Its root is read-only;
+only a verified private dependency snapshot, four reviewed code/config files, the granted
+`order-desk` directory, and one disposable state directory. The dependency snapshot is a sibling of that
+state directory and is never exposed through its writable mount. Bytecode caches
+are excluded and Python uses a separate empty scratch cache prefix. Its root is read-only;
 capabilities are dropped; no-new-privileges, 1 GiB memory, two CPUs and 128 PIDs
 are enforced. A dedicated unprivileged account has a disposable real home.
 Native addon loading requires executable scratch tmpfs; other mounts stay read-only.
@@ -71,20 +76,25 @@ Native addon loading requires executable scratch tmpfs; other mounts stay read-o
 A loopback relay forwards only fixed model paths through the run's Unix socket.
 The host boundary permits at most eight completion requests and only the trusted
 configured endpoint. The two MCP tools operate on in-memory fixture prices/stock.
+Title generation, jobs, MCP resource tools, compaction and image offload are
+disabled. The gateway enforces the exact three-tool catalog and spark model.
 There is no order mutation, shell, subagent or scheduling tool. The quote test
 deliberately uses a subset of the production template's capabilities.
 
-The controller bounds each run by its declared wall deadline, attempts container
-removal within five seconds and checks that the container is absent. Forced
+The controller bounds each run by its declared wall deadline. It closes and joins
+the host gateway listener, handlers and provider sockets, attempts container
+removal within five seconds, then observes the exact container name through the
+ten-second window. Absence requires a successful Docker daemon listing; daemon
+errors are unknown state and fail the run. Forced
 cleanup cannot turn a failed/deadline run into a pass. This is **not** the Phase 02
-R5 cancellation/ten-second process-observation test or the R6 token-budget test.
-Those manifest oracle fields are explicitly marked pending. No heartbeat or
+R5 cancellation/barrier-injection test or the R6 token-budget test.
+The full Phase 02 stop oracle is explicitly marked pending. No heartbeat or
 Temporal Activity is launched in Phase 01.
 
 ## Checks and cleanup
 
 ```bash
-spikes/dsh-harness/.venv/bin/python -m pytest -c spikes/dsh-harness/pyproject.toml spikes/dsh-harness/test_probe.py -q
+spikes/dsh-harness/.venv/bin/python -m pytest -c spikes/dsh-harness/pyproject.toml spikes/dsh-harness/test_probe.py spikes/dsh-harness/test_corrections.py -q
 uv run ruff check --no-respect-gitignore --exclude '' spikes/dsh-harness/*.py
 uv run ruff format --check --no-respect-gitignore --exclude '' spikes/dsh-harness/*.py
 ```
@@ -92,9 +102,10 @@ uv run ruff format --check --no-respect-gitignore --exclude '' spikes/dsh-harnes
 Normal teardown removes the named container and its run home/workspace/socket.
 It retains ignored result/manifest JSON. After a controller crash, identify the
 exact container from its manifest and use `docker rm -f <that-container-name>`;
-remove only its matching `.runs/dsh-run-*` scratch directory after it stops.
+use the exact `scratch_directory` recorded in that manifest after it stops.
+UUID-named directories are never reused. Unknown cleanup state preserves the directory.
 To reset the entire disposable spike environment, remove this spike's `.venv/`
-and `.runs/` after confirming no spike containers remain. Do not prune Docker or
+and `.runs/` after confirming no spike containers or gateway processes remain. Do not prune Docker or
 remove unrelated images, volumes, homes or deployment state.
 
 Observed results, failed attempts and remaining work are in the

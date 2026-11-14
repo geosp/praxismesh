@@ -99,7 +99,7 @@ isolated spike, not production DSH adoption or runtime phase closure.
 | F4 | Nit | Contract | Present auxiliary facilities lack identified admission/control/accounting coverage (R10). | open |
 | F5 | Nit | Contract | Declared ten-second observation window is not executed (task 1.2). | open |
 | F6 | Nit | Scope and composition | Host gateway requests/handlers are outside recorded ownership and cleanup (D4, R10). | open |
-| F7 | Nit | Failure and retry | Persisted manifests do not identify matching random scratch directories (R1). | open |
+| F7 | Nit | Failure and retry | Persisted manifests do not identify matching random scratch directories (R1). | fixed: test_manifest_identifies_exact_nonoverlapping_scratch_paths; UUID scratch_directory; fresh review pending |
 
 Owner selection of corrections is the next review checkpoint. Phase 02 remains unstarted.
 
@@ -108,3 +108,13 @@ one generic-api-key match at artifacts.json:14 in 5ef9eb701b7315a70a63ff945a97fa
 The value is the SHA-256 of the release SDK api.py, not a credential; it matches
 installed/source bytes. The scanner result remains unresolved. No scanner policy,
 ignore or security setting was changed. Offline links and actionlint passed.
+
+
+## 2026-11-14 · approved corrections · implementation round 1
+
+The owner directed “Proceeed” after the recommendation to correct all seven findings.
+All seven fixes were implemented with failing regressions first. Each test detected
+a temporary reversion of its fix, then the restored suite passed (22 tests).
+F1 additionally passed fresh locked-install reproduction in a second directory.
+The first report is frozen; metadata stays changes-requested pending fresh review.
+No acceptance condition, scanner policy or production configuration was waived.

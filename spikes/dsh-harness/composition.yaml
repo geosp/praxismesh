@@ -1,5 +1,11 @@
 - id: llm-deepseek
   disabled: true
+- id: session-title
+  disabled: true
+- id: jobs
+  disabled: true
+- id: mcp-resources
+  disabled: true
 - id: sandbox-policy
   config:
     mode: workspace-write

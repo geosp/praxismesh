@@ -8,7 +8,7 @@ import socket
 import mcp_fixture
 import pytest
 from container_driver import task_input
-from model_gateway import Boundary
+from model_gateway import ALLOWED_TOOLS, Boundary
 from preflight import verify
 from run_probe import command, evidence_error, positive_seconds, run_manifest
 
@@ -45,6 +45,8 @@ def test_fixture_rejects_direct_ungranted_execution(tmp_path, monkeypatch):
 
 def observation(**kwargs):
     return {
+        "tools": sorted(ALLOWED_TOOLS),
+        "model": "spark",
         "poison_visible": False,
         "skill_body_seen": False,
         "denial_seen": False,
@@ -83,7 +85,11 @@ def test_container_has_no_ip_route_or_host_environment(tmp_path):
     assert "--read-only" in args
     assert "--privileged" not in args
     envs = [args[i + 1] for i, value in enumerate(args) if value == "--env"]
-    assert envs == ["PYTHONPATH=/opt/site", "PRAXIS_SPIKE_MODEL_KEY=spike-fixture-only"]
+    assert envs == [
+        "PYTHONPATH=/opt/site",
+        "PYTHONPYCACHEPREFIX=/tmp/bytecode",
+        "PRAXIS_SPIKE_MODEL_KEY=spike-fixture-only",
+    ]
     assert all("docker.sock" not in arg for arg in args)
     assert all("dst=/opt/spike,readonly" not in arg for arg in args)
     assert all(".runs" not in arg for arg in args if "dst=/opt/spike" in arg)
@@ -117,7 +123,13 @@ def test_gateway_rejects_alternate_routes_and_enforces_admission_ceiling(tmp_pat
     try:
         assert request(boundary, "POST", "/unapproved", b"{}")[0] == 403
         assert boundary.requests == []
-        body = json.dumps({"model": "spark", "messages": []}).encode()
+        body = json.dumps(
+            {
+                "model": "spark",
+                "messages": [],
+                "tools": [{"function": {"name": name}} for name in sorted(ALLOWED_TOOLS)],
+            }
+        ).encode()
         for _ in range(8):
             assert request(boundary, "POST", "/v1/chat/completions", body)[0] == 200
         assert request(boundary, "POST", "/v1/chat/completions", body)[0] == 429

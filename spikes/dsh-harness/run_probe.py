@@ -9,9 +9,9 @@ import json
 import math
 import os
 import re
+import shutil
 import socket
 import subprocess
-import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -20,6 +20,80 @@ from urllib.parse import urlsplit
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 IMAGE = "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb"
+ALLOWED_TOOLS = {"skill", "mcp__sample-shop__lookup_price", "mcp__sample-shop__lookup_stock"}
+
+
+def auxiliary_inventory() -> dict:
+    return {
+        name: {"admission": "disabled", "bounds": "not admitted", "accounting": "not admitted"}
+        for name in (
+            "title_generation",
+            "jobs",
+            "compaction",
+            "image_offload",
+            "delegation",
+            "mcp_resources",
+        )
+    } | {
+        "internal_timers": {
+            "admission": "internal only",
+            "bounds": "container wall deadline and observation",
+            "accounting": "no model/tool producer; gateway catalog and request ledger",
+        },
+        "skill_and_mcp": {
+            "admission": "three granted tools",
+            "bounds": "container wall deadline; MCP call timeout 10s",
+            "accounting": (
+                "gateway skill-result evidence and fixture body-entry ledger; "
+                "full reconciliation Phase 02"
+            ),
+        },
+    }
+
+
+def cleanup_container(
+    name: str, *, runner=subprocess.run, clock=time.monotonic, sleep=time.sleep, window: float = 10
+) -> dict:
+    started = clock()
+    result = {"container_absent": False, "cleanup_ok": True, "observations": 0}
+    try:
+        removal = runner(["docker", "rm", "-f", name], capture_output=True, text=True, timeout=5)
+        result["cleanup_command_exit"] = removal.returncode
+    except (OSError, subprocess.TimeoutExpired):
+        result["cleanup_ok"] = False
+    while True:
+        try:
+            # Successful daemon listing, including stopped containers, is the
+            # absence oracle. CLI/daemon failures always leave state unknown.
+            inspection = runner(
+                [
+                    "docker",
+                    "container",
+                    "ls",
+                    "--all",
+                    "--no-trunc",
+                    "--filter",
+                    f"name=^/{name}$",
+                    "--format",
+                    "{{.ID}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            absent = inspection.returncode == 0 and not inspection.stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            absent = False
+        result["observations"] += 1
+        result["container_absent"] = absent
+        if not absent:
+            result["cleanup_ok"] = False
+        elapsed = clock() - started
+        if elapsed >= window:
+            break
+        sleep(min(0.5, window - elapsed))
+    result["observation_seconds"] = round(clock() - started, 3)
+    return result
 
 
 def positive_seconds(value: str) -> float:
@@ -34,8 +108,12 @@ def positive_seconds(value: str) -> float:
 def evidence_error(case: str, requests: list[dict], executions: list[dict]) -> str | None:
     if not requests:
         return "no model-boundary request observed"
+    if any(set(r.get("tools", [])) != ALLOWED_TOOLS or r.get("model") != "spark" for r in requests):
+        return "effective tool/model grants changed"
     if any(r["poison_visible"] for r in requests):
         return "ungranted skill discovered"
+    if case == "poison" and not any(r["denial_seen"] for r in requests):
+        return "introduced plugin operation was not rejected"
     if case in ("capability", "poison", "local"):
         admitted = [c["tool"] for c in executions if c["admitted"]]
         if set(admitted) != {"lookup_price", "lookup_stock"} or not any(
@@ -77,6 +155,7 @@ def run_manifest(case: str, name: str, deadline: float, image: str = IMAGE) -> d
     manifest = {
         "case": case,
         "run_id": name,
+        "scratch_directory": str(HERE / ".runs" / name),
         "session": "probe",
         "activity_attempt": 1,
         **verify(),
@@ -95,7 +174,11 @@ def run_manifest(case: str, name: str, deadline: float, image: str = IMAGE) -> d
         "observation_seconds": 10,
         "phase02_stop_oracle_pending": True,
         "stop_trigger": "host monotonic subprocess deadline",
-        "owned_work": "Docker container " + name,
+        "owned_work": [
+            "Docker container " + name,
+            "host gateway listener, handlers and provider sockets for " + name,
+        ],
+        "auxiliary_inventory": auxiliary_inventory(),
         "clock": "host time.monotonic",
         "source_commit": subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, timeout=5
@@ -106,9 +189,7 @@ def run_manifest(case: str, name: str, deadline: float, image: str = IMAGE) -> d
 
 
 def command(name: str, run: Path, case: str, image: str = IMAGE) -> list[str]:
-    site = HERE / ".venv/lib/python3.11/site-packages"
-    if not site.is_dir():
-        raise RuntimeError("Run uv sync --project spikes/dsh-harness --locked --python 3.11 first")
+    site = run.parent / "environment"
     return [
         "docker",
         "run",
@@ -158,6 +239,8 @@ def command(name: str, run: Path, case: str, image: str = IMAGE) -> list[str]:
         "dst=/opt/granted-skills/order-desk,readonly",
         "--env",
         "PYTHONPATH=/opt/site",
+        "--env",
+        "PYTHONPYCACHEPREFIX=/tmp/bytecode",
         "--env",
         "PRAXIS_SPIKE_MODEL_KEY=spike-fixture-only",
         "--workdir",
@@ -237,8 +320,20 @@ def main() -> int:
     encoded = json.dumps(manifest, sort_keys=True).encode()
     manifest_hash = hashlib.sha256(encoded).hexdigest()
     (output / (name + "-manifest.json")).write_bytes(encoded + b"\n")
-    with tempfile.TemporaryDirectory(prefix="dsh-run-", dir=output) as scratch:
-        run = Path(scratch)
+    scratch = Path(manifest["scratch_directory"])
+    scratch.mkdir()  # UUID name; never reuse or overwrite an earlier run.
+    try:
+        shutil.copytree(
+            HERE / ".venv/lib/python3.11/site-packages",
+            scratch / "environment",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            symlinks=True,
+        )
+        from preflight import verify
+
+        verify(scratch / "environment")
+        run = scratch / "state"
+        run.mkdir()
         (run / "home").mkdir()
         (run / "workspace").mkdir()
         (run / "ipc").mkdir()
@@ -270,26 +365,11 @@ def main() -> int:
         except Exception as error:
             record.update(exit=1, error=type(error).__name__)
         finally:
-            try:
-                cleanup = subprocess.run(
-                    ["docker", "rm", "-f", name], capture_output=True, timeout=5
-                )
-                # Normal completion has already removed --rm containers. For a
-                # timeout, forced removal is cleanup, never a passing stop probe.
-                record["cleanup_command_exit"] = cleanup.returncode
-                inspection = subprocess.run(
-                    ["docker", "inspect", "--format", "{{.State.Running}}", name],
-                    capture_output=True,
-                    text=True,
-                    timeout=2,
-                )
-                record["container_absent"] = inspection.returncode != 0
-                if not record["container_absent"]:
-                    record.update(exit=1, error="probe container survived cleanup")
-            except subprocess.TimeoutExpired:
-                record.update(exit=1, error="container cleanup deadline exceeded")
             if boundary is not None:
                 boundary.close()
+                record["gateway_stopped"] = not boundary.owned_work_alive()
+                if not record["gateway_stopped"]:
+                    record.update(exit=1, error="host gateway survived cleanup")
                 record["model_requests"] = boundary.requests
                 calls = run / "fixture-calls.jsonl"
                 record["tool_executions"] = (
@@ -301,11 +381,21 @@ def main() -> int:
                 if error:
                     record["exit"] = 1
                     record["error"] = error
+            record.update(cleanup_container(name))
+            if not record["cleanup_ok"]:
+                record.update(exit=1, error="container cleanup unknown or surviving work observed")
         (output / (args.case + "-" + name.removeprefix("praxis-dsh-") + ".json")).write_text(
             json.dumps(record, indent=2) + "\n"
         )
         print(json.dumps(record, indent=2))
         return int(record["exit"] != 0)
+    finally:
+        # Preserve unknown/live state for explicit recovery; never erase its
+        # ownership record or credentials while owned work may still use it.
+        if "record" not in locals() or (
+            record.get("cleanup_ok") and record.get("gateway_stopped", True)
+        ):
+            shutil.rmtree(scratch)
 
 
 if __name__ == "__main__":

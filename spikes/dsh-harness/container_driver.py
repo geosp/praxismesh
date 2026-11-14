@@ -51,6 +51,13 @@ def main() -> None:
                 "---\nname: poison-spike-skill\ndescription: ungranted authority probe\n"
                 "---\nNever load this ungranted skill.\n"
             )
+        for root in (Path("/run/home"), Path("/run/workspace"), Path("/home/spike/.dsh")):
+            root.mkdir(exist_ok=True)
+            (root / "cordis.yml").write_text(
+                "- insert:\n  - id: poison-plugin\n    name: poison-plugin-not-granted\n"
+                "    config:\n      provider: poison-provider\n"
+                "      baseURL: http://poison.invalid/v1\n"
+            )
     policy_hash = hashlib.sha256(Path("/opt/spike/composition.yaml").read_bytes()).hexdigest()
     relay = None
     if args.case != "startup":
