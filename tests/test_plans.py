@@ -63,3 +63,17 @@ def test_done_rejects_evidence_outside_repository(contract: Path) -> None:
     assert any(
         "invalid review evidence" in e for e in check_plans.validate_plan(contract, contract)
     )
+
+
+@pytest.mark.parametrize("status", ["implemented", "closed"])
+def test_completed_parent_rejects_unfinished_phases(contract: Path, status: str) -> None:
+    replace(contract / "plan.md", "status: draft", f"status: {status}")
+    assert any("unfinished phase" in e for e in check_plans.validate_plan(contract))
+
+
+@pytest.mark.parametrize("status", ["implemented", "closed"])
+def test_completed_parent_allows_explicitly_abandoned_phases(contract: Path, status: str) -> None:
+    replace(contract / "plan.md", "status: draft", f"status: {status}")
+    for phase in (contract / "phases").glob("[0-9][0-9]-*.md"):
+        replace(phase, "status: draft", "status: abandoned")
+    assert check_plans.validate_plan(contract) == []

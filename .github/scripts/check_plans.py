@@ -59,6 +59,11 @@ def validate_plan(folder: Path, repository: Path = ROOT) -> list[str]:
         delivered: set[str] = set()
         for path in phases:
             phase, tasks = frontmatter(path)
+            if plan.get("status") in {"implemented", "closed"} and phase.get("status") not in {
+                "done",
+                "abandoned",
+            }:
+                errors.append(f"{path.name}: completed parent has an unfinished phase")
             ids = phase.get("delivers")
             if not isinstance(ids, list) or not ids or not all(isinstance(i, str) for i in ids):
                 errors.append(f"{path.name}: delivers must be a non-empty list of requirement IDs")

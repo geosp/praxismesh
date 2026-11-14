@@ -6,7 +6,7 @@ branch: null
 base: null
 delivers: [R1, R2, R3, R4, R5]
 design_review: { status: none, rounds: 0, last: null }
-impl_review: { status: none, rounds: 0, last: null }
+impl_review: { status: passed, rounds: 1, last: 2026-11-14 }
 approved: null
 ---
 

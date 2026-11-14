@@ -2,7 +2,7 @@
 title: Centralize planning skills and retire active OpenSpec
 status: draft
 created: 2026-11-13
-updated: 2026-11-13
+updated: 2026-11-14
 design_review: { status: none, rounds: 0, last: null }
 approved: null
 adr_review: null
@@ -71,9 +71,12 @@ Public CI must validate local implementation contracts without fetching Skill Ce
 
 ## Decisions
 
-### D1 · Share the suite through owned user links
+### D1 · Share the suite through owned user installations
 
-Keep one portable canonical suite and explicit harness variants. Rejected: copying
+Keep one portable canonical suite and explicit harness variants. Skills and most
+agent variants use owned links; Codex reviewer variants use owned config_file
+references to canonical regular TOML files, because Codex refuses symlinked role
+configuration. Rejected: copying
 skills into PraxisMesh, because project copies drift. Details: notes.md#d1
 
 ### D2 · Use implementation plans for future requirements and designs

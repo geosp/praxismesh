@@ -40,8 +40,9 @@ The protected suite and compatibility fix are installed locally at revision
 Fresh Linux sessions pass for Codex and Claude planning-skill invocation, and all
 three Codex reviewer roles load through ordinary installed configuration without
 overrides. See the [activation evidence](skill-central-migration-checks.md#post-merge-codex-activation-2026-11-14).
-Remaining harness invocation checks, user Linux/macOS confirmation and independent
-cutover review remain merge prerequisites; doctor alone does not satisfy them.
+The owner subsequently confirmed all harnesses passed in fresh Linux/macOS
+sessions. Independent cutover review remains a merge prerequisite; doctor alone
+does not satisfy it.
 
 ## Authoritative documents
 

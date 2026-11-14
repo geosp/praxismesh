@@ -145,3 +145,13 @@ The PraxisMesh cutover remains draft pending independent cutover review, success
 Copilot and Antigravity invocation, and owner confirmation in fresh Linux/macOS
 sessions. The earlier failure records above describe the superseded installation
 and remain as historical evidence.
+
+
+## Owner cross-platform confirmation, 2026-11-14
+
+Asked whether the installed planning and review skills had been tested in fresh
+Linux and macOS sessions, including the outstanding Copilot and Antigravity
+invocations, the owner replied: “All passed.” This records owner confirmation for
+the supported harness/platform matrix. It does not replace the earlier observed
+Linux results or claim those headless failures were reproduced as passing here.
+Independent cutover review and latest-head CI remain required before owner merge.
