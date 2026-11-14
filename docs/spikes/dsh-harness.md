@@ -142,3 +142,24 @@ reproduced the complete environment digest after canonicalizing RECORD entries
 for unmounted launcher scripts. No executable source or native file is excluded.
 Fresh frozen-run evidence and the final implementation review follow these changes;
 the original pre-review results above remain preserved.
+
+Corrected walkthrough source: `75a3746ba8159059070c1565f086fdf8db154b53`.
+[Corrected manifests, results and mutation-test outcomes](dsh-phase01-corrections-evidence.json)
+retain the original record separately. All seven probes passed; each container
+was confirmed absent throughout observation, and all started host gateways stopped.
+
+| Probe | Outcome | Completion requests | Cleanup observation seconds |
+| --- | --- | --- | --- |
+| startup | pass | 0 | 10.015 |
+| catalog | pass | 1 | 10.014 |
+| capability | pass | 4 | 10.016 |
+| poison | pass | 5 | 10.034 |
+| denied-tool | pass | 2 | 10.02 |
+| native-text | pass | 2 | 10.016 |
+| local | pass | 3 | 10.012 |
+
+Corrected checks: 22 spike tests and 165 repository tests passed (91 integration
+tests deselected); lint/format, mypy, locked sync, agent sync, plan validation and
+offline links passed. The earlier artifact-hash gitleaks false positive remains
+unresolved; scanner policy was not changed. Final independent review and
+verification remain due.
