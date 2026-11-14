@@ -1,10 +1,10 @@
 ---
 title: Rename the project roadmap directory
-status: draft
+status: approved
 created: 2026-11-14
 updated: 2026-11-14
-design_review: { status: changes-requested, rounds: 1, last: 2026-11-14 }
-approved: null
+design_review: { status: passed, rounds: 2, last: 2026-11-14 }
+approved: 2026-11-14
 adr_review: null
 ---
 
@@ -54,6 +54,8 @@ records on 2026-11-14.
   are documented in the planning workflow.
 - **Skill Central suite**: the externally maintained `impl-plan`, `design-review`
   and `impl-review` skills, helper and reviewers installed in user discovery roots.
+- **OpenSpec**: the former specification/change-artifact workflow, now retired
+  from active development while its historical records are preserved.
 - **Prior migration metadata**: lifecycle fields in the earlier
   [skill-central-migration plan](../2026-11-13-skill-central-migration/plan.md),
   which tracked replacement of active OpenSpec and local review skills.
@@ -91,11 +93,14 @@ Historical records must retain their contents apart from authorized Markdown nav
 ### R5 · Roadmap meaning is preserved
 
 The directory move must preserve roadmap requirements, task states, acceptance criteria and phase order.
-- **Given** a moved roadmap file, **when** its diff is audited, **then** changes consist only of path maintenance and the directory-organization entry in docs/roadmap/decision-log.md.
+- **Given** a moved roadmap file, **when** its diff is audited, **then** those properties remain unchanged.
+
+Permitted edits are path maintenance and the directory-organization entry in
+docs/roadmap/decision-log.md; the entry does not change runtime requirements.
 
 ### R6 · Secret scanning remains narrowly scoped
 
-The reviewed schema prose exception must preserve the exact rule, line expression
+The reviewed schema prose exception must preserve the exact rule, allowlist line-matching expression
 and two paths specified in the [scanner contract](notes.md#scanner-contract).
 - **Given** historical and current schema prose, **when** scanning runs, **then** that reviewed phrase remains allowed at both exact paths.
 - **Given** unallowlisted dummy content at either schema path or an ordinary file, **when** scanning runs, **then** it is detected without exposing raw values in evidence.
@@ -105,18 +110,17 @@ and two paths specified in the [scanner contract](notes.md#scanner-contract).
 ### D1 · Separate the roadmap by directory name
 
 Move docs/plan to docs/roadmap and update the document map. Retain the filename
-PROJECT_PLAN.md and the R2 discovery root; their document contents may receive
-the path and navigation maintenance required by R3. Rejected: putting the roadmap inside docs/plans, because
-it has a different role and format from the implementation contracts discovered there.
+PROJECT_PLAN.md and the docs/plans discovery root. Maintain navigation in the root
+document and implementation-contract files under R3/R4. Rejected: putting the
+roadmap inside docs/plans, because its role and format differ from the contracts.
 Details: notes.md#d1
 
 ### D2 · Preserve historical prose and repair navigation only
 
-Use the owner's explicit exception to update Markdown destinations in historical
-records, retaining labels and recorded inputs. Record the maintenance in this plan's
-[preservation procedure](notes.md#preservation-baseline), using its designated
-baseline and affected-record inventory. Rejected: compatibility pages at
-docs/plan, because they retain the confusing directory and require maintenance.
+Use the owner's navigation-maintenance exception to satisfy R4 through the
+[preservation procedure](notes.md#preservation-baseline), its designated baseline
+and affected-record inventory. Rejected: compatibility pages at docs/plan, because
+they retain the confusing directory and require maintenance.
 
 ### D3 · Preserve historical scan compatibility
 
@@ -130,13 +134,13 @@ because either changes scanning beyond the move. Details: notes.md#scanner-contr
 - This is documentation/tooling maintenance, not a runtime phase closure.
 - Existing ADRs need no new architectural decision for a directory rename; the
   ordinary decision log records its documentation impact.
-- Source ZIPs, user installations and the private suite require no edits.
+- Source ZIPs, user installations and the Skill Central suite require no edits.
 
 ## Risks
 
 - Relative links break: inventory link destinations and run the offline link check.
-- A bulk replacement rewrites evidence: isolate historical navigation edits and
-  compare all other bytes against the frozen baseline.
+- A bulk replacement affects evidence: enforce the byte comparison in the
+  preservation procedure before accepting R4.
 - History scanning regresses: preserve both exact exception paths and execute R6.
 - Runtime requirements drift: audit moved-file diffs before independent review.
 
@@ -167,6 +171,7 @@ entry points, expected outcomes and preservation comparisons.
 
 ## Links
 
+- [Issue #60](https://github.com/geosp/praxismesh/issues/60): rename tracking and acceptance.
 - [Project plan](../../../PROJECT_PLAN.md): authoritative scope and phase gates.
 - [Planning workflow](../../development/planning.md): canonical skills and frozen reviews.
 - [Review protocol](../../reviews/README.md): independence and saved verdicts.
@@ -175,7 +180,7 @@ entry points, expected outcomes and preservation comparisons.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | Rename and verify roadmap navigation | draft | 0/3 |
+| 01 | Rename and verify roadmap navigation | approved | 0/3 |
 
 ## Decision log
 

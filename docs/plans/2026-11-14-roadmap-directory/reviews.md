@@ -38,3 +38,40 @@ approval covers those plan corrections, not implementation or phase closure.
 The frozen round-1 report remains unchanged. Design-review metadata remains
 changes-requested pending the second, fresh review; no PASS is inferred from
 structural validation or the author's corrections.
+
+
+## 2026-11-14 · design-review · plan · round 2 · passed
+
+- Frozen contract: fd9425d6635c2dd11b4bd33d06c198ed6338e8ac.
+- Reviewers: fresh reader completed; codebase fit completed; zoom out completed.
+- [Independent report and verbatim paraphrases](../../reviews/general-roadmap-directory/design-review-02.md).
+- Helper: zero errors and warnings. Reader instruction-visibility limitation is
+  disclosed. No Blocker or Major remains open; no implementation has begun.
+- R2-01–03 are contested with evidence in the report: the explicit notes links
+  supply the mechanics, as the skill's two-layer format permits. R2-06's demand
+  to duplicate the inventory is also contested there.
+- The report's authoritative count is six open wording rows, despite its initial
+  seven-Nit wording. Those six corrections are resolved below; frozen report text
+  remains unchanged. No third round was run.
+
+| ID | Severity | Reviewer | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| R2-04 / F5 | Nit | Reader | Private-suite terminology is inconsistent. | fixed: Assumptions now uses the defined Skill Central suite term. |
+| R2-05 / F5 | Nit | Reader | OpenSpec's former role is implicit. | fixed: Terms defines the retired specification/change-artifact workflow. |
+| R2-07 | Nit | Reader | Historical preservation wording repeats. | fixed: D2 and the risk mitigation refer to R4 and the preservation procedure. |
+| R2-08 | Nit | Reader | R5 blends the invariant and allowed edits. | fixed: R5 states preservation separately from its permitted-edits paragraph. |
+| R2-09 / F10 | Nit | Reader | D1's pronoun obscures which contents change. | fixed: D1 explicitly names PROJECT_PLAN.md, docs/plans and navigation in root/contract files. |
+| R2-10 | Nit | Reader | Line expression is vague. | fixed: R6 says allowlist line-matching expression; exact frozen field remains in the scanner contract. |
+
+All ten owner-approved round-1 corrections are now resolved, including the narrow
+terminology and clarity recurrences above. Final changes address wording only;
+the reviewed scope and requirements remain intact. Plan/phase design-review
+metadata is passed, two rounds. Lifecycle approval remains the next checkpoint.
+
+
+## 2026-11-14 · approved · plan
+
+The owner stated: “I approve it.” The approve gate passed after independent
+whole-plan design review PASS (two rounds). Plan and phase 01 are approved;
+no waiver was used. Task boxes remain unticked. Branch selection and the start
+gate precede implementation.
