@@ -22,8 +22,10 @@ uv run skill-central doctor --harness all
 ```
 
 The installer owns individual links and refuses unmanaged destinations. Codex
-skills use `~/.agents/skills`, agents use `~/.codex/agents/*.toml`; Claude/Copilot
-have their own user discovery roots. Preserve and explicitly quarantine conflicting
+skills use `~/.agents/skills`; shared reviewer agents use owned
+`agents.<name>.config_file` entries in `~/.codex/config.toml` that reference
+canonical regular TOML files. Other harnesses use owned agent links in their user
+discovery roots. Preserve and explicitly quarantine conflicting
 legacy user paths before activation; never force or overwrite them. Restart each
 harness and confirm discovery and a sample plan/review on Linux and macOS. Keep
 original ZIP exports and old evidence; cleanup needs separate authorization.
@@ -33,13 +35,12 @@ run every public CI check. The suite automates the workflow; it is not a runtime
 or CI dependency. New tooling must not fetch the private repository or require
 private credentials for fork CI.
 
-The protected suite revision `5cfdf5f4d25769dcffaecd47c40f2c87c1e167cc` is now
-installed locally; doctor and repeat-install checks pass. See the
-[activation evidence](skill-central-migration-checks.md#local-activation-2026-11-14).
-Fresh Linux tests pass for Codex and Claude planning-skill invocation, but Codex
-reviewer loading fails through the installed symlink. A direct canonical-file
-reference worked only in a session-level diagnostic. A protected installer fix,
-remaining harness invocation checks, user Linux/macOS confirmation and independent
+The protected suite and compatibility fix are installed locally at revision
+`ec3b7d71ebdb08556c0d5b4d8c988305a89e37d9`. Doctor and repeat-install checks pass.
+Fresh Linux sessions pass for Codex and Claude planning-skill invocation, and all
+three Codex reviewer roles load through ordinary installed configuration without
+overrides. See the [activation evidence](skill-central-migration-checks.md#post-merge-codex-activation-2026-11-14).
+Remaining harness invocation checks, user Linux/macOS confirmation and independent
 cutover review remain merge prerequisites; doctor alone does not satisfy them.
 
 ## Authoritative documents
@@ -93,7 +94,7 @@ those claims against the saved evidence.
 Codex discovery paths and inherited agent permissions were checked against the
 [official skills documentation](https://developers.openai.com/codex/skills) and
 [official subagent documentation](https://developers.openai.com/codex/subagents)
-on 2026-11-13. Live activation checks remain pending.
+on 2026-11-13. Subsequent live activation results and remaining checks are recorded below.
 
 [Candidate validation and remaining gates](skill-central-migration-checks.md) records
 what was actually tested and what remains before activation.

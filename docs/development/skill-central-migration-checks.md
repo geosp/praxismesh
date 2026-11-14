@@ -121,3 +121,27 @@ protected Skill Central workflow, then activate and rerun normal reviewer loadin
 The public PraxisMesh cutover must remain draft. Copilot and Antigravity invocation,
 user Linux/macOS confirmation, and independent cutover review also remain pending.
 Doctor passing is insufficient to claim those capabilities work.
+
+
+## Post-merge Codex activation, 2026-11-14
+
+The owner merged Skill Central PR #56. The managed updater advanced the actual
+canonical checkout to protected main revision
+`ec3b7d71ebdb08556c0d5b4d8c988305a89e37d9`, then the merged installer migrated
+exactly three owned Codex reviewer links to owned `config_file` references in the
+normal user configuration. Canonical sources and original ZIPs remain preserved.
+Unrelated configuration bytes and file mode were compared before and after and
+remained unchanged. Doctor passed for all four harnesses; a repeat preview showed
+104 unchanged entries and zero pending changes.
+
+A fresh, ephemeral Codex session using ordinary installed user configuration,
+with no session-level role overrides, successfully invoked `design-reader`,
+`design-reviewer` and `impl-reviewer`. Each received only the temporary migration
+plan and returned an accurate one-sentence summary in a fresh context. No built-in
+role was substituted. This resolves the earlier Codex loading blocker; this was
+an installation smoke test, not an independent cutover review.
+
+The PraxisMesh cutover remains draft pending independent cutover review, successful
+Copilot and Antigravity invocation, and owner confirmation in fresh Linux/macOS
+sessions. The earlier failure records above describe the superseded installation
+and remain as historical evidence.
