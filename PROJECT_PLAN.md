@@ -20,20 +20,20 @@ while retaining Kubernetes administration in Phase 8. This owner-accepted sequen
 is tracked in [ADR-0003](docs/adr/0003-early-compose-task-ui.md) and issue #56;
 it does not implement a UI or waive any phase gate.
 
-This file is the core plan. Detail lives in `docs/plan/`. Section numbers are stable across files, so a reference such as §4.16 means that numbered section in the file shown here. Load only what a session needs (§9, item 7).
+This file is the core plan. Detail lives in `docs/roadmap/`. Section numbers are stable across files, so a reference such as §4.16 means that numbered section in the file shown here. Load only what a session needs (§9, item 7).
 
 | Section | File |
 |---|---|
-| Pre-0 feasibility spike and open inputs; §0 bootstrap | [docs/plan/bootstrap.md](docs/plan/bootstrap.md) |
+| Pre-0 feasibility spike and open inputs; §0 bootstrap | [docs/roadmap/bootstrap.md](docs/roadmap/bootstrap.md) |
 | §1 What we are building; §2 Hard constraints; §3 Architecture | this file |
-| §4 Core design decisions (4.1–4.17) | [docs/plan/design-decisions.md](docs/plan/design-decisions.md) |
-| §5 Schemas and persistence model | [docs/plan/schemas.md](docs/plan/schemas.md) |
+| §4 Core design decisions (4.1–4.17) | [docs/roadmap/design-decisions.md](docs/roadmap/design-decisions.md) |
+| §5 Schemas and persistence model | [docs/roadmap/schemas.md](docs/roadmap/schemas.md) |
 | §6 Repository layout; §7 phase order, process tiers, risk register, phase index | this file |
-| §7 Phase task lists, acceptance criteria and demos | `docs/plan/phases/phase-*.md` (index in §7.2) |
+| §7 Phase task lists, acceptance criteria and demos | `docs/roadmap/phases/phase-*.md` (index in §7.2) |
 | §8 Testing rules; §9 Working agreement | this file |
-| §10 Decision log | [docs/plan/decision-log.md](docs/plan/decision-log.md) |
-| §11 External references | [docs/plan/references.md](docs/plan/references.md) |
-| Revision history | [docs/plan/revision-history.md](docs/plan/revision-history.md) |
+| §10 Decision log | [docs/roadmap/decision-log.md](docs/roadmap/decision-log.md) |
+| §11 External references | [docs/roadmap/references.md](docs/roadmap/references.md) |
+| Revision history | [docs/roadmap/revision-history.md](docs/roadmap/revision-history.md) |
 
 ## 1. What we are building
 
@@ -151,11 +151,11 @@ Metrics: Prometheus + vLLM + GPU exporters + Temporal visibility
 
 ## 4. Core design decisions
 
-See [docs/plan/design-decisions.md](docs/plan/design-decisions.md).
+See [docs/roadmap/design-decisions.md](docs/roadmap/design-decisions.md).
 
 ## 5. Versioned schemas and persistence model
 
-See [docs/plan/schemas.md](docs/plan/schemas.md).
+See [docs/roadmap/schemas.md](docs/roadmap/schemas.md).
 
 ## 6. Repository layout
 
@@ -175,7 +175,7 @@ See [docs/plan/schemas.md](docs/plan/schemas.md).
 /control_plane         api/ FastAPI + web/ React/Vite
 /deploy                Helm, CRDs, kind/k3d bootstrap, NetworkPolicies
 /tests                 unit, replay/time-skipping, integration, e2e, failure/chaos
-/docs                  README.md, rfcs/, adr/, architecture/, templates/, plan/, reviews/, demos/, spikes/, benchmarks/, security/, api/, operations/, release.md
+/docs                  README.md, rfcs/, adr/, architecture/, templates/, roadmap/, reviews/, demos/, spikes/, benchmarks/, security/, api/, operations/, release.md
 /docs/plans            reviewed implementation contracts for new work
 /openspec              historical specs/ and archived changes/; no active workflow
 /.agents               the one real copy for coding harnesses: skills/<name>/SKILL.md (reviewed specialist
@@ -186,7 +186,7 @@ See [docs/plan/schemas.md](docs/plan/schemas.md).
 /AGENTS.md, /CLAUDE.md shared agent instructions; CLAUDE.md imports AGENTS.md
 /.github               CI workflows, issue/PR templates, CODEOWNERS; agents/*.agent.md generated for Copilot
 /Makefile
-/PROJECT_PLAN.md       core plan; detail lives in /docs/plan (see the document map)
+/PROJECT_PLAN.md       core plan; detail lives in /docs/roadmap (see the document map)
 ```
 
 ## 7. Implementation phases
@@ -232,19 +232,19 @@ Each phase implementation plan restates the risks it meets and the measurable si
 
 | Phase | Title | Process tier | In MVP | File |
 |---|---|---|---|---|
-| 0 | Local infrastructure | Light | Yes | [docs/plan/phases/phase-0.md](docs/plan/phases/phase-0.md) |
-| 1 | Harness-in-Activity, single agent | Light | Yes | [docs/plan/phases/phase-1.md](docs/plan/phases/phase-1.md) |
-| 2 | Real-time events and the comms MCP | Light | Yes | [docs/plan/phases/phase-2.md](docs/plan/phases/phase-2.md) |
-| 3A | Persistence, triage, routing and DAG dispatch | Full | Yes | [docs/plan/phases/phase-3a.md](docs/plan/phases/phase-3a.md) |
-| 3B | Verification, escalation, replanning and bounded execution | Full | Yes | [docs/plan/phases/phase-3b.md](docs/plan/phases/phase-3b.md) |
-| 4 | OpenAI-compatible gateway | Full | Yes | [docs/plan/phases/phase-4.md](docs/plan/phases/phase-4.md) |
-| 4A | Live task interaction UI on Compose | Full | Yes | [docs/plan/phases/phase-4a.md](docs/plan/phases/phase-4a.md) |
-| 5 | GitHub delivery | Full | Yes | [docs/plan/phases/phase-5.md](docs/plan/phases/phase-5.md) |
-| 6 | Agent maintenance (steward) | Full | Post-MVP | [docs/plan/phases/phase-6.md](docs/plan/phases/phase-6.md) |
-| 6B | Reusable, independently verified workflows | Full | Post-MVP | [docs/plan/phases/phase-6b.md](docs/plan/phases/phase-6b.md) |
-| 7 | Kubernetes deployment | Full | Post-MVP | [docs/plan/phases/phase-7.md](docs/plan/phases/phase-7.md) |
-| 8 | Platform administration UI and API | Full | Post-MVP | [docs/plan/phases/phase-8.md](docs/plan/phases/phase-8.md) |
-| 9 | Hardening | Full | Post-MVP | [docs/plan/phases/phase-9.md](docs/plan/phases/phase-9.md) |
+| 0 | Local infrastructure | Light | Yes | [docs/roadmap/phases/phase-0.md](docs/roadmap/phases/phase-0.md) |
+| 1 | Harness-in-Activity, single agent | Light | Yes | [docs/roadmap/phases/phase-1.md](docs/roadmap/phases/phase-1.md) |
+| 2 | Real-time events and the comms MCP | Light | Yes | [docs/roadmap/phases/phase-2.md](docs/roadmap/phases/phase-2.md) |
+| 3A | Persistence, triage, routing and DAG dispatch | Full | Yes | [docs/roadmap/phases/phase-3a.md](docs/roadmap/phases/phase-3a.md) |
+| 3B | Verification, escalation, replanning and bounded execution | Full | Yes | [docs/roadmap/phases/phase-3b.md](docs/roadmap/phases/phase-3b.md) |
+| 4 | OpenAI-compatible gateway | Full | Yes | [docs/roadmap/phases/phase-4.md](docs/roadmap/phases/phase-4.md) |
+| 4A | Live task interaction UI on Compose | Full | Yes | [docs/roadmap/phases/phase-4a.md](docs/roadmap/phases/phase-4a.md) |
+| 5 | GitHub delivery | Full | Yes | [docs/roadmap/phases/phase-5.md](docs/roadmap/phases/phase-5.md) |
+| 6 | Agent maintenance (steward) | Full | Post-MVP | [docs/roadmap/phases/phase-6.md](docs/roadmap/phases/phase-6.md) |
+| 6B | Reusable, independently verified workflows | Full | Post-MVP | [docs/roadmap/phases/phase-6b.md](docs/roadmap/phases/phase-6b.md) |
+| 7 | Kubernetes deployment | Full | Post-MVP | [docs/roadmap/phases/phase-7.md](docs/roadmap/phases/phase-7.md) |
+| 8 | Platform administration UI and API | Full | Post-MVP | [docs/roadmap/phases/phase-8.md](docs/roadmap/phases/phase-8.md) |
+| 9 | Hardening | Full | Post-MVP | [docs/roadmap/phases/phase-9.md](docs/roadmap/phases/phase-9.md) |
 
 ## 8. Testing rules
 
@@ -280,12 +280,12 @@ Each phase implementation plan restates the risks it meets and the measurable si
 4. No new hosted dependencies beyond GitHub, optional Anthropic API, and **optional explicitly opted-in GCS storage**. Always keep the default deployment local.
 5. No secrets committed/logged. Prompt content, repository files, tool output and webhook bodies are untrusted; tool/capability privileges come from validated system configuration.
 6. Keep this plan as the source of truth for scope, sequencing, constraints and gates (see the §4.16 precedence rule); update task checkboxes only after verified completion, and update the Decision log whenever constraints, APIs, architecture, or acceptance criteria change.
-7. **Context loading (rev 2.10):** a session reads `PROJECT_PLAN.md`, the file for its phase, the design sections that file lists under *Read first*, and `docs/plan/schemas.md` when it touches schemas. It reads the decision log and revision history only to check why something was decided. Do not load the whole set by default.
+7. **Context loading (rev 2.10):** a session reads `PROJECT_PLAN.md`, the file for its phase, the design sections that file lists under *Read first*, and `docs/roadmap/schemas.md` when it touches schemas. It reads the decision log and revision history only to check why something was decided. Do not load the whole set by default.
 
 ## 10. Decision log
 
-See [docs/plan/decision-log.md](docs/plan/decision-log.md).
+See [docs/roadmap/decision-log.md](docs/roadmap/decision-log.md).
 
 ## 11. External references to verify at implementation
 
-See [docs/plan/references.md](docs/plan/references.md). Revision history: [docs/plan/revision-history.md](docs/plan/revision-history.md).
+See [docs/roadmap/references.md](docs/roadmap/references.md). Revision history: [docs/roadmap/revision-history.md](docs/roadmap/revision-history.md).

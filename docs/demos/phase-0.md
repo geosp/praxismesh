@@ -1,6 +1,6 @@
 # Phase 0 demo evidence
 
-Evidence for the Phase 0 demo in [docs/plan/phases/phase-0.md](../plan/phases/phase-0.md), following the demo steps in the [RFC](../rfcs/phase-0-local-infrastructure.md#testing-and-demo). Items are marked pass only with observed output. **Status: all six steps pass in the implementer's run; independent verification (`verify-phase`) is still to come.**
+Evidence for the Phase 0 demo in [docs/plan/phases/phase-0.md](../roadmap/phases/phase-0.md), following the demo steps in the [RFC](../rfcs/phase-0-local-infrastructure.md#testing-and-demo). Items are marked pass only with observed output. **Status: all six steps pass in the implementer's run; independent verification (`verify-phase`) is still to come.**
 
 ## Environment
 

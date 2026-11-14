@@ -158,3 +158,41 @@ and follow its roadmap and implementation-plan entries. Expected: distinct roles
 valid destinations and no lost anchors. Save the observed outcomes and immutable
 implementation SHA with the review/verification evidence. No runtime phase closure
 is implied. Required CI must pass on the final PR head before owner merge.
+
+
+## Historical navigation maintenance
+
+Authorized 2026-11-14: update navigation destinations only. The
+[byte-offset manifest](historical-navigation.json) records the exact baseline blob,
+original ranges and old/new destinations. All other baseline historical records
+remain byte-identical. Historical labels and recorded inputs retain their original
+paths; current navigation follows the roadmap directory.
+
+| Record | Baseline blob | Destination edits |
+| --- | --- | --- |
+| `docs/adr/0003-early-compose-task-ui.md` | `92315a26de091394bd5fcbfb781277a400513cff` | 8 |
+| `docs/demos/bootstrap.md` | `43337636cd73c30ca8466911a5afc4a4279d1d6b` | 1 |
+| `docs/demos/phase-0.md` | `a82d4cfd4faf4604e1d4d5998af96b6156d07013` | 1 |
+| `docs/demos/phase-1.md` | `53a95a486b89a3a2113d858750d3b9e372f68e83` | 1 |
+| `docs/reviews/phase-1/gate-followup.md` | `3a7a5a9504cde3bfd66b12384aa997929e2aa697` | 1 |
+| `docs/rfcs/phase-1-single-agent.md` | `3b35cc8f58c9617a8e2dbb900f8df1695f77bbcd` | 3 |
+
+Compared inventory: 147 baseline historical files; 6 changed records; 15 destination edits.
+
+
+## Implementation check observations
+
+The workflow canary matches the unique file/line/rule locations. The ordinary
+fixture can produce two generic-api-key matches at the same location (the known
+prose false positive and the generated dummy key); counting raw matches would
+incorrectly fail the intended canary. Distinct expected locations remain exact.
+The current contract passed; removing the new path or changing AND to OR was
+correctly rejected by the same canary.
+
+The local default all-refs history scan reported one pre-existing finding in an
+unmerged commit, bc7fe4889d85cf3059f2a5a9676fb1ccb5738c3c, outside the preservation
+baseline's ancestry. The unchanged baseline configuration reports the identical
+finding. A full reachable-baseline scan passed, and the current HEAD lineage scan
+passed with the new configuration. No suppression or CI history-selection change
+was added for that local-only history. Report this distinction rather than
+claiming the default all-local-refs scan passed.

@@ -1,6 +1,6 @@
 # Releases, versioning and compatibility
 
-This document defines how PraxisMesh is versioned and released, and the compatibility rules every change must follow (plan §0.1). Nothing has been released yet. The first tagged release happens when Phase 5 closes (the MVP; `docs/plan/phases/phase-5.md`).
+This document defines how PraxisMesh is versioned and released, and the compatibility rules every change must follow (plan §0.1). Nothing has been released yet. The first tagged release happens when Phase 5 closes (the MVP; `docs/roadmap/phases/phase-5.md`).
 
 ## Versioning
 

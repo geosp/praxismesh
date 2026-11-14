@@ -1,6 +1,6 @@
 # Pre-0.1 spike: Claude harness on a local model via vLLM
 
-Throwaway experiment for [docs/plan/bootstrap.md](../../docs/plan/bootstrap.md) Pre-0.1 (issue #31). Not product code: it has its own `uv` project and is excluded from the root lint and type checks.
+Throwaway experiment for [docs/roadmap/bootstrap.md](../../docs/roadmap/bootstrap.md) Pre-0.1 (issue #31). Not product code: it has its own `uv` project and is excluded from the root lint and type checks.
 
 **Question:** can a Claude harness (Claude Agent SDK) complete multi-step, tool-using work against `qwen3.8-flash-next` served by vLLM's Anthropic Messages endpoint? The OpenAI Agents SDK on vLLM's OpenAI-compatible endpoint runs the same tasks as the fallback.
 

@@ -9,7 +9,7 @@ Phase 2 is next; its design and implementation have not started.
 | Folder | What it holds | Written when |
 |---|---|---|
 | [plans/](plans/) | Implementation contracts for new work | Before implementation |
-| [plan/](plan/) | The detailed project plan; start from [PROJECT_PLAN.md](../PROJECT_PLAN.md) | Maintained throughout |
+| [roadmap/](roadmap/) | The detailed project roadmap; start from [PROJECT_PLAN.md](../PROJECT_PLAN.md) | Maintained throughout |
 | [rfcs/](rfcs/README.md) | Proposed designs, one per phase or material change | Before implementation |
 | [adr/](adr/README.md) | Architecture decision records | When a consequential decision is made |
 | [architecture/](architecture/README.md) | As-built architecture of what actually runs | After implementation, verified before phase closure |

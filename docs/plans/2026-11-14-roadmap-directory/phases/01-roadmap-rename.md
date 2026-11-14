@@ -1,9 +1,9 @@
 ---
 phase: 1
 title: Rename and verify roadmap navigation
-status: approved
-branch: null
-base: null
+status: in-progress
+branch: docs/60-roadmap-directory
+base: 824ddb625f9fc40b04ad5d097e16ba6aaa93a2b7
 delivers: [R1, R2, R3, R4, R5, R6]
 design_review: { status: passed, rounds: 2, last: 2026-11-14 }
 impl_review: { status: none, rounds: 0, last: null }

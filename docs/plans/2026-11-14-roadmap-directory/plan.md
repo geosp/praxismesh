@@ -1,6 +1,6 @@
 ---
 title: Rename the project roadmap directory
-status: approved
+status: in-progress
 created: 2026-11-14
 updated: 2026-11-14
 design_review: { status: passed, rounds: 2, last: 2026-11-14 }
@@ -180,7 +180,7 @@ entry points, expected outcomes and preservation comparisons.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | Rename and verify roadmap navigation | approved | 0/3 |
+| 01 | Rename and verify roadmap navigation | in-progress | 0/3 |
 
 ## Decision log
 

@@ -23,7 +23,7 @@ Phase 0 built the local stack: Temporal, ParadeDB, SeaweedFS, and an external vL
 
 Plan references:
 - [PROJECT_PLAN.md](../../PROJECT_PLAN.md) and its document map;
-- [the Phase 1 file](../plan/phases/phase-1.md), the [design decisions](../plan/design-decisions.md) §4.1, §4.2, §4.10 and §4.13, and the [schemas](../plan/schemas.md) §5.
+- [the Phase 1 file](../roadmap/phases/phase-1.md), the [design decisions](../roadmap/design-decisions.md) §4.1, §4.2, §4.10 and §4.13, and the [schemas](../roadmap/schemas.md) §5.
 
 The Pre-0 spike, [docs/spikes/harness-vllm.md](../spikes/harness-vllm.md), ran both harnesses against the local model. Its 10 tasks seed the benchmark suite.
 

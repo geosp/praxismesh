@@ -1,0 +1,147 @@
+{
+  "baseline": "baf8f32abe9c95fe8d0c0609f6997cdfb58e3fda",
+  "files": [
+    {
+      "path": "docs/adr/0003-early-compose-task-ui.md",
+      "baseline_blob": "92315a26de091394bd5fcbfb781277a400513cff",
+      "edits": [
+        {
+          "start": 3626,
+          "end": 3651,
+          "old": "../plan/phases/phase-8.md",
+          "new": "../roadmap/phases/phase-8.md",
+          "line": 70
+        },
+        {
+          "start": 3865,
+          "end": 3966,
+          "old": "../plan/design-decisions.md#415-reusable-independently-verified-workflows-planned-platform-capability",
+          "new": "../roadmap/design-decisions.md#415-reusable-independently-verified-workflows-planned-platform-capability",
+          "line": 72
+        },
+        {
+          "start": 6282,
+          "end": 6307,
+          "old": "../plan/phases/phase-2.md",
+          "new": "../roadmap/phases/phase-2.md",
+          "line": 113
+        },
+        {
+          "start": 6356,
+          "end": 6382,
+          "old": "../plan/phases/phase-3b.md",
+          "new": "../roadmap/phases/phase-3b.md",
+          "line": 114
+        },
+        {
+          "start": 6435,
+          "end": 6460,
+          "old": "../plan/phases/phase-4.md",
+          "new": "../roadmap/phases/phase-4.md",
+          "line": 115
+        },
+        {
+          "start": 6511,
+          "end": 6537,
+          "old": "../plan/phases/phase-4a.md",
+          "new": "../roadmap/phases/phase-4a.md",
+          "line": 116
+        },
+        {
+          "start": 6581,
+          "end": 6606,
+          "old": "../plan/phases/phase-8.md",
+          "new": "../roadmap/phases/phase-8.md",
+          "line": 117
+        },
+        {
+          "start": 6662,
+          "end": 6689,
+          "old": "../plan/design-decisions.md",
+          "new": "../roadmap/design-decisions.md",
+          "line": 118
+        }
+      ]
+    },
+    {
+      "path": "docs/demos/bootstrap.md",
+      "baseline_blob": "43337636cd73c30ca8466911a5afc4a4279d1d6b",
+      "edits": [
+        {
+          "start": 105,
+          "end": 125,
+          "old": "../plan/bootstrap.md",
+          "new": "../roadmap/bootstrap.md",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "path": "docs/demos/phase-0.md",
+      "baseline_blob": "a82d4cfd4faf4604e1d4d5998af96b6156d07013",
+      "edits": [
+        {
+          "start": 88,
+          "end": 113,
+          "old": "../plan/phases/phase-0.md",
+          "new": "../roadmap/phases/phase-0.md",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "path": "docs/demos/phase-1.md",
+      "baseline_blob": "53a95a486b89a3a2113d858750d3b9e372f68e83",
+      "edits": [
+        {
+          "start": 98,
+          "end": 123,
+          "old": "../plan/phases/phase-1.md",
+          "new": "../roadmap/phases/phase-1.md",
+          "line": 3
+        }
+      ]
+    },
+    {
+      "path": "docs/reviews/phase-1/gate-followup.md",
+      "baseline_blob": "3a7a5a9504cde3bfd66b12384aa997929e2aa697",
+      "edits": [
+        {
+          "start": 1234,
+          "end": 1260,
+          "old": "../../plan/decision-log.md",
+          "new": "../../roadmap/decision-log.md",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "path": "docs/rfcs/phase-1-single-agent.md",
+      "baseline_blob": "3b35cc8f58c9617a8e2dbb900f8df1695f77bbcd",
+      "edits": [
+        {
+          "start": 1204,
+          "end": 1229,
+          "old": "../plan/phases/phase-1.md",
+          "new": "../roadmap/phases/phase-1.md",
+          "line": 26
+        },
+        {
+          "start": 1255,
+          "end": 1282,
+          "old": "../plan/design-decisions.md",
+          "new": "../roadmap/design-decisions.md",
+          "line": 26
+        },
+        {
+          "start": 1335,
+          "end": 1353,
+          "old": "../plan/schemas.md",
+          "new": "../roadmap/schemas.md",
+          "line": 26
+        }
+      ]
+    }
+  ],
+  "compared_baseline_files": 147
+}
