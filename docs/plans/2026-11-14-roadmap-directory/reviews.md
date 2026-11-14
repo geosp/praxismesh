@@ -75,3 +75,34 @@ The owner stated: “I approve it.” The approve gate passed after independent
 whole-plan design review PASS (two rounds). Plan and phase 01 are approved;
 no waiver was used. Task boxes remain unticked. Branch selection and the start
 gate precede implementation.
+
+
+## 2026-11-14 · impl-review · phase 01 · round 1 · passed
+
+- Diff base: 824ddb625f9fc40b04ad5d097e16ba6aaa93a2b7.
+- Frozen code_sha: 64cc13657ca601a4b225f24444f28869fffba519.
+- Reviewers: contract completed; failure/retry completed; scope/composition completed.
+- [Independent report](../../reviews/general-roadmap-directory/implementation-review-01.md).
+- Mechanical helper/public validation, agent generation, discovery and diff checks
+  passed. Reviewers independently reconstructed all 147 historical files and all
+  19 roadmap files; exactly 15 authorized destinations and one decision entry differ.
+- No Blocker or Major. All three task boxes remain unticked pending final delivery
+  checks; no runtime phase completion is claimed.
+
+| ID | Severity | Reviewer | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| IR-01 | Nit | Contract | Default history command visits a disclosed failing local-only ref. | fixed: notes now gives explicit HEAD-lineage and baseline comparisons beside the command, retaining the all-local-refs failure as a distinct observation. CI selection and exceptions are unchanged. |
+| IR-02 | Nit | Failure/retry | Inherited canary can read a stale report after a scanner error on a local rerun. | open: follow-up tooling work; unchanged from the base, not introduced by the rename. Fresh CI isolation limits exposure. No waiver of a required acceptance check is claimed. |
+
+## 2026-11-14 · implementation checks and maintenance walkthrough
+
+- [Observed walkthrough and checks](../../demos/general-roadmap-directory.md).
+- Full suite: 165 passed, 91 normally deselected; lint/format/types, dependency sync,
+  agent generation, workflow lint, plan validators and offline links passed.
+- Exact canary matrix passed. Temporary old-path-only and OR mutants were rejected.
+- The file-aware committed HEAD-lineage scan passed. The pathless diff scan raised
+  two warnings; file-aware scanning is authoritative for path-specific exceptions.
+  The separate all-local-refs finding also reproduces with the baseline config.
+- These checks were executed in the implementation session; they are not described
+  as an independent verify-phase run or a runtime gate closure. Latest-head CI and
+  final delivery/coordinator checks remain required before task completion.

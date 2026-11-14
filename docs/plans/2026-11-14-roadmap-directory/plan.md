@@ -180,7 +180,7 @@ entry points, expected outcomes and preservation comparisons.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | Rename and verify roadmap navigation | in-progress | 0/3 |
+| 01 | Rename and verify roadmap navigation | impl-reviewed | 0/3 |
 
 ## Decision log
 

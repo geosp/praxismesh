@@ -101,15 +101,22 @@ Extract the allowed expression from TOML, as the existing canary does. Generate
 fresh dummy values, use redacted JSON reports, and assert the exact finding-file
 set for each case. Verify the target rule for positive findings. Never save raw
 values in evidence. The canary must fail if either expected finding disappears
-or an approved fixture becomes a finding. Run the normal history scan as well:
+or an approved fixture becomes a finding. Run the full history scan for the candidate's reachable lineage:
 
 ```bash
-gitleaks git --config .gitleaks.toml --redact .
+gitleaks git --config .gitleaks.toml --redact --log-opts=HEAD .
 ```
 
-Expected: exit zero for the reviewed repository history; retaining the historical
-path is necessary for that result. Scan the uncommitted diff through redacted
-stdin before commit, since history scanning alone cannot observe it.
+Expected: exit zero for the candidate lineage, including historical schema paths.
+For baseline comparison, substitute its immutable SHA for HEAD. The default
+command without --log-opts also visits other local refs: here it reports the
+pre-existing local-only finding documented below with either configuration.
+Record that separate outcome; do not claim the all-local-refs scan passed or
+suppress unrelated history. The CI history-selection logic remains unchanged.
+
+A pathless stdin diff scan cannot apply file-path exceptions; its warnings must
+be checked against a file-aware scan rather than treated as a blanket PASS.
+The committed HEAD-lineage scan includes the actual candidate changes.
 
 ## Verification procedure
 
