@@ -31,7 +31,7 @@ If the user doesn't say, ask which mode. Use gate mode only when they confirm. N
 
 ## Step 1: Identify the phase and revisions
 
-1. **Phase:** the phase name (for example `0`, `3a`, or `bootstrap`) and its file in `docs/plan/phases/` (`docs/plan/bootstrap.md` §0.4 for the bootstrap). Read the phase file's tasks, **Accept** criteria and **Demo checklist**.
+1. **Phase:** the phase name (for example `0`, `3a`, or `bootstrap`) and its file in `docs/roadmap/phases/` (`docs/roadmap/bootstrap.md` §0.4 for the bootstrap). Read the phase file's tasks, **Accept** criteria and **Demo checklist**.
 2. **Revisions:**
    - gate mode: `code_sha` and `docs_sha` from the user;
    - informal mode: both are `git rev-parse HEAD`.

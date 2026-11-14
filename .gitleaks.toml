@@ -8,9 +8,9 @@
 useDefault = true
 
 [[allowlists]]
-description = "Plan prose in docs/plan/schemas.md: 'idempotency key, parent/previous response ID' is a field list, not a secret"
+description = "Reviewed schema prose at its current and historical paths; the field list is not a secret"
 targetRules = ["generic-api-key"]
 condition = "AND"
-paths = ['''^docs/plan/schemas\.md$''']
+paths = ['''^docs/plan/schemas\.md$''', '''^docs/roadmap/schemas\.md$''']
 regexTarget = "line"
 regexes = ['''request ID/idempotency key, parent/previous response ID''']

@@ -1,6 +1,6 @@
 # Bootstrap demo evidence (§0.4)
 
-Evidence for the bootstrap demo checklist in [docs/plan/bootstrap.md](../plan/bootstrap.md) §0.4. **Overall status: all six demo items pass; §0 closed by owner decision on 2026-11-11 without a gate-mode verification run** (see the decision log). Items are marked pass only with observed evidence. The plan's §0.4 boxes are ticked only after the bootstrap's own gate verification (`docs/reviews/README.md`, coordinator approval gate).
+Evidence for the bootstrap demo checklist in [docs/plan/bootstrap.md](../roadmap/bootstrap.md) §0.4. **Overall status: all six demo items pass; §0 closed by owner decision on 2026-11-11 without a gate-mode verification run** (see the decision log). Items are marked pass only with observed evidence. The plan's §0.4 boxes are ticked only after the bootstrap's own gate verification (`docs/reviews/README.md`, coordinator approval gate).
 
 ## Environment
 

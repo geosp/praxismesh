@@ -167,29 +167,39 @@ jobs:
           tar -xzf "$f" gitleaks
       # Canary: the scanner and the allowlist in .gitleaks.toml still behave as
       # intended. A generated fake key must be found in an ordinary file, even on a
-      # line with the allowlisted phrase, and suppressed only in docs/plan/schemas.md.
+      # line with the allowlisted phrase. Only the exact current/historical schema
+      # paths suppress that phrase; unrelated lines at either path stay detectable.
       - name: Canary (gitleaks still catches a key)
         run: |
           canary="$RUNNER_TEMP/gitleaks-canary"
-          mkdir -p "$canary/docs/plan" "$canary/other"
+          mkdir -p "$canary/docs/plan" "$canary/docs/roadmap" "$canary/other"
           key="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)"
           # Take the allowlisted phrase from .gitleaks.toml (a plain-text regex).
           # Spelling it out here would itself be flagged, since the allowlist only
-          # covers docs/plan/schemas.md.
+          # covers only the exact historical and current schema paths.
           phrase="$(sed -n "s/^regexes = \['''\(.*\)'''\]$/\1/p" .gitleaks.toml)"
           [ -n "$phrase" ] || { echo "allowlist regex not found in .gitleaks.toml" >&2; exit 1; }
           line="$phrase api_key = \"${key}\""
-          echo "$line" > "$canary/docs/plan/schemas.md"
+          plain="api_key = \"${key}\""
+          for schema in docs/plan/schemas.md docs/roadmap/schemas.md; do
+            echo "$line" > "$canary/$schema"
+            echo "$plain" >> "$canary/$schema"
+          done
           echo "$line" > "$canary/other/notes.md"
           cfg="$PWD/.gitleaks.toml"
           (cd "$canary" && "$GITHUB_WORKSPACE/gitleaks" dir --config "$cfg" --redact \
             --report-format json --report-path "$RUNNER_TEMP/canary.json" .) && {
             echo "gitleaks found nothing in the canary" >&2; exit 1; }
-          files="$(jq -r '[.[].File] | unique | join(",")' "$RUNNER_TEMP/canary.json")"
-          echo "canary findings in: $files"
-          if [ "$files" != "other/notes.md" ]; then
-            echo "expected findings only in other/notes.md" >&2; exit 1
-          fi
+          jq -e '
+            map({File, StartLine, RuleID}) | unique | sort_by(.File, .StartLine, .RuleID) == [
+              {File: "docs/plan/schemas.md", StartLine: 2, RuleID: "generic-api-key"},
+              {File: "docs/roadmap/schemas.md", StartLine: 2, RuleID: "generic-api-key"},
+              {File: "other/notes.md", StartLine: 1, RuleID: "generic-api-key"}
+            ]
+          ' "$RUNNER_TEMP/canary.json" > /dev/null || {
+            echo "canary did not preserve exact path/rule/line restrictions" >&2; exit 1;
+          }
+          echo "canary passed: both schema paths bounded; ordinary file detected"
       # On main and manual runs the whole history is scanned, so a gitleaks
       # upgrade with a new rule can flag an old commit and turn main red. Fix that
       # with a reviewed allowlist entry in .gitleaks.toml, not by rewriting history.

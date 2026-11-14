@@ -1,6 +1,6 @@
 # Phase 1 demo evidence
 
-Evidence for the Phase 1 demo checklist in [docs/plan/phases/phase-1.md](../plan/phases/phase-1.md), following the demo in the [RFC](../rfcs/phase-1-single-agent.md#testing-and-demo). Items are marked pass only with observed output. **Status: all demo items pass in the implementer's run; independent verification (`verify-phase`) is still to come.**
+Evidence for the Phase 1 demo checklist in [docs/plan/phases/phase-1.md](../roadmap/phases/phase-1.md), following the demo in the [RFC](../rfcs/phase-1-single-agent.md#testing-and-demo). Items are marked pass only with observed output. **Status: all demo items pass in the implementer's run; independent verification (`verify-phase`) is still to come.**
 
 ## Environment
 

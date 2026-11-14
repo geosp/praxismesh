@@ -25,7 +25,7 @@ A targeted follow-up under rule 6 of [README.md](../README.md). The session did 
 - the claimed resolutions in [gate-findings-response.md](gate-findings-response.md);
 - the fix diff `593acd4..cbd4875` (PR #51). Tracking issue: #44.
 
-The owner's decisions in the [decision log](../../plan/decision-log.md) are taken as given. This includes the 2026-11-12 row that makes `run_command`'s first-word-only check accepted risk R1 until Phase 5.
+The owner's decisions in the [decision log](../../roadmap/decision-log.md) are taken as given. This includes the 2026-11-12 row that makes `run_command`'s first-word-only check accepted risk R1 until Phase 5.
 
 **Scope:**
 1. Is each of F1-F9 and V1-V6 resolved? A finding counts as resolved when the fix exists and its named test fails with the fix removed (checked by mutation).

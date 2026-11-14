@@ -44,7 +44,7 @@ An ADR captures **one** architecturally significant decision, its rationale, tra
 
 **Supersession:** the new ADR sets `supersedes: ADR-NNNN`. Never edit the existing ADR. Determine supersession by the new ADR's `supersedes` link.
 
-**Reconcile:** if an ADR changes an approved requirement, update the approved implementation plan, `PROJECT_PLAN.md` and `docs/plan/decision-log.md` through their normal process, in the same PR or a linked one (plan §4.17).
+**Reconcile:** if an ADR changes an approved requirement, update the approved implementation plan, `PROJECT_PLAN.md` and `docs/roadmap/decision-log.md` through their normal process, in the same PR or a linked one (plan §4.17).
 
 ## Workflow
 
@@ -53,7 +53,7 @@ An ADR captures **one** architecturally significant decision, its rationale, tra
 Use what the conversation already holds, then fill gaps from the repository before asking:
 
 - **The GitHub issue:** `gh issue view <n> --json title,body,labels`. Every design doc should have one; offer to create it if missing (confirm first).
-- **The plan:** `PROJECT_PLAN.md`, the phase file in `docs/plan/phases/` and the design sections it lists under *Read first* (plan §9.7). Do not load all of `docs/plan/`.
+- **The plan:** `PROJECT_PLAN.md`, the phase file in `docs/roadmap/phases/` and the design sections it lists under *Read first* (plan §9.7). Do not load all of `docs/roadmap/`.
 - **The implementation plan,** if one exists (`docs/plans/<plan>/plan.md`).
 - **For an ADR:** the RFC or `docs/plans/<plan>/plan.md` that prompted the decision. Link it in `related`. If none exists, ask whether to proceed without one; do not block, because some ADRs stand alone (e.g. the sandbox ADR, the §0.3 fallback ADR).
 

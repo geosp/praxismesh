@@ -19,7 +19,7 @@ PraxisMesh is an open-source, self-hosted platform that exposes an OpenAI-compat
 ## Repository layout
 
 ```
-PROJECT_PLAN.md        core plan; detail in docs/plan/
+PROJECT_PLAN.md        core plan; detail in docs/roadmap/
 docs/                  plan, RFCs, ADRs, architecture, reviews, demos, templates
 docs/plans/            implementation contracts for new work
 openspec/              historical specifications and archived changes

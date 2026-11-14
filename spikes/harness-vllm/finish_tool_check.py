@@ -6,7 +6,7 @@ Runs a tiny agent three times each way against VLLM_BASE_URL (from the given
 .env), with one price-lookup tool. Result on 2026-11-11 (vLLM 0.32.0, served
 model `spark` = qwen3.8-flash-next, openai-agents 0.24.0): `output_type` 0 of 3
 (every run hit MaxTurnsExceeded: with a JSON-schema response_format the model
-never finished), `finish_task` 3 of 3. Recorded in docs/plan/decision-log.md
+never finished), `finish_task` 3 of 3. Recorded in docs/roadmap/decision-log.md
 and docs/rfcs/phase-1-single-agent.md.
 """
 

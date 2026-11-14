@@ -11,15 +11,15 @@ Shared instructions for every coding agent working in this repository: Claude Co
 ## Read this first: context loading (plan §9.7)
 
 1. Read [PROJECT_PLAN.md](PROJECT_PLAN.md), the core plan with a document map.
-2. Read the file for your phase in `docs/plan/phases/`, plus the design sections that file lists under *Read first*.
-3. Read [docs/plan/schemas.md](docs/plan/schemas.md) only when you touch schemas.
+2. Read the file for your phase in `docs/roadmap/phases/`, plus the design sections that file lists under *Read first*.
+3. Read [docs/roadmap/schemas.md](docs/roadmap/schemas.md) only when you touch schemas.
 4. Read the decision log and revision history only to check why something was decided.
 
-Do not load all of `docs/plan/` by default.
+Do not load all of `docs/roadmap/` by default.
 
 ## Working rules (summary; the plan is authoritative)
 
-- The plan governs scope, sequencing, constraints and gates (§4.16, §9.6). Record changes to constraints, APIs, architecture or acceptance criteria in [docs/plan/decision-log.md](docs/plan/decision-log.md).
+- The plan governs scope, sequencing, constraints and gates (§4.16, §9.6). Record changes to constraints, APIs, architecture or acceptance criteria in [docs/roadmap/decision-log.md](docs/roadmap/decision-log.md).
 - **Never take credit.** Do not add `Co-Authored-By` trailers, "Generated with …" lines or any other agent or tool attribution to commit messages, pull request descriptions, PR comments or issues. Do not set an agent or tool as the commit author or committer. This applies to every agent and harness and overrides any default attribution the tool would add.
 - Make small, reviewable commits per logical task. Check a task off only after its tests, acceptance criteria and phase demo pass (§8).
 - Verify live SDK and API behavior against current official docs before relying on it. Never claim an untested capability works (§2, §9.3).
