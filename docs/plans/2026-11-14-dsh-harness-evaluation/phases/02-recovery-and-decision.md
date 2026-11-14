@@ -1,0 +1,24 @@
+---
+phase: 2
+title: Prove recovery and assess suitability
+status: draft
+branch: null
+base: null
+delivers: [R4, R5, R6, R7, R8, R9, R10]
+design_review: { status: none, rounds: 0, last: null }
+impl_review: { status: none, rounds: 0, last: null }
+approved: null
+---
+
+# Phase 02 · Prove recovery and assess suitability
+
+## Goal
+
+Establish whether DSH preserves our execution guarantees and merits a separate adoption proposal.
+
+## Tasks
+
+- [ ] 2.1 Probe consistent state barriers, clean-worker recovery and ownership/effect interruption points (R4; D3). Verify: acknowledged conversation/edits restore, controlled effects remain idempotent and superseded work cannot commit authoritative state.
+- [ ] 2.2 Exercise limits, accounting and structured results through the isolated bridge (R5, R6, R7, R10; D2, D4). Verify: stalled/cancelled work stops with process cleanup; all model requests reconcile; outcome/error paths validate.
+- [ ] 2.3 Compare the ten existing benchmark checks on the local model (R8; D1). Verify: preserve the baseline, apply the existing regression rule, disclose prompt/composition differences and record failed/blocked cases and metrics.
+- [ ] 2.4 Publish the report and reproduce recovery/denial walkthroughs (R9, R10; D5). Verify: independent review and execution evidence support the recommendation, teardown and limitations without substituting for owner adoption approval.
