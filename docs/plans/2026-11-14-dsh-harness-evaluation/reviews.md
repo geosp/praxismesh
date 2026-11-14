@@ -1,6 +1,7 @@
 # Reviews · Evaluate DSH as the primary agent harness
 
-No independent review, lifecycle approval or executable compatibility test has run.
+At plan creation, no independent review, lifecycle approval or executable
+compatibility test had run. Dated entries below record subsequent reviews.
 
 
 ## 2026-11-14 · design-review · plan · round 1 · changes-requested
@@ -42,3 +43,37 @@ above, plus F1's optional concise TaskResult definition. These changes clarify t
 experiment proposal; no runtime was installed or executed. The frozen
 round-1 report is unchanged. Design review remains changes-requested pending a
 fresh final round; author corrections do not themselves establish a passing review.
+
+
+## 2026-11-14 · design-review · plan · round 2 · passed
+
+- Frozen contract: de6507f73ba9ec0a775299125e49f0fc366938d1.
+- Reviewers: reader completed; codebase fit completed; zoom out completed.
+- [Independent report and verbatim paraphrases](../../reviews/general-dsh-harness-evaluation/design-review-02.md).
+- Helper: zero errors/warnings; public validator: three plans, zero errors.
+- Earlier F8/F9 fixes were independently verified and not reopened. No Blocker
+  or Major remains open after evidence-backed contests in the report.
+- S1/S3/S4/S5/S6/S7/S8 are explicitly contested and closed with evidence there;
+  no acceptance condition was waived. Automatic instruction visibility and the
+  shared read-only checkout limitation remain disclosed.
+
+| ID | Severity | Reviewer | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| S2 | Nit | Reader | Trusted Cordis patches could imply source modifications. | fixed: Terms defines reviewed configuration overlays and separately hashed plugin bundles. |
+| S9 | Nit | Reader | Adoption handoff repeats. | fixed: rollout refers to D5; the decision log records the owner's exploration request without repeating the adoption rule. |
+| S10 | Nit | Reader | Stop and outcome cases are bundled. | fixed: R5 has separate stall/tool/cancel/step-limit scenarios; R7 links the labelled O1–O5 outcome checklist. |
+| S11 | Nit | Coordinator | Initial log preamble contradicts later entries. | fixed: qualify it as the plan-creation state, preserving dated round entries and frozen reports. |
+
+These final edits clarify wording and case navigation only. The second and final
+review round is complete; no third round ran. Whole-plan and both phase review
+metadata are passed with two rounds. Plan approval remains the next checkpoint;
+no DSH package was installed, candidate code executed or adoption approved.
+
+
+## 2026-11-14 · approved · plan
+
+The owner stated: “Implementation approved.” The approve gate passed after
+independent whole-plan design review PASS (two rounds). The plan and both passed
+phases are approved; no waiver was used. No task is checked off. Phase 01 branch
+selection and its start gate precede executable work. Approval authorizes the
+isolated spike, not production DSH adoption or runtime phase closure.

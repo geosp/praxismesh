@@ -1,10 +1,10 @@
 ---
 title: Evaluate DSH as the primary agent harness
-status: draft
+status: approved
 created: 2026-11-14
 updated: 2026-11-14
-design_review: { status: changes-requested, rounds: 1, last: 2026-11-14 }
-approved: null
+design_review: { status: passed, rounds: 2, last: 2026-11-14 }
+approved: 2026-11-14
 adr_review: null
 ---
 
@@ -50,6 +50,9 @@ before committing future designs to either runtime.
 - **Cordis**: its plugin framework for composing services and runtime hooks.
 - **Activity**: Temporal's I/O boundary hosting a bounded agent invocation.
 - **Composition**: explicit DSH profile, plugins and configuration for an experiment.
+- **Trusted Cordis patch**: a spike-owned, reviewed configuration overlay, not an
+  upstream source-code change. Any integration plugin is a separately identified,
+  hashed bundle in the experiment inventory.
 - **Local model**: spark is the existing model identifier in
   registry/templates/local-default.yaml, served through the configured vLLM endpoint.
 - **Worker profile/template**: registry/profiles/default.yaml selects task policy;
@@ -97,7 +100,10 @@ under the existing side-effect and attempt-ownership guarantees.
 
 Turn limits, cancellation and wall-time controls must stop the runtime and its
 owned work within the predeclared [probe bounds and cleanup policy](notes.md#stop-and-cleanup-policy).
-- **Given** a stalled request, blocked tool or cancelled Activity, **when** a bound fires, **then** owned work terminates and the probe detects any surviving child process.
+- **Given** a stalled provider request, **when** its wall deadline fires, **then** owned work stops within the declared grace and process observation checks for survivors.
+- **Given** a blocked tool, **when** its wall deadline fires, **then** the same stop and observation rules apply to tool-owned descendants.
+- **Given** a cancelled Activity, **when** cancellation is triggered at the declared barrier, **then** the same stop and observation rules apply.
+- **Given** an exhausted model-step limit, **when** another step would begin, **then** admission is refused and owned work follows the declared cleanup policy.
 
 ### R6 · Usage covers admitted work
 
@@ -111,7 +117,7 @@ units and exhaustion oracle.
 
 DSH output must map to validated TaskResult semantics through an explicit
 completion mechanism rather than accepting arbitrary assistant text as success.
-- **Given** done, continue, needs-input, malformed output or runtime errors, **when** the bridge returns, **then** statuses and references follow the existing contract.
+- **Given** each fixture in the [outcome checklist](notes.md#outcome-checklist), **when** the bridge returns or raises, **then** statuses, references and retry/error disposition match the existing contract.
 
 ### R8 · Benchmark comparison uses the existing regression rule
 
@@ -193,7 +199,7 @@ record any remediation and rechecks against the pinned candidate.
 
 Teardown stops the isolated worker/runtime and removes only identified disposable
 fixtures. Production deployment, registry and user installations remain unchanged.
-Adoption follows the normal decision-log, ADR and independent gates.
+Use D5 for the adoption handoff.
 
 ## Open questions
 
@@ -207,6 +213,7 @@ Adoption follows the normal decision-log, ADR and independent gates.
 
 ## Links
 
+- [Issue #62](https://github.com/geosp/praxismesh/issues/62): spike scope, phases and acceptance.
 - [Project plan](../../../PROJECT_PLAN.md): authoritative constraints and sequencing.
 - [Harness/durability contracts](../../roadmap/design-decisions.md#41-harness-in-activity): bounded execution and recovery.
 - [Recorded benchmark](../../benchmarks/2026-11-12-local-default.md): current 10/10 result.
@@ -216,10 +223,9 @@ Adoption follows the normal decision-log, ADR and independent gates.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | [Establish an isolated controlled runtime](phases/01-controlled-runtime.md) | draft | 0/3 |
-| 02 | [Prove recovery and assess suitability](phases/02-recovery-and-decision.md) | draft | 0/4 |
+| 01 | [Establish an isolated controlled runtime](phases/01-controlled-runtime.md) | approved | 0/3 |
+| 02 | [Prove recovery and assess suitability](phases/02-recovery-and-decision.md) | approved | 0/4 |
 
 ## Decision log
 
 2026-11-14: Owner requested exploration of DSH for running PraxisMesh agents.
-Primary-runtime adoption remains subject to evidence and separate approval.

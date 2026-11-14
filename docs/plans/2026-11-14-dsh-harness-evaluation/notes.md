@@ -179,6 +179,25 @@ Exercise tool success, tool failure and policy denial to verify the separate too
 counter semantics. For live local runs, use the same gateway path and reconcile
 observed provider usage; do not infer live counts from the deterministic fixture.
 
+## Outcome checklist
+
+Use existing harness_activity/tools.py and runner.py, orchestrator/workflow.py and
+common/schemas/task.py as the reference semantics. Record the intermediate runner
+outcome, Activity disposition and final task result separately.
+
+- **O1 Explicit completion:** a validated finish_task completion produces runner
+  done; the existing workflow can produce a succeeded TaskResult with valid refs.
+- **O2 Continuation:** no explicit completion or an exhausted inner step allowance
+  cannot turn arbitrary assistant text into success; preserve continuation and
+  checkpoint semantics and validate the eventual workflow disposition separately.
+- **O3 Needs input:** a validated needs-input completion preserves questions and
+  maps through the existing workflow to needs_input.
+- **O4 Invalid completion:** malformed status/payload/reference is rejected. A
+  later valid correction may complete; the malformed payload itself cannot succeed.
+- **O5 Error/retry:** classify model/protocol/infrastructure errors against the
+  existing continuation/failure/retry contract; record the disposition without
+  fabricating completion or replacing recoverable errors with immediate success.
+
 ## Benchmark comparison checks
 
 - **B1 Identity:** the same ten existing task checks and selected local model;
