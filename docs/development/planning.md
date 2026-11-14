@@ -33,6 +33,12 @@ run every public CI check. The suite automates the workflow; it is not a runtime
 or CI dependency. New tooling must not fetch the private repository or require
 private credentials for fork CI.
 
+The protected suite revision `5cfdf5f4d25769dcffaecd47c40f2c87c1e167cc` is now
+installed locally; doctor and repeat-install checks pass. See the
+[activation evidence](skill-central-migration-checks.md#local-activation-2026-11-14).
+Fresh-session invocation, user Linux/macOS confirmation and independent cutover
+review remain pending; those are still merge prerequisites.
+
 ## Authoritative documents
 
 `PROJECT_PLAN.md` governs scope, sequencing, constraints and phase gates. New

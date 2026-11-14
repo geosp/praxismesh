@@ -44,5 +44,41 @@ Protected CI and owner merge must complete for Skill Central prerequisites and
 suite before activation. Verify doctor and discovery/invocation in fresh supported
 Linux/macOS harness sessions, record the actual protected suite revision in the
 cutover PR, and obtain independent cutover review before the owner merges it.
-No user installation links, original ZIPs, quarantine directories or repository
-settings were changed. No merges were performed.
+During candidate preparation, user installation links, original ZIPs, quarantine
+directories and repository settings were unchanged. No merges were performed by
+the implementation session. The later activation state is recorded below.
+
+
+## Local activation, 2026-11-14
+
+The owner merged Skill Central PR #54 as
+`58b5ff10cf6c8f718c9e9c9a0cbc404285dc681b` and PR #55 as
+`5cfdf5f4d25769dcffaecd47c40f2c87c1e167cc`. The latter is the protected suite
+revision installed locally. The active Skill Central checkout is clean on main.
+
+The active manager predated Codex TOML validation, so the update was executed
+using management code from a detached checkout of the protected merged revision.
+It validated the candidate before fast-forwarding the active checkout and recorded
+the prior revision. Its post-update doctor correctly reported missing new links;
+installation resolved those findings without overwriting existing entries.
+
+- Installation preview: 44 new owned links, 60 existing links unchanged; no conflicts.
+- Installation: completed for Codex, Claude Code, Copilot and Antigravity.
+- Doctor: passed for all four harnesses.
+- Repeat dry run: 104 unchanged managed links, zero pending changes.
+- Active repository validation and generated catalog freshness: passed.
+- Installed helper on a temporary copy of the migration plan: zero errors/warnings;
+  status correctly reports a draft with zero of three phase tasks completed.
+- Copilot's skill registry lists impl-plan, design-review and impl-review.
+- Antigravity's agent registry lists design-reader, design-reviewer and impl-reviewer.
+- Versions: Codex 0.169.0-alpha.11.1, Claude Code 2.1.311, Copilot 1.0.110,
+  Antigravity 1.5.8.
+
+Original ZIPs were retained. No quarantine, source deletion, repository-setting
+change or merge was performed by this session. No private installation-state or
+session-log files are included in this record.
+
+Fresh model-backed invocation checks remain pending explicit authorization. Registry
+listing, symlink health and helper execution do not establish that an agent invoked
+a skill correctly. User confirmation from fresh Linux/macOS harness sessions and
+independent cutover review remain required before the owner merges PraxisMesh #59.
