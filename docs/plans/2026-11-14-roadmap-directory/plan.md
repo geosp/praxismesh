@@ -3,7 +3,7 @@ title: Rename the project roadmap directory
 status: draft
 created: 2026-11-14
 updated: 2026-11-14
-design_review: { status: none, rounds: 0, last: null }
+design_review: { status: changes-requested, rounds: 1, last: 2026-11-14 }
 approved: null
 adr_review: null
 ---
@@ -21,7 +21,8 @@ exception; link checks, historical comparisons and scan canaries verify both.
 
 ## Why
 
-The Skill Central migration introduced docs/plans for implementation contracts.
+The [Skill Central migration](../../development/planning.md) introduced docs/plans
+for implementation contracts using centrally installed planning and review skills.
 The older docs/plan directory holds the long-term roadmap and architectural
 constraints. Their nearly identical names obscure the distinction. The owner
 selected docs/roadmap and authorized navigation-only maintenance in historical
@@ -37,7 +38,7 @@ records on 2026-11-14.
 
 ### Non-goals
 
-- Rename PROJECT_PLAN.md or change docs/plans and the shared Skill Central suite.
+- Change the implementation-contract format or the externally maintained suite.
 - Change runtime behavior, roadmap requirements, phase order or acceptance criteria.
 - Rewrite historical decisions, findings, recorded input paths, SHAs or archives.
 - Change security policy, repository settings or runtime phase completion states.
@@ -47,7 +48,15 @@ records on 2026-11-14.
 
 - **Roadmap**: PROJECT_PLAN.md and its detailed architectural and phase documents.
 - **Implementation contract**: a dated docs/plans folder with plan.md, phase tasks
-  and reviews.md, discovered by the shared impl-plan helper.
+  and reviews.md, discovered by Skill Central's `impl-plan/plan-tool.py`.
+- **Validation tools**: the external `impl-plan/plan-tool.py` and project-owned
+  `.github/scripts/check_plans.py`; [invocations and boundaries](../../development/planning.md#public-validation)
+  are documented in the planning workflow.
+- **Skill Central suite**: the externally maintained `impl-plan`, `design-review`
+  and `impl-review` skills, helper and reviewers installed in user discovery roots.
+- **Prior migration metadata**: lifecycle fields in the earlier
+  [skill-central-migration plan](../2026-11-13-skill-central-migration/plan.md),
+  which tracked replacement of active OpenSpec and local review skills.
 - **Historical record**: an existing ADR, archived specification, saved review,
   verification report, closed-phase RFC or demo evidence.
 - **Navigation destination**: the target of a Markdown link, distinct from its
@@ -70,21 +79,24 @@ The shared helper and public validator must continue to discover implementation 
 ### R3 · Navigation resolves after the move
 
 Repository navigation and active path consumers must resolve to the renamed files.
-- **Given** a current documentation link or active path consumer, **when** it is followed or checked, **then** it uses a valid new path and preserves its intended anchor or behavior.
+- **Given** a current documentation link, **when** it is followed, **then** its new destination and intended anchor resolve.
+- **Given** an active path consumer, **when** its documented check runs, **then** its behavior is preserved at the renamed path.
 
 ### R4 · Historical content is preserved
 
 Historical records must retain their contents apart from authorized Markdown navigation destinations.
-- **Given** an existing historical record, **when** its navigation is maintained, **then** its text, labels, decisions, findings, recorded paths and SHAs are otherwise unchanged, with the maintenance recorded separately.
+- **Given** an existing historical record, **when** its navigation is maintained, **then** its text, labels, decisions, findings, recorded paths and SHAs are otherwise unchanged.
+- **Given** maintained historical navigation, **when** preservation is verified against the baseline in [notes](notes.md#preservation-baseline), **then** the affected-record inventory and destination changes are recorded separately.
 
 ### R5 · Roadmap meaning is preserved
 
 The directory move must preserve roadmap requirements, task states, acceptance criteria and phase order.
-- **Given** a moved roadmap file, **when** its diff is audited, **then** changes consist only of path maintenance and an identified directory-organization decision entry.
+- **Given** a moved roadmap file, **when** its diff is audited, **then** changes consist only of path maintenance and the directory-organization entry in docs/roadmap/decision-log.md.
 
 ### R6 · Secret scanning remains narrowly scoped
 
-The reviewed schema prose exception must preserve its rule-and-line restrictions at the exact old and new schema paths.
+The reviewed schema prose exception must preserve the exact rule, line expression
+and two paths specified in the [scanner contract](notes.md#scanner-contract).
 - **Given** historical and current schema prose, **when** scanning runs, **then** that reviewed phrase remains allowed at both exact paths.
 - **Given** unallowlisted dummy content at either schema path or an ordinary file, **when** scanning runs, **then** it is detected without exposing raw values in evidence.
 
@@ -92,8 +104,9 @@ The reviewed schema prose exception must preserve its rule-and-line restrictions
 
 ### D1 · Separate the roadmap by directory name
 
-Move docs/plan to docs/roadmap and update the document map. Keep PROJECT_PLAN.md
-and docs/plans unchanged. Rejected: putting the roadmap inside docs/plans, because
+Move docs/plan to docs/roadmap and update the document map. Retain the filename
+PROJECT_PLAN.md and the R2 discovery root; their document contents may receive
+the path and navigation maintenance required by R3. Rejected: putting the roadmap inside docs/plans, because
 it has a different role and format from the implementation contracts discovered there.
 Details: notes.md#d1
 
@@ -101,15 +114,16 @@ Details: notes.md#d1
 
 Use the owner's explicit exception to update Markdown destinations in historical
 records, retaining labels and recorded inputs. Record the maintenance in this plan's
-notes, with an inventory of affected records. Rejected: compatibility pages at
+[preservation procedure](notes.md#preservation-baseline), using its designated
+baseline and affected-record inventory. Rejected: compatibility pages at
 docs/plan, because they retain the confusing directory and require maintenance.
 
 ### D3 · Preserve historical scan compatibility
 
-Retain the existing exact old schema path for history scans and add the exact new
-path to the same rule-and-line restriction. Exercise both paths with canaries.
+Apply the R6 scanner contract and verify it with canaries covering allowed and
+unallowlisted content.
 Rejected: replacing the old exception or ignoring the whole roadmap directory,
-because either changes scanning beyond the move. Details: notes.md#d2
+because either changes scanning beyond the move. Details: notes.md#scanner-contract
 
 ## Assumptions
 
@@ -135,7 +149,8 @@ The owner merges after latest-head CI passes; agents never merge.
 
 Reverting the PR restores the former directory, navigation and scan configuration
 together. No deployment, application data migration or user-installation change
-is needed. See notes.md for the verification outline.
+is needed. Use the [verification procedure](notes.md#verification-procedure) for concrete
+entry points, expected outcomes and preservation comparisons.
 
 ## Open questions
 
