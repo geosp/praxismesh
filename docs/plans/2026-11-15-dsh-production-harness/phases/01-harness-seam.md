@@ -25,7 +25,7 @@ session store, and the registry accepts `dsh`, `local-dsh` and the `dsh` profile
 
 ### 1. Seam
 
-- [ ] 1.1 Add the session store (load, truncate, capture, commit) and the D10 transactional fence, and move `run_harness_turn` onto them with `SQLAlchemySession` (D1, D10). Verify: `uv run pytest` passes; the conformance suite runs through a runner fixture for `openai_agents` (R3).
+- [x] 1.1 Add the session store (load, truncate, capture, commit) and the D10 transactional fence, and move `run_harness_turn` onto them with `SQLAlchemySession` (D1, D10). Verify: `uv run pytest` passes; the conformance suite runs through a runner fixture for `openai_agents` (R3).
 
 ### 2. Registry
 

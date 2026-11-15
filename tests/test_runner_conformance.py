@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -20,13 +21,24 @@ from agents import SQLiteSession
 
 from common.observability import disable_sdk_tracing
 from harness_activity.config import HarnessConfig, McpConfig, build_config
-from harness_activity.runner import OpenAIAgentsRunner, Usage
+from harness_activity.runner import HarnessRunner, OpenAIAgentsRunner, Usage
 from registry.loader import REGISTRY_ROOT, load_registry
 from tests.support.fake_model import FakeModel
 
 
 def script(*steps: dict[str, Any]) -> list[dict[str, Any]]:
     return list(steps)
+
+
+# Every runner must pass this suite (plan 2026-11-15-dsh-production-harness, R3).
+# `DshRunner` joins this mapping in that plan's phase 02.
+RUNNERS: dict[str, Callable[[], HarnessRunner]] = {"openai_agents": OpenAIAgentsRunner}
+make_runner: Callable[[], HarnessRunner] = OpenAIAgentsRunner
+
+
+@pytest.fixture(params=sorted(RUNNERS), autouse=True)
+def _runner(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(globals(), "make_runner", RUNNERS[request.param])
 
 
 @pytest.fixture(autouse=True)
@@ -49,7 +61,7 @@ async def run(
     steps: list[dict[str, Any]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[Any, FakeModel]:
     with FakeModel(steps) as fake:
-        result = await OpenAIAgentsRunner().run(
+        result = await make_runner().run(
             config_for(fake, monkeypatch),
             tmp_path,
             SQLiteSession("conformance"),
@@ -256,7 +268,7 @@ async def test_stop_run_and_superseded_reach_the_runner_unwrapped(
 
     with FakeModel(steps) as fake:
         config = config_for(fake, monkeypatch)
-        result = await OpenAIAgentsRunner().run(
+        result = await make_runner().run(
             config, tmp_path, SQLiteSession("stop"), "go", stop_on_second_call, Usage()
         )
         assert result.status == "continue" and result.summary == "budget"
@@ -266,7 +278,7 @@ async def test_stop_run_and_superseded_reach_the_runner_unwrapped(
             raise Superseded("newer attempt")
 
         with pytest.raises(Superseded):
-            await OpenAIAgentsRunner().run(
+            await make_runner().run(
                 config, tmp_path, SQLiteSession("sup"), "go", superseded, Usage()
             )
 
@@ -332,9 +344,7 @@ async def test_mcp_tools_allowed_filter(tmp_path: Path, monkeypatch: pytest.Monk
         config = build_config(registry, loaded, "task-filter-0001")
         workspace = tmp_path / "ws"
         workspace.mkdir()
-        await OpenAIAgentsRunner().run(
-            config, workspace, SQLiteSession("filter"), "go", no_op, Usage()
-        )
+        await make_runner().run(config, workspace, SQLiteSession("filter"), "go", no_op, Usage())
         offered = {t["function"]["name"] for t in fake.state.requests[0]["tools"]}
         assert "record_order" not in offered and "lookup_price" in offered
         assert "record_order" in tool_results(fake)[0]  # an error naming the tool
@@ -420,7 +430,7 @@ async def test_mcp_subprocess_env_is_granted_plus_sdk_defaults(
             timeout_s=5,
         )
         config = replace(config, mcp=[env_server])
-        await OpenAIAgentsRunner().run(
+        await make_runner().run(
             config,
             tmp_path,
             SQLiteSession("env-process"),

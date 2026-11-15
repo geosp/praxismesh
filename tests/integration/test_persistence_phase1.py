@@ -18,6 +18,7 @@ from common.persistence.repositories import (
     AttemptRepository,
     Checkpoint,
     CheckpointRepository,
+    FenceRejected,
     RecordingBlobStore,
     TaskRepository,
     make_engine,
@@ -178,3 +179,46 @@ async def test_sdk_session_uses_migrated_tables(engine: AsyncEngine) -> None:
         }
     assert classes == {"task"}
     await session.clear_session()
+
+
+def checkpoint_for(task_id: str, turn: int, attempt: int) -> Checkpoint:
+    return Checkpoint(
+        f"{task_id}:{turn}:{attempt}:0", task_id, turn, attempt, 0, task_id, 0, blob_ref(), None
+    )
+
+
+async def test_stale_attempt_cannot_checkpoint_or_finish(engine: AsyncEngine) -> None:
+    """D10: the newer-attempt check and the write are one statement."""
+    start = task_start()
+    await record(engine, start)
+    attempts, checkpoints = AttemptRepository(engine), CheckpointRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    await checkpoints.insert_fenced(checkpoint_for(start.task_id, 1, 1))  # current: allowed
+    await attempts.start(start.task_id, 1, 2, "worker-b")
+    with pytest.raises(FenceRejected):
+        await checkpoints.insert_fenced(checkpoint_for(start.task_id, 1, 1))
+    with pytest.raises(FenceRejected):
+        await attempts.finish(
+            start.task_id,
+            1,
+            1,
+            outcome="done",
+            tokens_in=1,
+            tokens_out=1,
+            tool_calls=0,
+            fenced=True,
+        )
+    assert await checkpoints.count(start.task_id) == 1
+    await attempts.finish(
+        start.task_id, 1, 2, outcome="done", tokens_in=1, tokens_out=1, tool_calls=0, fenced=True
+    )
+
+
+async def test_older_turn_is_fenced_by_a_newer_turn(engine: AsyncEngine) -> None:
+    start = task_start()
+    await record(engine, start)
+    attempts, checkpoints = AttemptRepository(engine), CheckpointRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    await attempts.start(start.task_id, 2, 1, "worker-a")
+    with pytest.raises(FenceRejected):
+        await checkpoints.insert_fenced(checkpoint_for(start.task_id, 1, 1))

@@ -170,9 +170,12 @@ class AttemptRepository:
         tokens_out: int,
         tool_calls: int,
         failure_category: str | None = None,
+        fenced: bool = False,
     ) -> None:
+        """Record an attempt's outcome. With `fenced`, refuse (FenceRejected) when a
+        newer attempt exists, in the same transaction as the update (D10)."""
         async with self.engine.begin() as conn:
-            await conn.execute(
+            done = await conn.execute(
                 text(
                     """
                     UPDATE task_attempts SET outcome = :o, failure_category = :f,
@@ -181,6 +184,7 @@ class AttemptRepository:
                     WHERE task_id = :t AND turn = :turn AND attempt = :a
                         AND outcome = 'started'
                     """
+                    + (" AND " + _NO_NEWER_ATTEMPT if fenced else "")
                 ),
                 {
                     "t": task_id,
@@ -193,6 +197,13 @@ class AttemptRepository:
                     "tc": tool_calls,
                 },
             )
+            if fenced and done.rowcount == 0:
+                newer = await conn.execute(
+                    text("SELECT 1 WHERE NOT " + _NO_NEWER_ATTEMPT),
+                    {"t": task_id, "turn": turn, "a": attempt},
+                )
+                if newer.first() is not None:
+                    raise FenceRejected("a newer attempt owns this task")
 
     async def close_unfinished(
         self,
@@ -253,9 +264,48 @@ class AttemptRepository:
             return found.first() is not None
 
 
+class FenceRejected(RuntimeError):
+    """A newer (turn, attempt) exists for the task, so the fenced write was not made."""
+
+
+# Plan 2026-11-15-dsh-production-harness D10: a write by an attempt is valid only
+# while no newer turn or attempt of the same task has started.
+_NO_NEWER_ATTEMPT = (
+    "NOT EXISTS (SELECT 1 FROM task_attempts n WHERE n.task_id = :t "
+    "AND (n.turn > :turn OR (n.turn = :turn AND n.attempt > :a)))"
+)
+
+
 class CheckpointRepository:
     def __init__(self, engine: AsyncEngine) -> None:
         self.engine = engine
+
+    async def insert_fenced(self, cp: Checkpoint) -> None:
+        """Insert in one statement that refuses if a newer attempt exists."""
+        async with self.engine.begin() as conn:
+            done = await conn.execute(
+                text(
+                    """
+                    INSERT INTO checkpoints (checkpoint_id, task_id, turn, attempt, seq,
+                        session_id, session_position, workspace_ref, finish, retention_class)
+                    SELECT :id, :t, :turn, :a, :seq, :sid, :pos, :ws, :finish, 'task'
+                    WHERE """
+                    + _NO_NEWER_ATTEMPT
+                ),
+                {
+                    "id": cp.checkpoint_id,
+                    "t": cp.task_id,
+                    "turn": cp.turn,
+                    "a": cp.attempt,
+                    "seq": cp.seq,
+                    "sid": cp.session_id,
+                    "pos": cp.session_position,
+                    "ws": _ref_json(cp.workspace_ref),
+                    "finish": json.dumps(cp.finish) if cp.finish is not None else None,
+                },
+            )
+            if done.rowcount != 1:
+                raise FenceRejected("a newer attempt owns this task")
 
     async def insert(self, cp: Checkpoint) -> None:
         async with self.engine.begin() as conn:
