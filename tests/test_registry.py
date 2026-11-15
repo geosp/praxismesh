@@ -90,11 +90,24 @@ def test_request_rejects_unknown_and_unsafe_fields() -> None:
         parse_task_request({"profile": "default", "instructions": "x", "outputs": ["../etc"]})
 
 
-def test_harness_mismatch(registry_copy: Path) -> None:
+def test_harness_mismatch_fails_at_load(registry_copy: Path) -> None:
     profile = registry_copy / "profiles" / "default.yaml"
     profile.write_text(profile.read_text().replace("harness: openai_agents", "harness: claude_sdk"))
-    with pytest.raises(CapabilityError, match=r"claude_sdk.*openai_agents"):
-        load_registry(registry_copy).resolve("default")
+    with pytest.raises(RegistryError, match=r"claude_sdk.*openai_agents"):
+        load_registry(registry_copy)
+
+
+def test_dsh_profile_resolves_the_dsh_template() -> None:
+    profile, loaded = load_registry().resolve("dsh")
+    assert (profile.harness, loaded.template.name) == ("dsh", "local-dsh")
+    assert loaded.template.concurrency_per_pod == 1 and loaded.template.context_window
+
+
+def test_dsh_profile_cannot_allow_an_openai_template(registry_copy: Path) -> None:
+    profile = registry_copy / "profiles" / "dsh.yaml"
+    profile.write_text(profile.read_text().replace("[local-dsh]", "[local-dsh, local-default]"))
+    with pytest.raises(RegistryError, match="does not match"):
+        load_registry(registry_copy)
 
 
 def test_template_must_be_allowed() -> None:

@@ -29,9 +29,9 @@ session store, and the registry accepts `dsh`, `local-dsh` and the `dsh` profile
 
 ### 2. Registry
 
-- [ ] 2.1 Add `dsh` to `Harness` (`common/schemas/base.py`), `SUPPORTED_HARNESSES` and `docs/roadmap/schemas.md`, with a decision-log line (R1). Verify: registry tests reject an unknown harness.
-- [ ] 2.2 Move the profile/template harness check (`registry/loader.py:101-105`) from resolve time to load time (R2). Verify: a mismatched profile fails to load.
-- [ ] 2.3 Add the `local-dsh` template (`concurrency_per_pod: 1`, `context_window`) and the `dsh` profile, and lock them (D5, D7). Verify: `make registry-lock` pins both; a `dsh` profile resolves `local-dsh`.
+- [x] 2.1 Add `dsh` to `Harness` (`common/schemas/base.py`), `SUPPORTED_HARNESSES` and `docs/roadmap/schemas.md`, with a decision-log line (R1). Verify: registry tests reject an unknown harness.
+- [x] 2.2 Move the profile/template harness check (`registry/loader.py:101-105`) from resolve time to load time (R2). Verify: a mismatched profile fails to load.
+- [x] 2.3 Add the `local-dsh` template (`concurrency_per_pod: 1`, `context_window`) and the `dsh` profile, and lock them (D5, D7). Verify: `make registry-lock` pins both; a `dsh` profile resolves `local-dsh`.
 
 ### 3. Events
 

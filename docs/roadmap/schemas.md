@@ -6,7 +6,7 @@ Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [P
 
 Define Pydantic schemas in `common/schemas.py` (or organized modules re-exported there). Include a `schema_version` and migration strategy. Preserve the original model fields below.
 
-- **`AgentProfile`**: `name`, `tier`, `repo?`, `new_repo_policy` (`never|ask|auto`; default `ask`), `harness` (`claude_sdk|claude_cli|openai_agents`), `model_override?`, `allowed_templates[]?`, `max_turns`, timeouts, approval policy, global budget limits. **No MCP/skills fields.**
+- **`AgentProfile`**: `name`, `tier`, `repo?`, `new_repo_policy` (`never|ask|auto`; default `ask`), `harness` (`claude_sdk|claude_cli|openai_agents|dsh`), `model_override?`, `allowed_templates[]?`, `max_turns`, timeouts, approval policy, global budget limits. **No MCP/skills fields.**
 - **`WorkerTemplate`**: `name`, `version`, `tier`, `image`, `harness`, `model`, `base_url`, `api_style` (`anthropic|openai`), `allowed_model_overrides[]`, CPU/memory/GPU resource spec, `mcp_servers[]`, `skills_bundle`, `cli_tools[]`, derived `capabilities[]`, `concurrency_per_pod`, min/max backlog/cooldown scaling, `secret_refs[]`, `repo_capable`, `cost_weight`.
 - **`McpServer`**: `name`, transport (`stdio|sidecar|service`), command/image/url, env/secret refs, capability tags, health check.
 - **`TriageResult`**: complexity (`trivial|moderate|hard`), delivery (`inline|artifact|repo`), `repo?`, `needs_plan`, rationale, signals (context size/tools/risk), estimated budget/capability needs.

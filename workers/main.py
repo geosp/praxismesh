@@ -68,6 +68,13 @@ async def build_worker(
         )
     assert template is not None
     loaded = registry.templates[template]
+    if loaded.template.harness != "openai_agents":
+        # DSH migration plan phase 02 task 1.3 selects DshRunner here; until then a
+        # dsh template must not run on the OpenAI Agents runner.
+        raise CapabilityError(
+            f"template {loaded.template.ref} uses harness {loaded.template.harness!r}, "
+            "which this worker cannot run yet"
+        )
     if not os.environ.get(loaded.template.base_url_env):
         # Fail at startup rather than fail every task this worker would take.
         raise CapabilityError(

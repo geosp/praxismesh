@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Slug = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$", max_length=64)
-Harness = Literal["claude_sdk", "claude_cli", "openai_agents"]
+Harness = Literal["claude_sdk", "claude_cli", "openai_agents", "dsh"]
 RetentionClass = Literal["ephemeral", "task", "audit"]
 
 

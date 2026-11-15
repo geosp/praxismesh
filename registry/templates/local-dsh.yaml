@@ -1,0 +1,22 @@
+# Template local-dsh, version 1 (ADR-0005; DSH migration plan D5). Changing this file or its prompt needs a new
+# version and `make registry-lock` (registry/registry.lock).
+name: local-dsh
+version: 1
+tier: local
+harness: dsh
+model: spark
+base_url_env: VLLM_BASE_URL
+api_style: openai
+system_prompt: prompts/local-default.md
+mcp_servers: [sample-shop]
+skills_bundle: order-desk
+cli_tools: [python3, wc, git, sh]
+inner_max_turns: 8
+turn_timeout: PT10M
+heartbeat_timeout: PT30S
+max_turns_cap: 10
+max_tokens_cap: 2000000
+max_wall_time_cap: PT1H
+secret_refs: [PRAXIS_SAMPLE_DB_URL]
+concurrency_per_pod: 1  # ADR-0006: one attempt per DSH container
+context_window: 32768
