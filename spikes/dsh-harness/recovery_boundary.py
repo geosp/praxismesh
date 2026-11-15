@@ -14,6 +14,10 @@ from recovery_store import Authority, Superseded
 TOOL_NAMES = {"mcp__recovery__" + name for name in ("write_note", "read_note", "effect_once")}
 
 
+class Refused(ValueError):
+    """Policy or argument validation rejected a call before its body."""
+
+
 def tool_call(name: str, step: int) -> dict:
     return {
         "role": "assistant",
@@ -66,6 +70,8 @@ class ToolExecutor:
         marker: str,
         *,
         hold_effect: bool = False,
+        dispatcher=None,
+        allowed_names=None,
     ):
         self.entries: list[dict] = []
         self.effect_committed = threading.Event()
@@ -85,9 +91,14 @@ class ToolExecutor:
                     return
                 params = json.loads(self.rfile.read(size))
                 name = params.get("name")
-                admitted = name in {"write_note", "read_note", "effect_once"} and not params.get(
-                    "arguments"
+                granted = (
+                    {"write_note", "read_note", "effect_once"}
+                    if allowed_names is None
+                    else allowed_names
                 )
+                admitted = name in granted and isinstance(params.get("arguments", {}), dict)
+                if dispatcher is None and params.get("arguments"):
+                    admitted = False
                 entry = {
                     "sequence": len(owner.entries) + 1,
                     "attempt": attempt,
@@ -98,13 +109,15 @@ class ToolExecutor:
                 status = 200
                 try:
                     if not admitted:
-                        raise ValueError("refused tool")
+                        raise Refused("refused tool")
                     # Check ownership even for workspace operations. The endpoint
                     # binds attempt identity; caller cannot choose a newer attempt.
                     with authority.connect() as db:
                         authority.require_owner(db, attempt)
                     note = state / "workspace/recovery-note.txt"
-                    if name == "write_note":
+                    if dispatcher is not None:
+                        body = dispatcher(name, params.get("arguments", {}))
+                    elif name == "write_note":
                         note.write_text(marker)
                         body = {"note": marker}
                     elif name == "read_note":
@@ -122,6 +135,8 @@ class ToolExecutor:
                     entry["outcome"] = "success"
                 except (Superseded, ValueError, OSError) as error:
                     status = 409
+                    if isinstance(error, Refused):
+                        entry["admitted"] = False
                     entry["outcome"] = type(error).__name__
                     body = {"error": type(error).__name__}
                 try:

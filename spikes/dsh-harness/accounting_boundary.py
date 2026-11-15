@@ -14,12 +14,13 @@ from usage_ledger import UsageLedger
 
 
 class FixtureProvider:
-    def __init__(self, case: str):
+    def __init__(self, case: str, responder=None):
         self.case = case
         self.stage = "setup" if case == "auxiliary" else "main"
         self.dispatches: list[dict] = []
         self.entered = threading.Event()
         self.release = threading.Event()
+        self.responder = responder
         owner = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -49,6 +50,28 @@ class FixtureProvider:
                     record["disposition"] = "known interrupted before generation"
                     return
                 owner.entered.set()
+                scripted = owner.responder(request, number) if owner.responder is not None else None
+                if scripted is not None and scripted.get("fault"):
+                    fault = scripted["fault"]
+                    record.update(disposition=fault, input_tokens=0, output_tokens=0)
+                    if fault == "fixture disconnect before generation":
+                        return
+                    status = {
+                        "fixture rejected input": 400,
+                        "fixture unavailable before generation": 503,
+                        "fixture malformed stream before generation": 200,
+                    }[fault]
+                    self.send_response(status)
+                    self.send_header(
+                        "Content-Type", "text/event-stream" if status == 200 else "application/json"
+                    )
+                    self.end_headers()
+                    self.wfile.write(
+                        b"data: malformed-fixture-json\n\n"
+                        if status == 200
+                        else b'{"error":{"message":"controlled fixture failure"}}'
+                    )
+                    return
                 if owner.case == "retry" and number == 1:
                     record.update(
                         disposition="known pre-generation failure", input_tokens=0, output_tokens=0
@@ -65,7 +88,9 @@ class FixtureProvider:
                     "prompt_tokens": 4 if owner.stage == "compaction" else 7,
                     "completion_tokens": 6 if owner.stage == "compaction" else 3,
                 }
-                if owner.stage == "setup":
+                if scripted is not None:
+                    message = scripted["message"]
+                elif owner.stage == "setup":
                     message = {
                         "role": "assistant",
                         "content": "fixture historical sentence. " * 1000,

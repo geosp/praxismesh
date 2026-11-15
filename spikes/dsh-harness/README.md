@@ -208,10 +208,42 @@ request held before generation. Other missing usage stays unknown and closes
 further admission. These stop probes do not establish structured completion or
 benchmark acceptance.
 
+## Phase 02 structured outcome probes
+
+These run the existing `TaskWorkflow`, orchestrator Activities, Postgres and S3
+from local infrastructure, with an isolated DSH implementation of
+`run_harness_turn` on a unique `dsh-spike-*` queue prefix. Production workers
+never receive these tasks. Run sequentially from the repository root:
+
+```bash
+uv run --env-file infra/.env python spikes/dsh-harness/run_tasks.py all --image "$spike_image"
+```
+
+The candidate receives none of the host environment. Its only task tool is
+`finish_task`, whose catalog and validation come from the existing
+`harness_activity/tools.py` wrapper running in the trusted host executor.
+Scripted provider responses cover O1–O5 in the plan's outcome checklist:
+
+| Case | Expected TaskResult |
+| --- | --- |
+| done | succeeded, one trusted artifact ref read back from S3 |
+| plain-text, inner-limit | failed after six outer turns; text or invalid completion never succeeds |
+| needs-input | needs_input with the question preserved |
+| invalid-status, invalid-payload, invalid-reference | first completion refused; a later valid completion succeeds |
+| retry-model, retry-protocol, retry-infrastructure | succeeded after exactly two Temporal attempts |
+| bad-request | failed after one attempt; invalid input is non-retryable |
+
+The bridge acknowledges a paused-container session/workspace pair before each
+model admission and publishes the finish record under the attempt fence. Only
+host-produced files become artifact refs; model-supplied refs are rejected.
+Unknown usage cannot be published as zero tokens. Each attempt follows the
+same cleanup and observation policy as the bounded probes.
+
 ## Checks and cleanup
 
 ```bash
 spikes/dsh-harness/.venv/bin/python -m pytest -c spikes/dsh-harness/pyproject.toml spikes/dsh-harness/test_probe.py spikes/dsh-harness/test_corrections.py spikes/dsh-harness/test_final_corrections.py -q
+PYTHONPATH=spikes/dsh-harness uv run pytest -q -p no:cacheprovider spikes/dsh-harness/test_completion.py
 uv run ruff check --no-respect-gitignore --exclude '' spikes/dsh-harness/*.py
 uv run ruff format --check --no-respect-gitignore --exclude '' spikes/dsh-harness/*.py
 ```

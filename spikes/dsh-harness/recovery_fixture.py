@@ -8,6 +8,7 @@ import os
 import socket
 import subprocess
 import sys
+from pathlib import Path
 
 TOOLS = [
     {
@@ -33,7 +34,12 @@ def dispatch(method: str, params: dict) -> dict:
     if method == "ping":
         return {}
     if method == "tools/list":
-        return {"tools": TOOLS}
+        tools = (
+            json.loads(Path("/opt/spike/task-tools.json").read_text())
+            if os.environ.get("PRAXIS_SPIKE_TASK_TOOLS") == "1"
+            else TOOLS
+        )
+        return {"tools": tools}
     if method != "tools/call":
         raise ValueError("unsupported method")
     if os.environ.get("PRAXIS_SPIKE_STALL_CHILD") == "1":

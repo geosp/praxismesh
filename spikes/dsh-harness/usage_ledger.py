@@ -14,14 +14,14 @@ class UsageLedger:
         self.records: list[dict] = []
         self.lock = threading.Lock()
 
-    def ingress(self, purpose: str, logical_step: int) -> dict:
+    def ingress(self, purpose: str, logical_step: int, *, deny: str | None = None) -> dict:
         with self.lock:
             unsettled = any(r["dispatched"] and r["disposition"] == "unknown" for r in self.records)
             tokens = sum(
                 (r.get("input_tokens") or 0) + (r.get("output_tokens") or 0) for r in self.records
             )
             logical_steps = {r["logical_step"] for r in self.records if r["dispatched"]}
-            reason = (
+            reason = deny or (
                 "unresolved usage"
                 if unsettled
                 else "token budget"

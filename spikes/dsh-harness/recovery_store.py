@@ -66,6 +66,24 @@ class Authority:
             )
         return digest
 
+    def acknowledge(self, attempt: int, payload: bytes, publication: dict) -> str:
+        """Commit a consistent pair and its finish metadata under one fence."""
+        digest = hashlib.sha256(payload).hexdigest()
+        encoded = json.dumps(publication, sort_keys=True)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            self.require_owner(db, attempt)
+            db.execute(
+                "INSERT OR REPLACE INTO checkpoint VALUES (1, ?, ?, ?)", (attempt, digest, payload)
+            )
+            db.execute("INSERT OR REPLACE INTO outcome VALUES (1, ?, ?)", (attempt, encoded))
+        return digest
+
+    def publication(self) -> dict | None:
+        with self.connect() as db:
+            row = db.execute("SELECT payload FROM outcome WHERE id=1").fetchone()
+        return json.loads(row[0]) if row is not None else None
+
     def restore(self) -> tuple[str, bytes]:
         with self.connect() as db:
             row = db.execute("SELECT digest, payload FROM checkpoint WHERE id=1").fetchone()
@@ -105,7 +123,7 @@ class Authority:
             }
 
 
-def capture_pair(state: Path, marker: str) -> bytes:
+def capture_pair(state: Path, marker: str | None) -> bytes:
     """Capture only an externally quiesced session/workspace, excluding home config."""
     files = {}
     total_bytes = 0
@@ -127,9 +145,11 @@ def capture_pair(state: Path, marker: str) -> bytes:
                     raise ValueError("checkpoint fixture too large")
                 files[path.relative_to(state).as_posix()] = data.hex()
     sessions = [bytes.fromhex(v) for k, v in files.items() if k.startswith("home/sessions/")]
-    if not sessions or not any(marker.encode() in value for value in sessions):
+    if not sessions or (
+        marker is not None and not any(marker.encode() in value for value in sessions)
+    ):
         raise ValueError("acknowledged conversation marker absent from durable state")
-    if files.get("workspace/recovery-note.txt") != marker.encode().hex():
+    if marker is not None and files.get("workspace/recovery-note.txt") != marker.encode().hex():
         raise ValueError("acknowledged edit absent")
     return json.dumps(files, sort_keys=True).encode()
 
