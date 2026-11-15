@@ -328,3 +328,38 @@ change receives a final scoped check; no earlier result is relabeled.
   The affected scanner guard and final fixture changes have their own review,
   execution and immutable-revision evidence. Earlier reports are not relabeled.
 - Owner review-waiver decision and latest final-head CI remain the closure gates.
+
+
+## 2026-11-14 · approved procedural review waiver · phase 01
+
+The owner explicitly selected “Accept waiver; close Phase 01 after CI.”
+The waiver accepts two second-round reviewers' exposure to an earlier correction
+summary for this isolated Phase 01 only. All three reviewers completed; every
+reported code finding was corrected and independently targeted-checked. Fresh
+execution and as-built verification passed. The waiver does not accept an open
+code defect, skip required checks, change Phase 02 acceptance, approve production
+adoption, permit a merge, or retroactively change any report/verdict.
+
+The coordinated review gate is accepted under this explicit procedural waiver.
+Runtime verification is pinned to 65d03f0; affected scanner policy and fixture
+changes have independent executed checks at 295d5d3 and 90fd530, with exact runtime
+input equality recorded. Final approved source is 90fd530; later commits contain
+documentation only. Closure/task checkboxes still wait for required CI on the
+current published evidence head; no completion is recorded by this entry.
+
+
+## 2026-11-14 · done · phase 01
+
+The owner's explicit review-independence waiver and conditional closure approval
+were applied after all eleven checks passed on published evidence head
+27acbb273f84da1dcc18eaa475ce21c86b6aee9f (ci-ok success).
+[Coordinator source/evidence and waiver record](../../reviews/general-dsh-harness-evaluation/closure.md)
+retains exact per-scope revisions, affected checks and 84 matching runtime/skill
+digest comparisons; no original verdict or execution SHA was changed.
+The shared done gate passed, then Phase 01 was set done with all three tasks
+checked. The public completion validator and remaining local doc checks run before
+publishing this documentation-only completion record. Final-head CI is checked
+again after publication, with final SHA linkage recorded externally on PR63.
+
+Whole plan remains in progress; Phase 02 remains approved and unstarted. PR63
+remains draft; issue62 remains open. No adoption, merge or new phase start occurs.

@@ -263,3 +263,18 @@ Phase 02 guarantees and stable workload reliability are not claimed.
 The initial failed verification remains preserved. The earlier implementation
 review-independence limitation still requires the owner's decision. No phase
 closure, task completion checkboxes, production adoption or merge is recorded.
+
+
+## Phase 01 completion
+
+The owner accepted the documented procedural review limitation and authorized
+closure after CI. All eleven evidence-head checks passed; the shared done gate
+passed. Phase 01 is done (3/3 tasks), with the
+[coordinator record](../reviews/general-dsh-harness-evaluation/closure.md)
+identifying the waiver, passing evidence and exact source-equivalence boundaries.
+Historical failed verdicts and local-model failures remain unchanged. Final
+closure-record CI is a delivery prerequisite on PR63, which remains draft.
+
+Phase 02 remains unstarted. This completion establishes the isolated controlled
+runtime and authority probes; recovery, full accounting, cancellation, explicit
+TaskResult outcomes, workload benchmark and adoption assessment remain future work.

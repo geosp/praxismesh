@@ -223,7 +223,7 @@ Use D5 for the adoption handoff.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | [Establish an isolated controlled runtime](phases/01-controlled-runtime.md) | in-progress | 0/3 |
+| 01 | [Establish an isolated controlled runtime](phases/01-controlled-runtime.md) | done | 3/3 |
 | 02 | [Prove recovery and assess suitability](phases/02-recovery-and-decision.md) | approved | 0/4 |
 
 ## Decision log
