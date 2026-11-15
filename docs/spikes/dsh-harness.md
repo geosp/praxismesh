@@ -5,9 +5,11 @@ Contract: [approved implementation plan](../plans/2026-11-14-dsh-harness-evaluat
 
 Phase 01 established an isolated, controlled DSH runtime. Phase 02 tested recovery,
 bounded stop, usage accounting, TaskResult mapping and the ten-task benchmark; its
-author-run results and recommendation are in [Phase 02 results](#phase-02-results).
-They await independent review and verification. No production replacement follows
-from this spike; adoption is a separate owner decision.
+author-run results are in [Phase 02 results](#phase-02-results), corrected after
+implementation review in [Round 1 corrections and rerun](#round-1-corrections-and-rerun).
+The owner waived the second review round and independent verification, closed the
+spike as a success and chose to adopt DSH through a separate ADR and migration plan.
+No production replacement follows from this spike itself.
 
 The sections before Phase 02 are the historical Phase 01 record and are unchanged.
 
@@ -423,3 +425,58 @@ confirmed absence for ten seconds. No spike container remained after the frozen
 run. Successful task-attempt scratch trees were removed; failed ones remain under
 the ignored `.runs/` directory. Production deployment, registry, templates and the
 benchmark baseline are unchanged.
+
+
+## Round 1 corrections and rerun
+
+The [implementation review](../plans/2026-11-14-dsh-harness-evaluation/reviews.md)
+of `bc4227c` requested changes: 10 Majors, 23 Nits. The main point was that the
+results above claimed R4, R6 and R7 more broadly than the bridge enforced, and
+that retry, loss and multi-attempt paths never ran live. The fixes are in
+`d2d782c`, each with a regression test in `test_task_policy.py`:
+
+- Usage: heartbeats keep settled tokens while a request is in flight; every
+  failure path records ledger totals; unknown usage is classified before exit
+  codes and never retried; an exhausted turn reports its totals.
+- Ownership: claims follow the Temporal turn/attempt order; a superseded attempt
+  writes no attempt row, artifact or publication.
+- Checkpoints: a pair is acknowledged only when the newest tool-call ID is in
+  DSH's session files; checkpoint limits are not retried; workspace snapshots
+  skip links and the skill mount, as production does.
+- Skill: DSH's skill plugins are disabled. The template bundle is mounted and
+  indexed as in production and read through the executor's `read_file`, so every
+  skill read is observed. DSH's own skill loader is therefore not evaluated.
+- Stop: SIGTERM must stop the container within 5 s or the attempt fails; new
+  `deadline` and `cancel` cases run through `TaskWorkflow` and a real worker.
+- Manifests are validated before launch; ceilings come from the template.
+
+Every probe was rerun once from `d2d782c` with a clean tree; all 50 manifests name
+that commit. [Sanitized evidence](dsh-phase02-r2-evidence.json); pinned gitleaks
+found no leaks. The earlier evidence file is kept unchanged.
+
+| Group | Result |
+| --- | --- |
+| Recovery, 4 accounting, 5 bounded-stop probes | all passed |
+| Outcome cases through `TaskWorkflow` | 14/14 passed, including `lost-after-finish`, `deadline`, `cancel` |
+| DSH benchmark | 10/10, 0 lost; 11 attempts, all reconciled, zero unknown usage |
+| Production runner, same day | 10/10 (openai-agents 0.24.0), recorded in `docs/benchmarks/2026-11-15-local-default.*` |
+
+| Totals | Production runner, 2026-11-15 | DSH candidate |
+| --- | --- | --- |
+| Tokens in / out | 123,169 / 9,793 | 159,526 / 12,009 |
+| Tool calls | 97 | 112 executed tool bodies, 28 of them skill reads |
+| Wall time | 223 s | 419 s |
+
+t01 used a second outer turn after reaching the step limit, through the corrected
+continuation path. Evidence scope, stated plainly:
+
+- R4 passes under the spike barrier (held request, session-marker check,
+  container pause). It is not a DSH-provided export API.
+- R5 cancellation was tested through the SDK test environment and one real worker
+  on a local Temporal server, not a deployed multi-host worker.
+- Live loss of a request mid-generation has unknown usage and stops the turn
+  (fail-closed); production would retry it.
+- The second review round and independent verification were waived by the owner.
+
+Owner decision, 2026-11-15: the spike is closed as a success, and DSH adoption
+proceeds through a new ADR and a reviewed migration plan.

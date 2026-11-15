@@ -438,3 +438,65 @@ All four task boxes remain unchecked.
 | F31 | Nit | Contract | 4096-byte tool request limit undisclosed as a known difference (R8). | open |
 | F32 | Nit | Contract | Spike tests absent from README checks and CI; no unit tests for `progress()`, failure classification, finish short-circuit (all). | open |
 | F33 | Nit | Contract | `bench_tools` mutates global `os.environ` for idempotency scope (R4). | open |
+
+## 2026-11-15 · impl-review · phase 02 · round 1 · resolutions
+
+Fixes in `d2d782c`; frozen rerun of every probe at that commit passed
+([evidence](../../spikes/dsh-phase02-r2-evidence.json)).
+
+| ID | Resolution |
+| --- | --- |
+| F1 | fixed: `task_policy.progress`, `UsageLedger.settled` (test_f1) |
+| F2 | fixed: totals copied on all paths; unknown usage before exit code (test_f2) |
+| F3 | fixed: AttemptsExhausted carries turn totals (test_f3) |
+| F4 | fixed: pre-launch failures retryable, listeners closed (test_f4) |
+| F5 | fixed: `Authority.claim(order)` by turn/attempt (test_f5) |
+| F6 | fixed: ownership checked before rows, blobs, publication (test_f6) |
+| F7 | fixed: session-marker check at every acknowledgement (test_f7; live acks) |
+| F8 | fixed: DSH skill plugins disabled; production skill mount read via executor (test_f8) |
+| F9 | fixed: `validate_manifest` before launch; Phase 02 inventory (test_f9) |
+| F10 | fixed: `CheckpointLimit` non-retryable; production link/skill skipping (test_f10) |
+| F11 | fixed: forced stop fails; `deadline` and `cancel` cases through TaskWorkflow |
+| F12 | fixed: cancellation waits for owned work; row closed (cancel case) |
+| F13 | fixed: ceilings and CLI grant from template |
+| F14 | fixed: heartbeat inner_turns and tool_calls |
+| F15 | accepted: effects are workspace-local in unacknowledged scratch or idempotent; publication is fenced |
+| F16 | fixed: unpause failure aborts the turn |
+| F17 | fixed: InvalidCompletion is an admitted error entry |
+| F18 | accepted: accounting probes stay under 8 requests by design; task boundary no longer has the cap |
+| F19 | fixed: remaining tasks blocked, timeout cancels workflow, attribution by task ID |
+| F20 | accepted: matches the production admission rule |
+| F21 | fixed in part: newer-attempt refusal (test_f5); remaining ordering is the recovery probe's |
+| F22 | accepted: fail-closed per notes.md#independent-usage-ledger; disclosed in README and report |
+| F23 | accepted: manifests name the container; README documents manual cleanup |
+| F24 | accepted: diagnostic purpose tag, not used for accounting |
+| F25 | accepted: live compaction admission and denial covered by the auxiliary probe |
+| F26 | fixed: category and admitted-entry assertions |
+| F27 | accepted: live physical count is the trusted gateway observation; disclosed |
+| F28 | accepted: owned work is the container cgroup; disclosed |
+| F29 | fixed: report states R4 and cancellation scope |
+| F30 | fixed: run metadata; production runner rerun for context |
+| F31 | fixed: executor uses the 2 MiB gateway bound |
+| F32 | fixed: README runs all spike tests; CI unchanged (out of spike scope) |
+| F33 | accepted: executor calls are serialized under a lock, one task per worker |
+
+## 2026-11-15 · waiver · phase 02
+
+The owner waived the second implementation-review round and independent
+verification, and closed the spike as a success. Overridden gates: impl-review
+passed status and verify-phase. Round 1 ran with fresh reviewers; every finding
+is resolved above and the corrected code was rerun from a frozen commit.
+
+## 2026-11-15 · done blocked · phase 02
+
+The skill's done gate passed with the logged waiver, and all four tasks are checked.
+The repository plan check (`.github/scripts/check_plans.py`) accepts `done` only with
+passed review, verification and demo records, so phase 02 and the plan stay
+`in-progress` until the owner runs verification or changes that check.
+
+## 2026-11-15 · ADR review
+
+ADRs reviewed: ADR-0002 and ADR-0003 (accepted); ADR-0001 and ADR-0004 (proposed). None
+records a harness choice. Created ADR-0005, adopting DSH as the primary harness
+inside Temporal Activities, with adoption conditions and a migration plan as
+follow-up. The spike's own decisions D1-D5 are tactical and need no ADR.

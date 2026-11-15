@@ -2,7 +2,7 @@
 title: Evaluate DSH as the primary agent harness
 status: in-progress
 created: 2026-11-14
-updated: 2026-11-14
+updated: 2026-11-15
 design_review: { status: passed, rounds: 2, last: 2026-11-14 }
 approved: 2026-11-14
 adr_review: null
@@ -224,8 +224,9 @@ Use D5 for the adoption handoff.
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
 | 01 | [Establish an isolated controlled runtime](phases/01-controlled-runtime.md) | done | 3/3 |
-| 02 | [Prove recovery and assess suitability](phases/02-recovery-and-decision.md) | in-progress | 0/4 |
+| 02 | [Prove recovery and assess suitability](phases/02-recovery-and-decision.md) | in-progress | 4/4 |
 
 ## Decision log
 
 2026-11-14: Owner requested exploration of DSH for running PraxisMesh agents.
+2026-11-15: Owner waived round-2 review and verification, closed the spike as a success and adopted DSH via ADR-0005.
