@@ -18,7 +18,7 @@ Record both the standard evidence report below and the summary in the plan's rev
 
 ## Gate rules
 
-1. **Fresh session.** A gate review runs in a new session that did not write, implement or discuss the work. If the session has that history, stop and say so. The report records `session: fresh`.
+1. **Fresh reviewers.** Reviewers and verifiers are subagents that start with a fresh context and receive only the rule 3 inputs. Any session may coordinate them, including the one that wrote the work. The coordinator passes only pinned inputs, saves every subagent report verbatim and never edits a verdict or finding. The report records `reviewers: fresh-subagent` (or `session: fresh` when a separate session ran it).
 2. **Pinned revision.** Review a committed revision only.
    - Record `git rev-parse HEAD` as `commit_sha` (for an implementation review this is the `code_sha`).
    - The reviewed paths must have no uncommitted changes: `git status --porcelain -- <paths>` is empty.
@@ -34,8 +34,8 @@ Record both the standard evidence report below and the summary in the plan's rev
    - Every Major must be fixed or contested with evidence before a PASS.
    - Nits do not block.
    - Verification uses `pass`, `fail` or `blocked` (see the `verify-phase` skill). Blocked is never counted as passed (§8).
-6. **No fixing in the reviewing session.** Findings go back to the author or implementer. A re-check runs in another new session. That session gets the correction list only after it has recorded its own fresh assessment, or it is explicitly labeled a targeted follow-up (§0.3).
-7. **Light tier (Phases 0-2).** One fresh session runs the implementation review and then verification against the same `code_sha`. Independence between those two is knowingly waived; independence from the implementer is not (§7.0). From Phase 3A on, they run in separate sessions.
+6. **No fixing by reviewers.** Reviewer and verifier subagents never change the work. The coordinator applies fixes, then starts new fresh subagents for the re-check. They get the correction list only after recording their own assessment, or the round is explicitly labeled a targeted follow-up (§0.3).
+7. **Light tier (Phases 0-2).** One coordinator runs the implementation-review subagents and then the verifier against the same `code_sha`. Independence between those two is knowingly waived; independence from the implementer is not (§7.0). From Phase 3A on, they run in separate sessions.
 
 A review verdict alone never authorizes a merge. Required CI checks on the latest head still apply.
 
