@@ -14,3 +14,13 @@ condition = "AND"
 paths = ['''^docs/plan/schemas\.md$''', '''^docs/roadmap/schemas\.md$''']
 regexTarget = "line"
 regexes = ['''request ID/idempotency key, parent/previous response ID''']
+
+[[allowlists]]
+description = "Reviewed DSH SDK source-file SHA-256; exact artifact path and complete digest line only"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^spikes/dsh-harness/artifacts\.json$''']
+regexTarget = "line"
+regexes = [
+  '''^\s*"deepseek_harness/api\.py": "9c772909775196fc4070182191738ad227a3bfdccc68d1b6f4e8b90dec08430b",?\s*$''',
+]

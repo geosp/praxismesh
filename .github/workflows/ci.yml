@@ -200,6 +200,8 @@ jobs:
             echo "canary did not preserve exact path/rule/line restrictions" >&2; exit 1;
           }
           echo "canary passed: both schema paths bounded; ordinary file detected"
+      - name: Canary (artifact digest exception stays exact)
+        run: python3 .github/scripts/check_gitleaks_artifact_allowlist.py --gitleaks ./gitleaks
       # On main and manual runs the whole history is scanned, so a gitleaks
       # upgrade with a new rule can flag an old commit and turn main red. Fix that
       # with a reviewed allowlist entry in .gitleaks.toml, not by rewriting history.

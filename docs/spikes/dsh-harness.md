@@ -214,3 +214,18 @@ findings. It inspected the committed evidence without executing the candidate.
 This limited PASS preserves both earlier full-review verdicts and their stated
 independence limitation. It does not establish independent runtime verification,
 stable local-model completion, scanner clearance, phase closure or adoption.
+
+
+## Scanner false-positive disposition
+
+The owner approved a narrowly scoped reviewed exception. The installed SDK api.py
+bytes match the recorded SHA-256. The new generic-api-key allowlist requires both
+exact artifact-manifest path and the complete line containing that one digest.
+It suppresses no other rule, path, changed digest or appended credential text.
+The [artifact canary](../../.github/scripts/check_gitleaks_artifact_allowlist.py)
+runs in CI beside the original schema canary. It verifies suppression of the exact
+metadata line while detecting a changed digest, an added key, an appended key and
+the same metadata line at another path. Temporarily broadening the exception to
+OR made the canary fail; restoring AND passed. The existing schema canary also
+passed. The feature-branch commit scan passed with no leaks using the corrected
+configuration. Historical reports preserve their earlier unresolved scanner status.

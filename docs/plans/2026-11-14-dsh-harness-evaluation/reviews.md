@@ -181,3 +181,19 @@ review is planned. Phase metadata stays changes-requested pending that check.
   latest-head checks remain due. Phase metadata remains changes-requested rather
   than claiming the limited targeted verdict establishes the full gate. Tasks
   remain unticked; Phase 02 remains unstarted.
+
+
+## 2026-11-14 · approved scanner exception and delivery preparation
+
+The owner directed “Go ahead” after the recommendation to resolve the scanner
+false positive, publish the feature branch/draft PR and run fresh verification.
+Authorization covers those next actions; no phase closure, review-independence
+waiver, production adoption or merge was authorized.
+
+The scanner exception is restricted by rule, exact artifact path and exact complete
+digest line. The artifact canary failed before the exception, passed after it,
+and detected a temporary overbroad OR mutation. The existing schema canary passed.
+The feature-branch history scan now passes with the corrected configuration.
+A fresh targeted review of this security-relevant configuration/CI change and the
+required local checks precede publication. No repository protection/settings or
+scanner rules were disabled.
