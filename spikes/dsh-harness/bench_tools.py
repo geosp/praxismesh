@@ -18,14 +18,19 @@ import threading
 from dataclasses import asdict
 from pathlib import Path
 
+import yaml
 from agents import set_tracing_disabled
 from agents.tool_context import ToolContext
 from recovery_boundary import Refused
+from run_probe import ROOT
+from task_completion import InvalidCompletion
 
 import sample_mcp.server as shop
 from harness_activity.tools import COMMAND_TIMEOUT_S, OUTPUT_CAP, TurnState, build_tools
 
-CLI_TOOLS = ["python3", "wc", "git", "sh"]
+CLI_TOOLS = yaml.safe_load((ROOT / "registry/templates/local-default.yaml").read_text())[
+    "cli_tools"
+]
 FILE_TOOLS = ("read_file", "write_file", "list_files")
 
 
@@ -68,7 +73,7 @@ class BenchTools:
             if name in self.tools:
                 schema = self.tools[name].params_json_schema
                 if set(arguments) - set(schema["properties"]):
-                    raise Refused("unknown tool fields")
+                    raise InvalidCompletion("unknown tool fields")
             if name == "run_command":
                 return {"result": self.run_command(arguments.get("command", ""))}
             if name in self.tools:
@@ -79,7 +84,9 @@ class BenchTools:
                 text = asyncio.run(self.tools[name].on_invoke_tool(context, payload))
                 if name == "finish_task":
                     if self.state.finish is None:
-                        raise Refused("completion arguments failed existing tool validation")
+                        raise InvalidCompletion(
+                            "completion arguments failed existing tool validation"
+                        )
                     self.finished.set()
                 return {"result": text}
             if name not in {t["name"] for t in self.shop}:

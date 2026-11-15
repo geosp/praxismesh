@@ -18,6 +18,14 @@ class Superseded(RuntimeError):
     pass
 
 
+class CheckpointLimit(ValueError):
+    """A checkpoint breached a fixed spike limit; retrying cannot change that."""
+
+
+class FlushMissing(ValueError):
+    """The required session marker is absent: the barrier was not reached."""
+
+
 class Authority:
     def __init__(self, path: Path):
         self.path = path
@@ -49,12 +57,24 @@ class Authority:
         if db.execute("SELECT attempt FROM owner WHERE id=1").fetchone()[0] != attempt:
             raise Superseded("attempt no longer owns publication")
 
-    def claim(self) -> int:
+    def claim(self, order: int | None = None) -> int:
+        """Take ownership. With an order (Temporal turn/attempt), an older or equal
+        order is refused, so a stale attempt resuming late cannot take it back."""
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            attempt = db.execute("SELECT attempt FROM owner WHERE id=1").fetchone()[0] + 1
+            current = db.execute("SELECT attempt FROM owner WHERE id=1").fetchone()[0]
+            if order is None:
+                attempt = current + 1
+            elif order <= current:
+                raise Superseded("a newer attempt already owns this task")
+            else:
+                attempt = order
             db.execute("UPDATE owner SET attempt=? WHERE id=1", (attempt,))
             return attempt
+
+    def owns(self, attempt: int) -> bool:
+        with self.connect() as db:
+            return db.execute("SELECT attempt FROM owner WHERE id=1").fetchone()[0] == attempt
 
     def checkpoint(self, attempt: int, payload: bytes) -> str:
         digest = hashlib.sha256(payload).hexdigest()
@@ -123,8 +143,18 @@ class Authority:
             }
 
 
-def capture_pair(state: Path, marker: str | None) -> bytes:
-    """Capture only an externally quiesced session/workspace, excluding home config."""
+def capture_pair(
+    state: Path,
+    marker: str | None,
+    *,
+    session_marker: str | None = None,
+    workspace_policy: str = "strict",
+) -> bytes:
+    """Capture only an externally quiesced session/workspace, excluding home config.
+
+    workspace_policy "production" matches harness_activity/workspace.py: links and
+    the read-only .skills mount are skipped instead of failing the checkpoint.
+    """
     files = {}
     total_bytes = 0
     for prefix in ("home/sessions", "workspace"):
@@ -132,8 +162,14 @@ def capture_pair(state: Path, marker: str | None) -> bytes:
         if any((state / parent).is_symlink() for parent in ("home", prefix)) or not root.is_dir():
             raise ValueError("missing or symlinked checkpoint root")
         for path in sorted(root.rglob("*")):
+            relative = path.relative_to(root)
+            if workspace_policy == "production" and prefix == "workspace":
+                if relative.parts[:1] == (".skills",) or path.is_symlink():
+                    continue
+                if any(parent.is_symlink() for parent in path.parents if root in parent.parents):
+                    continue
             if path.is_symlink() or (not path.is_file() and not path.is_dir()):
-                raise ValueError("checkpoint contains nonregular state")
+                raise CheckpointLimit("checkpoint contains nonregular state")
             if path.is_file():
                 data = path.read_bytes()
                 total_bytes += len(data)
@@ -142,9 +178,11 @@ def capture_pair(state: Path, marker: str | None) -> bytes:
                     or total_bytes > 16 * 1024 * 1024
                     or len(files) >= 1000
                 ):
-                    raise ValueError("checkpoint fixture too large")
+                    raise CheckpointLimit("checkpoint exceeds 4 MiB/file, 16 MiB or 1000 files")
                 files[path.relative_to(state).as_posix()] = data.hex()
     sessions = [bytes.fromhex(v) for k, v in files.items() if k.startswith("home/sessions/")]
+    if session_marker is not None and not any(session_marker.encode() in s for s in sessions):
+        raise FlushMissing("latest tool result not yet in durable session state")
     if not sessions or (
         marker is not None and not any(marker.encode() in value for value in sessions)
     ):

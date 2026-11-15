@@ -76,6 +76,20 @@ class UsageLedger:
                 raise ValueError("authoritative nonnegative integer usage required")
             record.update(input_tokens=incoming, output_tokens=outgoing, disposition="success")
 
+    def settled(self) -> dict:
+        """Tokens already settled, plus how many dispatches are still unknown.
+
+        Unlike totals(), never hides settled usage behind an in-flight request."""
+        with self.lock:
+            dispatched = [r for r in self.records if r["dispatched"]]
+            known = [r for r in dispatched if r["disposition"] != "unknown"]
+            return {
+                "input_tokens": sum(r["input_tokens"] for r in known),
+                "output_tokens": sum(r["output_tokens"] for r in known),
+                "unknown_usage": len(dispatched) - len(known),
+                "logical_steps": len({r["logical_step"] for r in dispatched}),
+            }
+
     def totals(self) -> dict:
         with self.lock:
             dispatched = [r for r in self.records if r["dispatched"]]

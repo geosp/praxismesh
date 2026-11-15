@@ -17,6 +17,16 @@ FIXTURE_FAULTS = {
 }
 
 
+def latest_tool_call_id(request: dict) -> str | None:
+    """The newest tool result the candidate sent; it must already be flushed."""
+    ids = [
+        m.get("tool_call_id")
+        for m in request.get("messages", [])
+        if m.get("role") == "tool" and isinstance(m.get("tool_call_id"), str)
+    ]
+    return ids[-1] if ids else None
+
+
 class TaskBoundary(Boundary):
     # The usage ledger owns the model-step limit so its denial is recorded and
     # inner-step exhaustion maps to continuation, not a retryable failure.
@@ -53,14 +63,19 @@ class TaskBoundary(Boundary):
     def admit(self, request: dict, record: dict) -> bool:
         step = self.logical.setdefault(record["request_hash"], len(self.logical) + 1)
         deny = "explicit completion" if self.completion.finished.is_set() else None
+        record["last_tool_call_id"] = latest_tool_call_id(request)
         if deny is None and self.checkpoint is not None:
             try:
-                self.checkpoint()
+                self.checkpoint(record["last_tool_call_id"])
                 record["checkpoint_acknowledged"] = True
             except Exception as error:
                 record["checkpoint_error_type"] = type(error).__name__
-                self.fault = "checkpoint barrier failed"
-                deny = "checkpoint barrier failed"
+                self.fault = (
+                    "checkpoint limit"
+                    if type(error).__name__ == "CheckpointLimit"
+                    else "checkpoint barrier failed"
+                )
+                deny = self.fault
         observation = self.ledger.ingress("main", step, deny=deny)
         record["accounting"] = observation
         return observation["dispatched"]
@@ -129,7 +144,17 @@ class TaskBoundary(Boundary):
                 if self.fixture is not None and self.fixture.dispatches
                 else {}
             )
-            if last.get("disposition") == "fixture disconnect before generation":
+            if last.get("disposition") in (
+                "known stalled before generation",
+                "known interrupted before generation",
+            ):
+                # The deterministic fixture held this request before generating:
+                # zero usage is proven, so the interruption is not unknown usage.
+                self.fault = None
+                self.ledger.settle(
+                    record["accounting"], None, known_pre_generation=True, cancelled=True
+                )
+            elif last.get("disposition") == "fixture disconnect before generation":
                 self.fault = last["disposition"]
                 self.ledger.settle(record["accounting"], None, known_pre_generation=True)
             if not self.stopping.is_set():

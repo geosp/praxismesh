@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import hashlib
 import json
 import os
+import platform
+import subprocess
 import sys
 import time
 import uuid
@@ -24,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 from opentelemetry.sdk.trace import TracerProvider
 from recovery_store import Authority, restore_pair
 from task_activity import CLI_GRANT, PRODUCTION_PROMPT, SHOP_GRANT, TaskActivities
+from task_policy import TEMPLATE
 from temporalio.worker import Worker
 
 from common.blob_store.s3 import S3BlobStore
@@ -70,19 +74,22 @@ async def run_all(ids: list[str], image: str, scratch: Path) -> list[dict]:
     )
     try:
         async with orchestrator, worker:
-            for task in [t for t in TASKS if not ids or t.id in ids]:
+            selected = [t for t in TASKS if not ids or t.id in ids]
+            for index, task in enumerate(selected):
                 available = host_memory_available()
                 if available < MEMORY_FLOOR:
-                    # Stop before starting a candidate; an unfinished run is not evidence.
-                    rows.append(
-                        {
-                            "task": task.id,
-                            "passed": False,
-                            "status": "blocked",
-                            "check": f"blocked: host memory {available >> 20} MiB available",
-                        }
-                    )
-                    print(json.dumps(rows[-1]), flush=True)
+                    # Stop before starting a candidate; record every remaining task as
+                    # blocked so an unfinished run can never read as complete.
+                    for skipped in selected[index:]:
+                        rows.append(
+                            {
+                                "task": skipped.id,
+                                "passed": False,
+                                "status": "blocked",
+                                "check": f"blocked: host memory {available >> 20} MiB available",
+                            }
+                        )
+                        print(json.dumps(rows[-1]), flush=True)
                     break
                 inputs = scratch / "inputs" / task.id
                 setup(task, inputs)
@@ -96,9 +103,9 @@ async def run_all(ids: list[str], image: str, scratch: Path) -> list[dict]:
                     blobs,
                     base_dir=inputs,
                 )
-                before = len(candidate.records)
                 began = time.monotonic()
                 result: TaskResult | None = None
+                handle = None
                 try:
                     handle = await start_task(client, start)
                     result = TaskResult.model_validate(
@@ -107,16 +114,26 @@ async def run_all(ids: list[str], image: str, scratch: Path) -> list[dict]:
                     status, reason = result.status, result.failure_reason
                 except Exception as error:
                     status, reason = "error", type(error).__name__
+                    if handle is not None:
+                        # Stop this task's work before the next task starts, so a late
+                        # attempt cannot run alongside it.
+                        with contextlib.suppress(Exception):
+                            await handle.cancel()
+                            await asyncio.wait_for(handle.result(), timeout=120)
                 seconds = round(time.monotonic() - began, 1)
-                attempts = candidate.records[before:]
+                # Attribute attempts by task ID, never by position in the record list.
+                attempts = [a for a in candidate.records if a.get("task_id") == start.task_id]
                 authority = scratch / "activities" / start.task_id / "authority.sqlite"
                 final = scratch / "final" / task.id
-                if authority.exists() and Authority(authority).publication() is not None:
-                    final.parent.mkdir(parents=True, exist_ok=True)
-                    restore_pair(Authority(authority).restore()[1], final)
-                    passed, check = task.check(final / "workspace")
-                else:
-                    passed, check = False, "no acknowledged checkpoint"
+                try:
+                    if authority.exists() and Authority(authority).publication() is not None:
+                        final.parent.mkdir(parents=True, exist_ok=True)
+                        restore_pair(Authority(authority).restore()[1], final)
+                        passed, check = task.check(final / "workspace")
+                    else:
+                        passed, check = False, "no acknowledged checkpoint"
+                except Exception as error:
+                    passed, check = False, f"final checkpoint unreadable: {type(error).__name__}"
                 totals = [a.get("totals") or {} for a in attempts]
                 row = {
                     "task": task.id,
@@ -135,7 +152,14 @@ async def run_all(ids: list[str], image: str, scratch: Path) -> list[dict]:
                         sum(e["admitted"] for e in a.get("tool_entries") or []) for a in attempts
                     ),
                     "native_attempts": len(attempts),
-                    "native_failures": [a.get("error_type") for a in attempts if a.get("exit")],
+                    "native_failures": [
+                        a.get("failure_category") or a.get("error_type")
+                        for a in attempts
+                        if a.get("exit")
+                    ],
+                    "unknown_usage": sum(
+                        (a.get("settled") or {}).get("unknown_usage", 0) for a in attempts
+                    ),
                     "cleanup_ok": all(a.get("cleanup", {}).get("cleanup_ok") for a in attempts),
                     "seconds": seconds,
                 }
@@ -154,13 +178,37 @@ def main() -> int:
     name = "benchmark-" + uuid.uuid4().hex[:12]
     scratch = HERE / ".runs" / name
     scratch.mkdir(parents=True)
+    run_started = time.time()
     rows = asyncio.run(run_all(args.only, args.image, scratch))
     baseline = json.loads(BASELINE.read_text())
     passed = sum(r["passed"] for r in rows)
     complete = sum(r["status"] != "blocked" for r in rows) == len(TASKS)
     lost = baseline["passed"] - passed
+    manifests = sorted((HERE / ".runs").glob("praxis-dsh-task-*-manifest.json"))
+    compositions = {
+        json.loads(m.read_text()).get("trusted_additions", {}).get("task-composition.yaml")
+        for m in manifests
+        if json.loads(m.read_text()).get("case") == "benchmark" and m.stat().st_mtime >= run_started
+    }
+    inspected = subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{.Id}}", args.image],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
     summary = {
         "image": args.image,
+        "image_present": inspected == args.image,
+        "model": TEMPLATE["model"],
+        "template": f"{TEMPLATE['name']}@{TEMPLATE['version']}",
+        "composition_sha256": sorted(c for c in compositions if c),
+        "host": {
+            "platform": platform.platform(),
+            "cpus": os.cpu_count(),
+            "memory_gib": round(
+                os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2**30, 1
+            ),
+        },
         "baseline": {k: baseline[k] for k in ("passed", "template_hash", "prompt_hash", "harness")},
         "candidate_prompt_sha256": "sha256:"
         + hashlib.sha256(PRODUCTION_PROMPT.encode()).hexdigest(),

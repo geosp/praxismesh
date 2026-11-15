@@ -72,6 +72,7 @@ class ToolExecutor:
         hold_effect: bool = False,
         dispatcher=None,
         allowed_names=None,
+        max_request: int = 4096,
     ):
         self.entries: list[dict] = []
         self.effect_committed = threading.Event()
@@ -86,7 +87,7 @@ class ToolExecutor:
                     self.send_error(403)
                     return
                 size = int(self.headers.get("Content-Length", "0"))
-                if not 0 < size < 4096:
+                if not 0 < size < max_request:
                     self.send_error(400)
                     return
                 params = json.loads(self.rfile.read(size))

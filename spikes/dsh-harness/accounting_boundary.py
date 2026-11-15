@@ -14,8 +14,9 @@ from usage_ledger import UsageLedger
 
 
 class FixtureProvider:
-    def __init__(self, case: str, responder=None):
+    def __init__(self, case: str, responder=None, *, stall_first: bool = False):
         self.case = case
+        self.stall_first = stall_first
         self.stage = "setup" if case == "auxiliary" else "main"
         self.dispatches: list[dict] = []
         self.entered = threading.Event()
@@ -39,7 +40,9 @@ class FixtureProvider:
                     ).hexdigest(),
                 }
                 owner.dispatches.append(record)
-                if owner.case in ("stall-model", "cancel-model"):
+                if owner.case in ("stall-model", "cancel-model") or (
+                    owner.stall_first and number == 1
+                ):
                     record.update(
                         disposition="known stalled before generation",
                         input_tokens=0,

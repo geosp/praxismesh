@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -24,7 +25,12 @@ from task_activity import TaskActivities
 from temporalio.worker import Worker
 
 from common.blob_store.s3 import S3BlobStore
-from common.persistence.repositories import RecordingBlobStore, TaskRepository, make_engine
+from common.persistence.repositories import (
+    AttemptRepository,
+    RecordingBlobStore,
+    TaskRepository,
+    make_engine,
+)
 from common.schemas import TaskResult
 from orchestrator.activities import OrchestratorActivities
 from orchestrator.constants import orchestration_queue, template_queue
@@ -46,7 +52,47 @@ CASES = (
     "retry-infrastructure",
     "bad-request",
     "lost-after-finish",
+    "deadline",
+    "cancel",
 )
+RETRY_CATEGORIES = {
+    "retry-model": "DshProviderFailure",
+    "retry-protocol": "DshProviderFailure",
+    "retry-infrastructure": "DshProviderFailure",
+    "bad-request": "HarnessInputError",
+}
+
+
+async def cancel_after_entry(candidate, handle, timeout: float = 120):
+    """Cancel the workflow once the fixture provider holds the first request."""
+    until = asyncio.get_running_loop().time() + timeout
+    while True:
+        provider = candidate.live.get("provider")
+        if provider is not None and provider.entered.is_set():
+            break
+        if asyncio.get_running_loop().time() > until:
+            raise AssertionError("provider entry not observed before cancellation")
+        await asyncio.sleep(0.05)
+    await handle.cancel()
+    with contextlib.suppress(Exception):
+        await asyncio.wait_for(handle.result(), timeout=120)
+    while not candidate.records:
+        if asyncio.get_running_loop().time() > until + 120:
+            raise AssertionError("cancelled attempt left no record")
+        await asyncio.sleep(0.1)
+
+
+async def check_cancelled(candidate, task_id: str, engine) -> None:
+    first = candidate.records[0]
+    if (first.get("stop_reason"), first.get("cooperative_stop")) != ("cancelled", True):
+        raise AssertionError("cancellation did not stop the candidate cooperatively")
+    if not first.get("cleanup", {}).get("cleanup_ok"):
+        raise AssertionError("cancelled attempt cleanup failed")
+    # The workflow completes a cancelled task and closes its open rows itself;
+    # either way the attempt row must not stay open.
+    rows = await AttemptRepository(engine).list(task_id)
+    if len(rows) != 1 or rows[0]["outcome"] == "started":
+        raise AssertionError("cancelled attempt row was left open")
 
 
 async def run_case(case: str, image: str, scratch: Path) -> dict:
@@ -97,6 +143,12 @@ async def run_case(case: str, image: str, scratch: Path) -> dict:
         )
         async with orchestrator, worker:
             handle = await start_task(client, start)
+            if case == "cancel":
+                await cancel_after_entry(candidate, handle)
+                records.update(native_attempts=candidate.records)
+                await check_cancelled(candidate, start.task_id, engine)
+                records.update(exit=0, status="passed")
+                return records
             result = TaskResult.model_validate(await asyncio.wait_for(handle.result(), timeout=900))
         records.update(result=result.model_dump(mode="json"), native_attempts=candidate.records)
         expected = (
@@ -127,6 +179,23 @@ async def run_case(case: str, image: str, scratch: Path) -> dict:
                 first["totals"]["output_tokens"],
             ):
                 raise AssertionError("lost attempt usage missing from the turn total")
+        if case in RETRY_CATEGORIES and (
+            candidate.records[0].get("failure_category") != RETRY_CATEGORIES[case]
+        ):
+            raise AssertionError("first attempt has the wrong failure category")
+        if case.startswith("invalid-"):
+            first = candidate.records[0]["tool_entries"][0]
+            if not (first["admitted"] and first["outcome"] == "InvalidCompletion"):
+                raise AssertionError("invalid completion was not an admitted, rejected entry")
+        if case == "deadline":
+            first = candidate.records[0]
+            if (first.get("stop_reason"), first.get("cooperative_stop")) != (
+                "turn deadline exceeded",
+                True,
+            ) or first.get("failure_category") != "DshTurnDeadline":
+                raise AssertionError("deadline did not stop cooperatively and retry")
+            if first["settled"]["unknown_usage"] or result.attempts != 2:
+                raise AssertionError("held request was not settled as proven zero usage")
         if case == "bad-request" and result.attempts != 1:
             raise AssertionError("invalid model input was retried")
         if case in ("plain-text", "inner-limit") and result.turns != 6:

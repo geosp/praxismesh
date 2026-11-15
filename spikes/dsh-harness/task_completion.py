@@ -16,6 +16,11 @@ from common.schemas import TurnOutcome
 from harness_activity.tools import TurnState, build_tools
 
 
+class InvalidCompletion(ValueError):
+    """finish_task ran but its arguments failed validation: an admitted entry
+    with an error outcome, not a policy denial."""
+
+
 class Completion:
     def __init__(self, workspace: Path):
         set_tracing_disabled(True)
@@ -43,7 +48,7 @@ class Completion:
             # Enforce the advertised extra-field policy before invoking the real
             # tool wrapper; model-supplied artifacts never become trusted refs.
             if set(arguments) - set(self.tool.params_json_schema["properties"]):
-                raise Refused("unknown completion fields")
+                raise InvalidCompletion("unknown completion fields")
             payload = json.dumps(arguments)
             context = ToolContext(
                 context=None,
@@ -53,7 +58,7 @@ class Completion:
             )
             asyncio.run(self.tool.on_invoke_tool(context, payload))
             if self.state.finish is None:
-                raise Refused("completion arguments failed existing tool validation")
+                raise InvalidCompletion("completion arguments failed existing tool validation")
             self.finished.set()
             return {"recorded": True, "status": self.state.finish.status}
 

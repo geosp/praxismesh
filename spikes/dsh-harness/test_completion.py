@@ -6,7 +6,7 @@ pytest.importorskip("agents")
 
 from pydantic import ValidationError
 from recovery_boundary import Refused
-from task_completion import Completion, turn_outcome
+from task_completion import Completion, InvalidCompletion, turn_outcome
 
 
 @pytest.mark.parametrize(
@@ -24,7 +24,7 @@ from task_completion import Completion, turn_outcome
 )
 def test_invalid_completion_cannot_establish_success(tmp_path, arguments):
     completion = Completion(tmp_path)
-    with pytest.raises(Refused):
+    with pytest.raises(InvalidCompletion):
         completion.dispatch("finish_task", arguments)
     assert completion.report() is None
     assert not completion.finished.is_set()

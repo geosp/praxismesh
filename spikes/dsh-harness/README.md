@@ -233,13 +233,34 @@ Scripted provider responses cover O1–O5 in the plan's outcome checklist:
 | retry-model, retry-protocol, retry-infrastructure | succeeded after exactly two Temporal attempts |
 | bad-request | failed after one attempt; invalid input is non-retryable |
 | lost-after-finish | succeeded after two attempts; the second completes from the acknowledged finish without starting the candidate, and the lost attempt's usage stays in the total |
+| deadline | attempt 1's request is held; a 2 s deadline from provider entry stops the container cooperatively with proven zero usage; attempt 2 succeeds |
+| cancel | the workflow is cancelled while the request is held; the Activity stops the container cooperatively and the attempt row is closed |
+
+The invalid-completion cases also check that the rejected call was an admitted
+tool-body entry with an error outcome, not a policy denial. The retry cases check
+the first attempt's failure category.
 
 The bridge acknowledges a paused-container session/workspace pair before each
-model admission and publishes the finish record under the attempt fence. Only
+model admission and publishes the finish record under the attempt fence. A pair
+is acknowledged only when the newest tool-call ID in the held request is already
+in DSH's session files, so a stale session cannot be paired with a newer workspace.
+Ownership follows the Temporal turn and attempt order: an older attempt that
+resumes late is refused, and a superseded attempt writes no attempt row,
+publication or artifact. Only
 host-produced files become artifact refs; model-supplied refs are rejected.
 Unknown usage cannot be published as zero tokens. As in production, the Activity
-heartbeat carries live cumulative usage, and a retry reads it back, so a lost
-attempt's tokens stay in the turn total. Each attempt follows the
+heartbeat carries live cumulative usage (settled tokens plus a count of requests
+still in flight), and a retry reads it back, so a lost attempt's tokens stay in
+the turn total. After five attempts the turn fails with those totals.
+Each run manifest is validated before the candidate starts; a missing or
+inconsistent field blocks the run.
+
+Failure classification is in `task_policy.py`, in this order: failed cleanup,
+forced stop (SIGTERM not honoured within the 5 s grace), unknown usage, checkpoint
+limits (a socket or other non-regular file, over 4 MiB per file, 16 MiB or 1000
+files), supersession, then
+deadline or cancellation, then the ordinary runtime, provider and model cases.
+Failed cleanup, forced stop, unknown usage and checkpoint limits are never retried. Each attempt follows the
 same cleanup and observation policy as the bounded probes.
 
 To protect the host, task-Activity containers (these probes and the benchmark)
@@ -283,7 +304,11 @@ admits every call:
   environment through `docker exec` inside the owned candidate container.
 
 Model traffic goes through the same budget gateway to the local vLLM endpoint.
-The granted `order-desk` skill is loaded by DSH's skill plugins.
+DSH's skill plugins are disabled. As in production, the template's `order-desk`
+bundle is mounted read-only at `workspace/.skills/` and listed in the
+instructions with the production `skills.index()` text, and the model reads it
+with `read_file`, so every skill read is a recorded executor entry. Like
+production snapshots, checkpoints skip `.skills/` and symlinks in the workspace.
 
 Known differences from the baseline harness:
 
@@ -294,11 +319,16 @@ Known differences from the baseline harness:
 - The candidate composition caps each request at 2048 output tokens.
 - Checkpoints keep regular files only; empty directories and file modes are
   not restored.
+- DSH's own skill loader is not evaluated; skills use the production mount.
+- Tool requests are bounded by the gateway's 2 MiB body limit; the recovery
+  probe keeps its 4 KiB fixture bound.
+- Live usage of a request interrupted mid-generation is unknown and stops the
+  turn (fail-closed), where production would retry it.
 
 ## Checks and cleanup
 
 ```bash
-spikes/dsh-harness/.venv/bin/python -m pytest -c spikes/dsh-harness/pyproject.toml spikes/dsh-harness/test_probe.py spikes/dsh-harness/test_corrections.py spikes/dsh-harness/test_final_corrections.py -q
+spikes/dsh-harness/.venv/bin/python -m pytest -c spikes/dsh-harness/pyproject.toml spikes/dsh-harness/test_*.py -q
 PYTHONPATH=spikes/dsh-harness uv run pytest -q -p no:cacheprovider spikes/dsh-harness/test_completion.py
 uv run ruff check --no-respect-gitignore --exclude '' spikes/dsh-harness/*.py
 uv run ruff format --check --no-respect-gitignore --exclude '' spikes/dsh-harness/*.py
