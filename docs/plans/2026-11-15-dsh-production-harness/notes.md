@@ -43,6 +43,10 @@ round 1 with tree-level checks:
 | Command with all caps dropped: cannot escape cgroup, cannot mount, no effective caps | - | yes |
 | Command cannot create a user namespace | - | **no** |
 
+Phase 02 task 1.1 (2026-11-15): in the DSH image (`infra/dsh/Dockerfile`), with the
+launcher's seccomp filter applied to commands, all 13 probe checks pass, including
+`command_userns_blocked`.
+
 Docker rejects `--sysctl user.max_user_namespaces=0`. Conditions for phase 02:
 - the launcher alone holds `SYS_ADMIN`;
 - every command runs through `setpriv --inh-caps=-all --bounding-set=-all --no-new-privs` as a separate UID;

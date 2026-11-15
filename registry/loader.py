@@ -67,6 +67,35 @@ def read_lock(root: Path) -> dict[str, str]:
     return {str(k): str(v) for k, v in templates.items()}
 
 
+def read_runtime_pins(root: Path) -> dict[str, str]:
+    """`runtimes:` in the lock: the pinned digest of each harness runtime (DSH R17)."""
+    path = root / LOCK_FILE
+    if not path.exists():
+        return {}
+    runtimes = _load_yaml(path).get("runtimes") or {}
+    if not isinstance(runtimes, dict):
+        raise RegistryError(f"{path}: `runtimes` must be a mapping")
+    return {str(k): str(v) for k, v in runtimes.items()}
+
+
+def runtime_digest(root: Path, harness: str) -> str:
+    """The digest a harness runtime must report, computed from its hash-pinned
+    requirements with the same code the runtime image uses (infra/dsh/pins.py)."""
+    if harness != "dsh":
+        raise RegistryError(f"harness {harness!r} has no pinned runtime")
+    import importlib.util
+
+    dsh = Path(__file__).resolve().parents[1] / "infra" / "dsh"  # repository files
+    pins_path = dsh / "pins.py"
+    spec = importlib.util.spec_from_file_location("praxis_dsh_pins", pins_path)
+    if spec is None or spec.loader is None:
+        raise RegistryError(f"{pins_path} not found")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    digest: str = module.requirements_digest((dsh / "requirements.txt").read_text())
+    return digest
+
+
 @dataclass(frozen=True)
 class LoadedTemplate:
     template: WorkerTemplate

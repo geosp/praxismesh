@@ -19,14 +19,15 @@ from typing import Any
 
 import pytest
 
+from common.errors import CapabilityError
+from harness_activity.dsh.pins import verify_launcher_report
+from registry.loader import REGISTRY_ROOT, read_runtime_pins
+
 pytestmark = pytest.mark.integration
 
 ROOT = Path(__file__).resolve().parents[2]
-IMAGE = (
-    "python:3.11-slim-bookworm"
-    "@sha256:a83ba18aef0f865b1a4a611c2cf460fe446f2795673bbb9fe43be570439e3b39"
-)
 WORKER = "10001:4243"
+BINARY = "/opt/dsh/site/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-linux-x64"
 
 CLIENT = textwrap.dedent(
     """
@@ -55,6 +56,8 @@ CLIENT = textwrap.dedent(
     out["userns"] = run("unshare -Urm true; echo rc=$?")
     out["caps"] = run("grep CapEff /proc/self/status")
     out["write"] = run("echo hi > /work/out.txt && cat /work/out.txt")
+    out["cgroup_escape"] = run("echo $$ > /sys/fs/cgroup/cgroup.procs; echo rc=$?")
+    out["mount"] = run("mount -t tmpfs none /work; echo rc=$?")
     out["background"] = run("(sleep 60 >/dev/null 2>&1 &) ; echo started")
     out["members_after"] = ask(f, op="members")
     if sys.argv[1] == "stop":
@@ -70,12 +73,16 @@ def docker(*args: str, check: bool = True, timeout: float = 60) -> subprocess.Co
     )
 
 
-@pytest.fixture
-def launcher(tmp_path: Path) -> Iterator[str]:
+@pytest.fixture(scope="module")
+def image() -> str:
     if shutil.which("docker") is None:
         pytest.skip("docker is not available")
-    pins = tmp_path / "pins.json"
-    pins.write_text(json.dumps({"files": ["/opt/dsh/launcher.py"]}))
+    built = docker("build", "-q", "-f", str(ROOT / "infra/dsh/Dockerfile"), str(ROOT / "infra/dsh"),
+                   timeout=900)  # fmt: skip
+    return built.stdout.strip()
+
+
+def start_launcher(image: str, tmp_path: Path, *extra: str) -> str:
     (tmp_path / "client.py").write_text(CLIENT)
     name = f"dsh-launcher-test-{uuid.uuid4().hex[:8]}"
     docker(
@@ -83,16 +90,19 @@ def launcher(tmp_path: Path) -> Iterator[str]:
         "--cgroupns=private", "--cap-add=SYS_ADMIN", "--security-opt", "no-new-privileges",
         "--tmpfs", "/tmp", "--tmpfs", "/work", "--tmpfs", "/run",
         "--tmpfs", "/attempts:mode=1770,gid=4243",
-        "-v", f"{ROOT / 'infra/dsh/launcher.py'}:/opt/dsh/launcher.py:ro,z",
-        "-v", f"{pins}:/opt/dsh/pins.json:ro,z",
-        "-v", f"{tmp_path / 'client.py'}:/opt/dsh/client.py:ro,z",
-        IMAGE, "python", "/opt/dsh/launcher.py",
+        "-v", f"{tmp_path / 'client.py'}:/opt/dsh/client.py:ro,z", *extra, image,
     )  # fmt: skip
+    until = time.monotonic() + 20
+    while "ready" not in docker("logs", name, check=False).stdout:
+        assert time.monotonic() < until, docker("logs", name, check=False).stderr
+        time.sleep(0.2)
+    return name
+
+
+@pytest.fixture
+def launcher(image: str, tmp_path: Path) -> Iterator[str]:
+    name = start_launcher(image, tmp_path)
     try:
-        until = time.monotonic() + 20
-        while "ready" not in docker("logs", name, check=False).stdout:
-            assert time.monotonic() < until, docker("logs", name, check=False).stderr
-            time.sleep(0.2)
         yield name
     finally:
         docker("rm", "-f", name, check=False)
@@ -116,7 +126,7 @@ def attempt_state(name: str) -> tuple[str, bool]:
 
 def test_attempt_isolation_and_stop(launcher: str) -> None:
     out = client(launcher, "stop")
-    assert "/opt/dsh/launcher.py" in out["digests"]["digests"]
+    verify_launcher_report(out["digests"]["digests"], read_runtime_pins(REGISTRY_ROOT)["dsh"])
     assert len(out["members"]["members"]) == 3  # sh and both sleeps
     assert out["freeze"] == {"ok": True} and out["thaw"] == {"ok": True}
     assert out["uid"]["stdout"].strip() == "4242"
@@ -125,6 +135,9 @@ def test_attempt_isolation_and_stop(launcher: str) -> None:
     assert "rc=0" not in out["userns"]["stdout"]  # seccomp blocks user namespaces
     assert out["caps"]["stdout"].split()[-1] == "0000000000000000"
     assert out["write"]["stdout"].strip() == "hi"
+    # The isolation probe's command checks, through the real launcher path:
+    assert "rc=0" not in out["cgroup_escape"]["stdout"]
+    assert "rc=0" not in out["mount"]["stdout"]
     assert len(out["members_after"]["members"]) > 3  # the backgrounded sleep stayed in
     assert out["stop"]["processes_left"] == 0 and out["stop"]["tree_removed"]
     assert attempt_state(launcher) == ("", False)
@@ -149,3 +162,17 @@ def test_restart_reaps_leftover_trees(launcher: str) -> None:
     docker("exec", "-d", launcher, "python", "/opt/dsh/launcher.py")
     time.sleep(2)
     assert "task-9" not in docker("exec", launcher, "ls", "-A", "/attempts").stdout
+
+
+def test_tampered_runtime_is_reported_and_refused(image: str, tmp_path: Path) -> None:
+    """R17: a changed native binary fails the integrity check the worker relies on."""
+    fake = tmp_path / "fake-runtime"
+    fake.write_bytes(b"not the pinned binary")
+    name = start_launcher(image, tmp_path, "-v", f"{fake}:{BINARY}:ro,z")
+    try:
+        report = client(name, "close")["digests"]["digests"]
+    finally:
+        docker("rm", "-f", name, check=False)
+    assert report["integrity"] == "mismatch"
+    with pytest.raises(CapabilityError, match="integrity"):
+        verify_launcher_report(report, read_runtime_pins(REGISTRY_ROOT)["dsh"])

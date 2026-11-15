@@ -21,7 +21,6 @@ Standard library only, so the image needs no extra packages.
 from __future__ import annotations
 
 import ctypes
-import hashlib
 import json
 import os
 import shutil
@@ -33,11 +32,13 @@ import threading
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import pins
+
 CGROUP = Path("/sys/fs/cgroup")
 ATTEMPTS_CG = CGROUP / "attempts"
 ATTEMPTS = Path(os.environ.get("DSH_ATTEMPTS", "/attempts"))
 CONTROL = Path(os.environ.get("DSH_CONTROL", "/attempts/.control.sock"))
-PINS = Path(os.environ.get("DSH_PINS", "/opt/dsh/pins.json"))
 RUNTIME_UID = int(os.environ.get("DSH_RUNTIME_UID", "1000"))
 COMMAND_UID = int(os.environ.get("DSH_COMMAND_UID", "4242"))
 # The worker, the runtime and commands share this group on the attempt tree;
@@ -277,13 +278,13 @@ def reap() -> list[str]:
     return reaped
 
 
-def digests() -> dict[str, str]:
-    """SHA-256 of every pinned runtime file; the worker checks them against the lock."""
-    pins = json.loads(PINS.read_text())
-    return {
-        path: "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()
-        for path in sorted(pins["files"])
-    }
+def digests() -> dict[str, object]:
+    """The pinned requirements digest and an integrity check of every installed file
+    of the pinned distributions; the worker compares them with the registry lock."""
+    try:
+        return pins.report()
+    except (OSError, ValueError, RuntimeError) as error:
+        return {"integrity": "error", "detail": str(error)[:200]}
 
 
 def setup_cgroups() -> None:
