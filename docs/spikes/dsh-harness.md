@@ -245,3 +245,21 @@ about provenance, historical observations, executable tmpfs and disk requirement
 The historical source/experiment narrative and records remain here. No runtime,
 test, manifest or acceptance behavior changed. Fresh verification of the corrected
 published revision remains due.
+
+
+## Corrected-revision independent verification
+
+[Fresh independent verification](../reviews/general-dsh-harness-evaluation/verification.md)
+passed at code_sha = docs_sha
+`65d03f0fdb56d8939e99d67156ddea398185a21f`. Two fresh verifiers independently
+reproduced acceptance and audited current as-built claims. All seven first-run
+probes passed, including one real local-model quote; 165 repository tests and 30
+isolated tests passed. All 11 hosted checks passed at that frozen revision.
+[Demo evidence](../demos/general-dsh-harness-evaluation-01.md) and
+[new raw result/manifest records](dsh-phase01-verification-evidence.json) preserve
+observations and cleanup. Native build ancestry remains explicitly unestablished;
+Phase 02 guarantees and stable workload reliability are not claimed.
+
+The initial failed verification remains preserved. The earlier implementation
+review-independence limitation still requires the owner's decision. No phase
+closure, task completion checkboxes, production adoption or merge is recorded.

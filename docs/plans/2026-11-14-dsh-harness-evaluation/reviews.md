@@ -240,3 +240,27 @@ scanner rules were disabled.
   remote frozen revision and fresh reproduction will establish its exact SHA
   linkage without invoking a source-equality exception. Phase tasks remain open;
   the separate implementation-review independence limitation is not waived.
+
+
+## 2026-11-14 · independent execution verification · passed
+
+- code_sha = docs_sha = 65d03f0fdb56d8939e99d67156ddea398185a21f (published).
+- [Verification](../../reviews/general-dsh-harness-evaluation/verification.md),
+  [acceptance](../../reviews/general-dsh-harness-evaluation/verification-acceptance.md),
+  [as-built](../../reviews/general-dsh-harness-evaluation/verification-as-built.md),
+  [demo](../../demos/general-dsh-harness-evaluation-01.md).
+- Two new fresh verifiers ran sequentially against current source/setup/as-built
+  inputs and new raw observations; no earlier reports/verdicts or implementation
+  transcript. Both completed. No source/tests/docs fixes occurred in verification.
+- Verdict pass for the isolated Phase 01 scope. All seven first-run probes passed,
+  including local spark with skill/two tool-body entries/exact quote. Root 165 and
+  isolated 30 tests passed. All 11 frozen-commit hosted checks passed, including ci-ok.
+- Current as-built claims are confirmed within their declared scope; empirical
+  native build ancestry remains expressly unestablished, not asserted as verified.
+  Initial environment restrictions and diagnostic errors are retained separately.
+- Seven exact containers/scratch paths absent; no owned gateways; tracked source
+  clean; endpoint/credential redaction checks passed. New manifests/results are
+  in docs/spikes/dsh-phase01-verification-evidence.json.
+- Initial failed verification remains frozen. The owner has not yet accepted the
+  earlier implementation-review independence limitation. Phase metadata/tasks
+  remain open; no closure or waiver is inferred from this verification PASS.
