@@ -220,3 +220,7 @@ docs/demos/general-dsh-production-harness-01.md; raw reports under that review f
 
 Shared done gate passed; all six tasks checked; design review passed (3 rounds), impl review
 passed (2 rounds), verification and demo passed.
+
+## 2026-11-15 · start · phase 02
+
+Branch `feat/62-dsh-runner` from 562733a72b880d13576ced63e8b8ad09716094df (stacked on PR #66).
