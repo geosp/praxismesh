@@ -6,7 +6,7 @@ branch: feat/62-dsh-harness-seam
 base: 0f32d7dd3077fcc13d03f7b16e7de7481e34c954
 delivers: [R1, R2, R3]
 design_review: { status: waived, rounds: 2, last: 2026-11-15 }
-impl_review: { status: none, rounds: 0, last: null }
+impl_review: { status: changes-requested, rounds: 1, last: 2026-11-15 }
 approved: 2026-11-15
 ---
 
