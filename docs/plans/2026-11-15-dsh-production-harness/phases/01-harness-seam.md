@@ -1,13 +1,13 @@
 ---
 phase: 1
 title: Harness seam and registry
-status: draft
+status: approved
 branch: null
 base: null
 delivers: [R1, R2, R3]
-design_review: { status: changes-requested, rounds: 2, last: 2026-11-15 }
+design_review: { status: waived, rounds: 2, last: 2026-11-15 }
 impl_review: { status: none, rounds: 0, last: null }
-approved: null
+approved: 2026-11-15
 ---
 
 # Phase 01 · Harness seam and registry

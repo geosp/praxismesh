@@ -1,13 +1,13 @@
 ---
 phase: 2
 title: DSH runner and worker pair
-status: draft
+status: approved
 branch: null
 base: null
 delivers: [R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, R16, R17, R18]
-design_review: { status: changes-requested, rounds: 2, last: 2026-11-15 }
+design_review: { status: waived, rounds: 2, last: 2026-11-15 }
 impl_review: { status: none, rounds: 0, last: null }
-approved: null
+approved: 2026-11-15
 ---
 
 # Phase 02 · DSH runner and worker pair

@@ -1,10 +1,10 @@
 ---
 title: Run production agents on DSH
-status: draft
+status: approved
 created: 2026-11-15
 updated: 2026-11-15
-design_review: { status: changes-requested, rounds: 2, last: 2026-11-15 }
-approved: null
+design_review: { status: waived, rounds: 2, last: 2026-11-15 }
+approved: 2026-11-15
 adr_review: pending
 ---
 
@@ -230,7 +230,7 @@ supported.
 
 ## Open questions
 
-- Is the R19 cost acceptable for switching the default? The owner decides at phase 03 task 2.1.
+- None. The owner judges the R19 cost when approving the switch in phase 03 task 2.1.
 
 ## Impact
 
@@ -248,9 +248,9 @@ supported.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | [Harness seam and registry](phases/01-harness-seam.md) | draft | 0/6 |
-| 02 | [DSH runner and worker pair](phases/02-dsh-runner.md) | draft | 0/8 |
-| 03 | [Acceptance and default switch](phases/03-acceptance.md) | draft | 0/4 |
+| 01 | [Harness seam and registry](phases/01-harness-seam.md) | approved | 0/6 |
+| 02 | [DSH runner and worker pair](phases/02-dsh-runner.md) | approved | 0/8 |
+| 03 | [Acceptance and default switch](phases/03-acceptance.md) | approved | 0/4 |
 
 ## Decision log
 

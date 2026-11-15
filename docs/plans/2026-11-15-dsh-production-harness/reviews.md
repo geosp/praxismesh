@@ -129,3 +129,12 @@ Reviewers: fresh reader completed · codebase fit completed · zoom out complete
 | F51 | fixed: Summary |
 | F52 | fixed: R3/R4, R6/R7, R8/R9, R12/R13 split |
 | F53 | fixed: plan.md under 250 body lines; check 0 errors, 0 warnings |
+
+## 2026-11-15 · waiver · design review
+
+The owner waived a third design-review round. Overridden: design_review passed for
+the plan and all phases. Rounds 1 and 2 ran with fresh reviewers; every finding is
+resolved in the round resolution tables above. The open cost question moved to
+the owner's approval in phase 03 task 2.1.
+
+## 2026-11-15 · approved · plan and phases 01-03 (with the waiver above)

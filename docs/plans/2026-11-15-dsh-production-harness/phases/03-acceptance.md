@@ -1,13 +1,13 @@
 ---
 phase: 3
 title: Acceptance and default switch
-status: draft
+status: approved
 branch: null
 base: null
 delivers: [R4, R19]
-design_review: { status: changes-requested, rounds: 2, last: 2026-11-15 }
+design_review: { status: waived, rounds: 2, last: 2026-11-15 }
 impl_review: { status: none, rounds: 0, last: null }
-approved: null
+approved: 2026-11-15
 ---
 
 # Phase 03 · Acceptance and default switch
