@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import socket
+import subprocess
 import sys
 
 TOOLS = [
@@ -34,6 +36,9 @@ def dispatch(method: str, params: dict) -> dict:
         return {"tools": TOOLS}
     if method != "tools/call":
         raise ValueError("unsupported method")
+    if os.environ.get("PRAXIS_SPIKE_STALL_CHILD") == "1":
+        # Dedicated bounded-tool fixture descendant, owned by this container.
+        subprocess.Popen([sys.executable, "-c", "import time; time.sleep(90)"])
     connection = http.client.HTTPConnection("fixture", timeout=90)
     connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     connection.sock.settimeout(90)

@@ -136,6 +136,44 @@ are removed; failed scratch trees remain for diagnosis. This R4 fixture is not
 a Temporal cancellation test, a structured TaskResult adapter, or benchmark
 acceptance. Those are separate Phase 02 tasks.
 
+## Phase 02 accounting probes
+
+Run these sequentially using the same pinned image:
+
+```bash
+spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_accounting.py exhaustion --image "$spike_image"
+spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_accounting.py retry --image "$spike_image"
+spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_accounting.py auxiliary --image "$spike_image"
+spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_accounting.py tools --image "$spike_image"
+```
+
+A host gateway records every ingress and a separate HTTP fixture records provider
+dispatches. A serialized guard refuses further dispatch after token exhaustion or
+unresolved usage. Unknown usage remains unknown. The gateway buffers bounded
+responses to settle their usage before releasing them to DSH. The full candidate
+stream still reaches the SDK; buffering is an integration difference.
+
+Exhaustion admits one response with 7 input and 3 output tokens under a budget of
+10. Retry enables one native provider retry: the first fixture dispatch fails
+before generation, then the retry consumes 7+3 tokens. Both physical attempts
+belong to the same logical step; later ingress denials stay in the ledger.
+Only the independently recorded fixture failure may establish zero usage.
+
+The auxiliary composition enables manual compaction, with automatic compaction
+disabled, 1024 tokens of headroom, a 128-token summary output cap and one retained
+token. Three completed setup turns are counted under a separate budget. The
+controller then admits one native `/compact` request under a fresh budget of 10;
+its response reports 4+6 tokens. A subsequent main request must be refused.
+All remaining auxiliary producers stay disabled.
+
+The tool probe separately exercises a missing-note failure, three successful body
+entries covering every granted tool, and an ungranted-tool proposal refused by
+DSH without entering the fixture executor. Its budget is 1000 tokens. SDK
+`assistant/message` usage events are reconciled with provider totals, including
+setup and compaction. Embedded copies of usage in stream events are diagnostic
+only; they are never added again. Native completion here ends a control probe;
+arbitrary assistant text does not establish a succeeded TaskResult.
+
 ## Checks and cleanup
 
 ```bash

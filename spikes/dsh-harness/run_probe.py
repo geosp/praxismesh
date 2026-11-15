@@ -148,7 +148,7 @@ def cleanup_container(
                 ],
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=max(0.01, min(2, window - (clock() - started))),
             )
             absent = inspection.returncode == 0 and not inspection.stdout.strip()
             if owned_work_absent is not None:

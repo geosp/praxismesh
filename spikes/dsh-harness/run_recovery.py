@@ -58,8 +58,8 @@ def recovery_command(name, state, stage, image):
     return result
 
 
-def stop_owned_attempt(name, model, executor, process, log) -> dict:
-    trigger = time.monotonic()
+def stop_owned_attempt(name, model, executor, process, log, *, trigger=None) -> dict:
+    trigger = time.monotonic() if trigger is None else trigger
     errors = []
     # Killing before releasing the held response is the injected worker loss.
     # Every later cleanup still runs if an earlier one fails.
