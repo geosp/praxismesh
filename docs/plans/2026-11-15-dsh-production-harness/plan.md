@@ -132,9 +132,12 @@ production config and observability). Details: notes.md#d2
 
 ### D3 · Container per attempt, built from a pinned image
 
-Run DSH in a per-attempt container started by the worker, from an image that pins
-the DSH release, wheel digests and native binary hashes. Rejected: running DSH in
-the worker process (no isolation from host credentials; no cooperative stop proof).
+Run DSH in a per-attempt container from an image that pins the DSH release, wheel
+digests and native binary hashes: a scoped socket proxy starts it under Compose, a
+per-attempt Pod under Kubernetes. Rejected: an unscoped Docker socket (root on the
+host); DSH in the worker process beside DB/S3 credentials (no isolation); DinD
+(privileged). Still open for design review: a one-attempt worker pod with the
+gateway and executor in a credential-holding sidecar. Details: notes.md#d3
 
 ### D4 · Production skill and tool semantics
 
@@ -157,14 +160,17 @@ live home directory (no consistency proof).
 ## Assumptions
 
 - DSH 0.2.2rc2 (the spike's pin) stays the first production pin; a newer release needs the spike's control cases rerun.
-- Workers can start sibling containers through a scoped Docker socket or equivalent; if not, phase 02 is blocked.
+- Workers cannot start containers by default in either target. Compose needs a
+  scoped Docker socket proxy (create/remove of the pinned image only) or rootless
+  Docker; Kubernetes needs a per-attempt Pod created through a namespace-scoped
+  service account. Phase 02 chooses one per target (D3).
 - The existing Phase 1 tests and benchmark harness can be parameterised by template.
 
 ## Risks
 
 - Barrier fails under real worker loss → R3 tests kill real workers, not only fixtures.
 - Pre-release runtime changes behaviour → pin digests; rerun control cases on every bump.
-- Docker access from workers widens privilege → scope it to one image, no host mounts beyond the attempt tree.
+- Container-start rights widen privilege → socket proxy or RBAC limited to one image, one namespace and the attempt tree.
 - Cost and latency (~1.9x wall time in the spike) → measure in R9; owner judges.
 
 ## Rollout & rollback
