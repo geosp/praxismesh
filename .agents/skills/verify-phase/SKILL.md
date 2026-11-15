@@ -21,8 +21,8 @@ This skill was written for this project from plan §0.3, §4.15, §4.17 and §8;
 
 - **Informal:** a dry run during development. Uses the current commit (uncommitted changes are not verified; say so), reports in chat, and writes no files in the repository.
 - **Gate:** closes a phase. Follow every rule in `docs/reviews/README.md`:
-  - **Fresh session:** if this session implemented, reviewed or discussed the work, stop.
-  - **Light-tier exception:** in Phases 0-2, the same fresh session may run `impl-review` first and then this skill against the same `code_sha`. The report then states that independence between the two was waived (§7.0).
+  - **Fresh verifier:** the verification itself runs in fresh-context `verifier` subagents given only pinned inputs. The coordinating session may be the implementing one; it records their reports verbatim and never edits a verdict (`docs/reviews/README.md` rule 1).
+  - **Light-tier exception:** in Phases 0-2, the same coordinator may run `impl-review` first and then this skill against the same `code_sha`. The report then states that independence between the two was waived (§7.0).
   - **Pinned revisions:** the user names `code_sha` (the tested implementation) and `docs_sha` (the as-built documentation revision). Both must be commits that exist on the remote (`git branch -r --contains <sha>`).
   - **Evidence files:** `docs/reviews/phase-N/verification.md` and `docs/demos/phase-N.md`. They identify `code_sha` and `docs_sha`, but need not contain the SHA of the later commit that adds them (phase file, independent verification session).
   - **No fixing:** findings go back to the implementer.
