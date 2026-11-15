@@ -6,12 +6,11 @@ Production dependencies, templates and dispatch remain unchanged.
 
 ## Candidate selection
 
-The inspected research snapshot is 39163dd30f703a79079e2d2446545cff3c453738.
-The published matching Python SDK/runtime pair selected for Phase 01 is
-0.2.2rc2, associated with the official dsh-v0.2.2-rc.2 source tag at
-ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c. This is a separately identified
-release candidate, not a claim that the published wheels were built from the
-research snapshot. Source evidence is refreshed against the release before use.
+The artifact inventory records research snapshot
+39163dd30f703a79079e2d2446545cff3c453738, selected matching Python SDK/runtime
+version 0.2.2rc2, and the dsh-v0.2.2-rc.2 source-tag association at
+ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c. These are candidate-selection metadata;
+this spike does not independently establish native binary build provenance.
 Artifact identities and digests are recorded in artifacts.json and uv.lock.
 
 Upstream code runs only in the disposable Docker environment. The isolated uv
@@ -21,8 +20,8 @@ upstream binary or populated home is committed. Generated run state is ignored.
 ## Reproduce Phase 01
 
 Run from the repository root on Linux x86_64 with glibc >= 2.28, Python 3.11,
-uv and access to a Docker daemon. Allow about 1 GiB for staged dependencies and
-the container image. The runtime has a bundled Node executable and rg sidecar;
+uv and access to a Docker daemon. Reserve disk for staged dependencies,
+the container image and one private dependency copy per simultaneous probe. The runtime has a bundled Node executable and rg sidecar;
 no system Node, pnpm or plugin build is needed for this composition.
 
 ```bash
@@ -42,14 +41,12 @@ spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_probe.py local --dead
 The image content ID, source commit/file hashes, skill-tree hashes, composition, lock and selected
 limits are frozen in `.runs/praxis-dsh-*-manifest.json` before candidate startup.
 Each `.runs/<case>-*.json` result references SHA-256 of the exact persisted
-manifest bytes, including their final newline. Earlier pre-correction records used
-canonical JSON-object hashes and retain their original evidence. Rebuilt images
+manifest bytes, including their final newline. Rebuilt images
 may have a different content ID; pass the trusted local build ID explicitly.
 Without `--image`, the controller uses the exact image in artifacts.json.
 Unavailable/mismatched dependencies or images prevent a successful run.
 Preflight hashes every mounted dependency file; installer RECORD entries for
-unmounted launchers are canonicalized, as documented in artifacts.json. A clean
-locked install into a second directory reproduced the same environment digest.
+unmounted launchers are canonicalized, as documented in artifacts.json. Missing or mismatched executable bytes block startup.
 
 Only `local` calls a real model. It reads `VLLM_BASE_URL` and optional
 `VLLM_API_KEY` from the environment or ignored `infra/.env` as data, accepts only
@@ -76,7 +73,7 @@ and checked against the pre-run manifest. Docker and the host gateway load those
 snapshots; later edits to source directories do not change the run. Its root is read-only;
 capabilities are dropped; no-new-privileges, 1 GiB memory, two CPUs and 128 PIDs
 are enforced. A dedicated unprivileged account has a disposable real home.
-Native addon loading requires executable scratch tmpfs; other mounts stay read-only.
+Scratch tmpfs is executable in this composition; input snapshot mounts stay read-only.
 
 A loopback relay forwards only fixed model paths through the run's Unix socket.
 The host boundary permits at most eight completion requests and only the trusted

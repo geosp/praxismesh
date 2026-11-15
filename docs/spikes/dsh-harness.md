@@ -168,8 +168,8 @@ verification remain due.
 ## Second-round corrections and targeted validation
 
 The owner approved the four additional findings from the final full review.
-Mandatory cleanup and result persistence now precede decoding of potentially
-truncated tool evidence. Runtime code, composition, dependency files and the
+Mandatory cleanup precedes decoding of potentially truncated tool evidence;
+result persistence follows in a protected finally block. Runtime code, composition, dependency files and the
 complete granted skill tree execute from private verified snapshots; the host
 gateway also loads its snapshot. Cleanup measures gateway and container shutdown
 against one original stop trigger. The manifest digest identifies the exact saved
@@ -229,3 +229,19 @@ the same metadata line at another path. Temporarily broadening the exception to
 OR made the canary fail; restoring AND passed. The existing schema canary also
 passed. The feature-branch commit scan passed with no leaks using the corrected
 configuration. Historical reports preserve their earlier unresolved scanner status.
+
+
+## Initial independent execution verification
+
+The initial fresh verification at aef22144d3e2a48af13cf921774ef6745e971af7
+reproduced all seven probes on first functional attempts, 165 root tests and 30
+isolated tests. Its verdict was fail because the as-built description incorrectly
+placed result persistence before evidence decoding. The runtime correctly cleans
+up first and persists afterward in finally. The initial report, both verifier
+assessments and demo are preserved separately; no failed verdict is overwritten.
+
+The author corrected that ordering and qualified current setup/verification text
+about provenance, historical observations, executable tmpfs and disk requirements.
+The historical source/experiment narrative and records remain here. No runtime,
+test, manifest or acceptance behavior changed. Fresh verification of the corrected
+published revision remains due.

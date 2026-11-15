@@ -44,7 +44,7 @@ change the candidate's mounted inputs. Changed copied inputs fail validation.
 
 The root is read-only, Linux capabilities are dropped, no-new-privileges is set,
 and memory, CPU and PID limits apply. A dedicated unprivileged account uses a
-disposable home. Executable scratch tmpfs is required for native addon loading.
+disposable home. Scratch tmpfs is configured executable in this composition.
 Host credentials and the Docker socket are absent from the candidate.
 
 Only three model-visible tools are admitted: `skill`,
@@ -69,16 +69,17 @@ values, credentials or raw model transcripts.
 
 The SDK's supported high-level completion mechanism and actual boundary/tool
 evidence determine probe outcomes; an initial idle event cannot establish success.
-Quote probes require the exact raw JSON result. A previous local run returned an
-empty final answer after valid skill/tool use; an unchanged recheck passed. This
-does not establish reliable completion or TaskResult conformance.
+Quote probes require the exact raw JSON result. Completion without the expected
+JSON fails the quote check. Reliable completion and TaskResult conformance remain
+Phase 02 questions; a successful quote does not establish those guarantees.
 
 The wall deadline bounds candidate execution. Gateway and container cleanup share
 the original stop-trigger clock, a five-second grace and a ten-second observation
 window. Successful daemon listings establish container absence; errors are unknown
 state and fail cleanup. Owned gateway sockets/handlers are closed and joined.
-Cleanup and result persistence precede evidence decoding, so malformed logs cannot
-skip teardown. Invalid evidence fails the recorded result. Forced cleanup does not
+Cleanup precedes evidence decoding. Result persistence runs afterward in a
+protected finally block, so malformed logs cannot skip teardown or prevent a
+failed result from being recorded. Invalid evidence fails the recorded result. Forced cleanup does not
 convert a timeout/failure to success. Unknown/live state preserves its scratch path
 for explicit recovery. Normal teardown removes only this run's container/state.
 

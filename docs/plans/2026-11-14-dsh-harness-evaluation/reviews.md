@@ -217,3 +217,26 @@ scanner rules were disabled.
   Historical reports remain preserved and are excluded from verifier inputs.
 - Draft delivery and independent execution verification remain next. Phase tasks
   and the review-independence question remain open.
+
+
+## 2026-11-14 · independent execution verification · initial fail
+
+- code_sha = docs_sha = aef22144d3e2a48af13cf921774ef6745e971af7 (published).
+- [Initial report](../../reviews/general-dsh-harness-evaluation/verification-initial.md),
+  [acceptance](../../reviews/general-dsh-harness-evaluation/verification-initial-acceptance.md),
+  [as-built assessment](../../reviews/general-dsh-harness-evaluation/verification-initial-as-built.md),
+  [demo](../../demos/general-dsh-harness-evaluation-01-initial.md).
+- Two fresh verifiers completed sequentially, with no implementation history or
+  previous review verdicts. Source and endpoint-redaction checks passed.
+- Functional results: all seven first-attempt probes passed, including the local
+  model; 165 root tests and 30 isolated tests passed. All 11 hosted checks passed.
+- Verdict fail: V1 Nit, as-built wording placed persistence before decoding.
+  Code correctly performs cleanup first and persists in finally afterward.
+- V2–V5 evidence limits concerned historical assertions, provenance, necessity of
+  executable tmpfs and an approximate disk estimate. Current verification/setup
+  wording is now confined to recorded metadata and observable behavior. Historical
+  records/narrative remain preserved; no required behavior or acceptance was removed.
+- Author corrections touch documentation only, including the spike README. A new
+  remote frozen revision and fresh reproduction will establish its exact SHA
+  linkage without invoking a source-equality exception. Phase tasks remain open;
+  the separate implementation-review independence limitation is not waived.
