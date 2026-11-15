@@ -17,13 +17,14 @@ from typing import Any
 
 import pytest
 import yaml
-from agents import SQLiteSession
 
 from common.observability import disable_sdk_tracing
 from harness_activity.config import HarnessConfig, McpConfig, build_config
 from harness_activity.runner import HarnessRunner, OpenAIAgentsRunner, Usage
+from harness_activity.session_store import SessionStore
 from registry.loader import REGISTRY_ROOT, load_registry
 from tests.support.fake_model import FakeModel
+from tests.support.session_stores import MemorySessionStore, store_contract
 
 
 def script(*steps: dict[str, Any]) -> list[dict[str, Any]]:
@@ -34,11 +35,19 @@ def script(*steps: dict[str, Any]) -> list[dict[str, Any]]:
 # `DshRunner` joins this mapping in that plan's phase 02.
 RUNNERS: dict[str, Callable[[], HarnessRunner]] = {"openai_agents": OpenAIAgentsRunner}
 make_runner: Callable[[], HarnessRunner] = OpenAIAgentsRunner
+# The runner's session comes from a session store, as in run_harness_turn (D1).
+# The production SQLAlchemySessionStore is checked against Postgres in
+# tests/integration/test_harness_activity.py::test_session_store_contract.
+make_store: Callable[[str], SessionStore] = MemorySessionStore
 
 
 @pytest.fixture(params=sorted(RUNNERS), autouse=True)
 def _runner(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(globals(), "make_runner", RUNNERS[request.param])
+
+
+async def test_memory_store_contract() -> None:
+    await store_contract(MemorySessionStore("contract"))
 
 
 @pytest.fixture(autouse=True)
@@ -64,7 +73,7 @@ async def run(
         result = await make_runner().run(
             config_for(fake, monkeypatch),
             tmp_path,
-            SQLiteSession("conformance"),
+            make_store("conformance").session,
             "Write the order summary.",
             no_op,
             Usage(),
@@ -269,7 +278,7 @@ async def test_stop_run_and_superseded_reach_the_runner_unwrapped(
     with FakeModel(steps) as fake:
         config = config_for(fake, monkeypatch)
         result = await make_runner().run(
-            config, tmp_path, SQLiteSession("stop"), "go", stop_on_second_call, Usage()
+            config, tmp_path, make_store("stop").session, "go", stop_on_second_call, Usage()
         )
         assert result.status == "continue" and result.summary == "budget"
         assert len(fake.state.requests) == 1
@@ -279,7 +288,7 @@ async def test_stop_run_and_superseded_reach_the_runner_unwrapped(
 
         with pytest.raises(Superseded):
             await make_runner().run(
-                config, tmp_path, SQLiteSession("sup"), "go", superseded, Usage()
+                config, tmp_path, make_store("sup").session, "go", superseded, Usage()
             )
 
 
@@ -344,7 +353,9 @@ async def test_mcp_tools_allowed_filter(tmp_path: Path, monkeypatch: pytest.Monk
         config = build_config(registry, loaded, "task-filter-0001")
         workspace = tmp_path / "ws"
         workspace.mkdir()
-        await make_runner().run(config, workspace, SQLiteSession("filter"), "go", no_op, Usage())
+        await make_runner().run(
+            config, workspace, make_store("filter").session, "go", no_op, Usage()
+        )
         offered = {t["function"]["name"] for t in fake.state.requests[0]["tools"]}
         assert "record_order" not in offered and "lookup_price" in offered
         assert "record_order" in tool_results(fake)[0]  # an error naming the tool
@@ -433,7 +444,7 @@ async def test_mcp_subprocess_env_is_granted_plus_sdk_defaults(
         await make_runner().run(
             config,
             tmp_path,
-            SQLiteSession("env-process"),
+            make_store("env-process").session,
             "Report the environment.",
             no_op,
             Usage(),

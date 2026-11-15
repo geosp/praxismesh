@@ -569,3 +569,74 @@ async def test_log_lines_carry_request_and_task_ids(
         assert line["request_id"] == "req-activity-test"
         assert line["task_id"] == h.task_id and line["workflow_id"] == h.task_id
     assert harness_line["turn"] == 1 and harness_line["worker"] == "test-worker"
+
+
+async def start_newer(engine: AsyncEngine, task_id: str) -> None:
+    from common.persistence.repositories import AttemptRepository
+
+    await AttemptRepository(engine).start(task_id, 1, 2, "other")
+
+
+async def test_newer_attempt_mid_run_fences_the_finish(engine: AsyncEngine, tmp_path: Path) -> None:
+    """D10 at Activity level (review F5): the newer attempt starts after the stale
+    one's last pre-call check, so only the fenced finish checkpoint can stop it."""
+
+    async def script(
+        seen: Seen, before: BeforeModelCall, usage: Usage, ws_: Path, s: Session
+    ) -> RunResult:
+        await before(usage)  # current: checkpoint 0 is committed
+        await start_newer(engine, h.task_id)
+        return RunResult("done", usage, summary="ok")
+
+    h = await harness(engine, tmp_path, script)
+    with pytest.raises(Exception) as raised:
+        await h.run(attempt=1)
+    assert isinstance(raised.value, Superseded) or "Superseded" in repr(raised.value)
+    sql = "SELECT count(*) FROM checkpoints WHERE task_id = :t AND finish IS NOT NULL"
+    assert await count(engine, sql, t=h.task_id) == 0
+    rows = (
+        "SELECT count(*) FROM task_attempts WHERE task_id = :t AND attempt = 1 AND outcome = 'done'"
+    )
+    assert await count(engine, rows, t=h.task_id) == 0
+
+
+async def test_newer_attempt_before_publication_blocks_artifacts(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """D10 for artifact publication (review F6): a newer attempt that starts after the
+    finish checkpoint stops the stale attempt before any audit blob is written."""
+
+    async def script(
+        seen: Seen, before: BeforeModelCall, usage: Usage, ws: Path, s: Session
+    ) -> RunResult:
+        await before(usage)
+        (ws / "out.txt").write_text("result")
+        return RunResult("done", usage, summary="ok")
+
+    h = await harness(engine, tmp_path, script)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE tasks SET outputs = :o WHERE task_id = :t"),
+            {"o": '["out.txt"]', "t": h.task_id},
+        )
+    original = h.acts.checkpoints.insert_fenced
+
+    async def then_newer(cp: Any) -> None:
+        await original(cp)
+        if cp.finish is not None:
+            await start_newer(engine, h.task_id)
+
+    h.acts.checkpoints.insert_fenced = then_newer  # type: ignore[method-assign]
+    with pytest.raises(Exception) as raised:
+        await h.run(attempt=1)
+    assert isinstance(raised.value, Superseded) or "Superseded" in repr(raised.value)
+    audit = [o for o in h.blobs.objects.values() if o.retention == "audit"]
+    assert audit == []
+
+
+async def test_session_store_contract(engine: AsyncEngine) -> None:
+    """The production store meets the same contract as the conformance store (R3)."""
+    from harness_activity.session_store import SQLAlchemySessionStore
+    from tests.support.session_stores import store_contract
+
+    await store_contract(SQLAlchemySessionStore(f"task-store-{run_id()}", engine))

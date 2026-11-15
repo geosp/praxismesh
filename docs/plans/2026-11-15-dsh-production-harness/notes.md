@@ -30,13 +30,14 @@ launcher only), `no-new-privileges`, a tmpfs-backed attempt volume,
 
 ### Probe result (phase 01 task 0.1, 2026-11-15)
 
-`infra/dsh/isolation-probe.sh` in the pinned Python base image, Docker on Fedora
-(cgroup v2, SELinux enforcing):
+`infra/dsh/isolation-probe.sh` (run command in its header) in the pinned Python
+base image, Docker on Fedora (cgroup v2, SELinux enforcing). Rerun after review
+round 1 with tree-level checks:
 
 | Check | Default caps | `SYS_ADMIN` |
 | --- | --- | --- |
-| Remount cgroupfs rw, create sub-cgroup, freeze, `cgroup.kill` | no | yes |
-| SIGSTOP a process group | yes | yes |
+| Remount cgroupfs rw, create sub-cgroup, freeze and `cgroup.kill` a 3-process tree | no | yes |
+| SIGSTOP a process group (every member in state `T`) | yes | yes |
 | Command UID via `setpriv` | yes | yes |
 | Per-attempt mount namespace (`unshare -m`) | no | yes |
 | Command with all caps dropped: cannot escape cgroup, cannot mount, no effective caps | - | yes |

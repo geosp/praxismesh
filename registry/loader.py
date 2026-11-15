@@ -131,6 +131,13 @@ def load_registry(root: Path = REGISTRY_ROOT, *, check_lock: bool = True) -> Reg
                 f"{path}: harness {template.harness!r} has no runner in this phase "
                 f"(supported: {', '.join(sorted(SUPPORTED_HARNESSES))})"
             )
+        if template.harness == "dsh" and (
+            template.concurrency_per_pod != 1 or template.context_window is None
+        ):
+            # ADR-0006: one attempt per DSH container; D9 charges by context window.
+            raise RegistryError(
+                f"{path}: dsh templates need concurrency_per_pod: 1 and a context_window"
+            )
         prompt = root / template.system_prompt
         if not prompt.is_file():
             raise RegistryError(f"{path}: system prompt {template.system_prompt!r} not found")

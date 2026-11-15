@@ -222,3 +222,28 @@ async def test_older_turn_is_fenced_by_a_newer_turn(engine: AsyncEngine) -> None
     await attempts.start(start.task_id, 2, 1, "worker-a")
     with pytest.raises(FenceRejected):
         await checkpoints.insert_fenced(checkpoint_for(start.task_id, 1, 1))
+
+
+async def test_fenced_insert_waits_for_a_concurrent_start(engine: AsyncEngine) -> None:
+    """D10 under concurrency: a newer attempt's uncommitted start must still fence
+    the stale attempt's checkpoint (review F1)."""
+    import asyncio
+
+    start = task_start()
+    await record(engine, start)
+    attempts, checkpoints = AttemptRepository(engine), CheckpointRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    async with engine.begin() as conn:  # attempt 2's start, still in flight
+        await conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:t))"), {"t": start.task_id})
+        await conn.execute(
+            text(
+                "INSERT INTO task_attempts (task_id, turn, attempt, worker_identity, outcome, "
+                "retention_class) VALUES (:t, 1, 2, 'worker-b', 'started', 'audit')"
+            ),
+            {"t": start.task_id},
+        )
+        stale = asyncio.create_task(checkpoints.insert_fenced(checkpoint_for(start.task_id, 1, 1)))
+        await asyncio.sleep(0.3)
+        assert not stale.done()  # the stale insert waits for the task lock
+    with pytest.raises(FenceRejected):
+        await stale

@@ -28,3 +28,19 @@ def test_unknown_event_type_and_fields_are_rejected() -> None:
     good = events.emit("status", state="running")
     with pytest.raises(ValidationError):
         AgentEvent.model_validate({**good.model_dump(), "prompt": "text"})
+
+
+def test_concurrent_emitters_deliver_in_seq_order() -> None:
+    import threading
+
+    sink = MemorySink()
+    events = AttemptEvents(sink, "wf-1", "task-1", turn=1, attempt=1)
+    threads = [
+        threading.Thread(target=lambda: [events.emit("token", n=1) for _ in range(200)])
+        for _ in range(4)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert [e.seq for e in sink.events] == list(range(800))

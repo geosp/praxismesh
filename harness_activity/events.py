@@ -51,5 +51,5 @@ class AttemptEvents:
                 payload=payload,
             )
             self.seq += 1
-        self.sink.emit(event)
+            self.sink.emit(event)  # inside the lock: delivery order equals seq (review F8)
         return event

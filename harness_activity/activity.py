@@ -261,7 +261,7 @@ class HarnessActivities:
         if latest is not None:
             data = await self.blobs.get(latest.workspace_ref)
             await asyncio.to_thread(ws.unpack, data, workdir)
-            await store.restore(latest.session_position)
+            await store.load(latest)
             heartbeat.checkpoint_id = latest.checkpoint_id
             if latest.finish is not None:  # lost after finish_task: go straight to finish
                 result = RunResult(
@@ -275,7 +275,7 @@ class HarnessActivities:
                 )
             input_text = CONTINUE_MESSAGE
         else:
-            await store.reset()
+            await store.load(None)
             input_text = await self._fresh_start(turn.task_id, workdir)
 
         async def checkpoint(finish: dict[str, Any] | None = None) -> None:
@@ -283,7 +283,11 @@ class HarnessActivities:
             started = time.monotonic()
             data = await asyncio.to_thread(ws.pack, workdir)
             ref = await self.blobs.put(data, content_type="application/gzip", retention="task")
-            position = await store.position()
+            snapshot = await store.capture()
+            if snapshot.session_ref is not None:
+                # Checkpoint rows gain session refs in the DSH migration's phase 02.
+                raise NotImplementedError("session blobs need the phase 02 checkpoint columns")
+            position = snapshot.position
             cp_id = f"{turn.task_id}:{turn.turn}:{attempt}:{seq}"
             try:
                 await self.checkpoints.insert_fenced(
@@ -363,6 +367,10 @@ class HarnessActivities:
     ) -> TurnOutcome:
         outputs: list[Artifact] = []
         if result.status == "done":
+            try:  # a stale attempt publishes no artifact (D10, R7)
+                await self.attempts.assert_current(turn.task_id, turn.turn, attempt)
+            except FenceRejected as e:
+                raise Superseded(str(e)) from e
             row = await self.tasks.get(turn.task_id)
             for path in (row or {}).get("outputs") or []:
                 target = workdir / path

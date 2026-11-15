@@ -151,27 +151,27 @@ Branch `feat/62-dsh-harness-seam` from 0f32d7dd3077fcc13d03f7b16e7de7481e34c954 
 
 | ID | Sev | Lens | Finding | Resolution |
 | --- | --- | --- | --- | --- |
-| F1 | Major | all three | Fenced checkpoint insert is an unlocked NOT EXISTS under READ COMMITTED; it races a concurrent `attempts.start` (D10). | open |
-| F2 | Major | all three | Probe moves only the parent PID into the cgroup; freeze/kill and SIGSTOP checks cannot fail for the tree (task 0.1). | open |
-| F3 | Major | all three | Session store has no load/capture result a DSH store can use; checkpoint assembly stays in the Activity (D1, task 1.1). | open |
-| F4 | Major | failure, scope | Conformance suite never exercises the session store or `run_harness_turn` (R3). | open |
-| F5 | Major | scope, contract | No test reaches the Activity's fenced paths; reverting the fence leaves all tests green (D10). | open |
-| F6 | Major | contract | Artifact blobs are published before the fenced finish (D10). | open |
-| F7 | Nit | all three | Session items are shared across attempts and unfenced (D10 scope; pre-existing). | open |
-| F8 | Nit | all three | `AttemptEvents.emit` calls the sink outside the lock; delivery order can differ from seq (D8). | open |
-| F9 | Nit | all three | `dsh` profile resolves but no worker serves `tpl.local-dsh` until phase 02 (D5). | open |
-| F10 | Nit | all three | Resolve-time harness check duplicated rather than moved (task 2.2). | open |
-| F11 | Nit | failure, contract | No test uses a harness outside the `Harness` Literal (R1). | open |
-| F12 | Nit | contract, scope | `SYS_ADMIN` grant recorded only in the plan, not the roadmap decision log or ADR-0006 (D3). | open |
-| F13 | Nit | contract | `concurrency_per_pod: 1` not enforced for `dsh` templates (D3, ADR-0006). | open |
-| F14 | Nit | contract | `context_window` optional for `dsh` templates (D7, D9). | open |
-| F15 | Nit | contract | `newer_attempt_exists` still in the seam as an early exit (D10). | open |
-| F16 | Nit | contract | `close_unfinished` is unfenced on a stale attempt's failure path (D10). | open |
-| F17 | Nit | scope | Fence rejects writes when a higher turn exists, e.g. after a workflow reset (D10). | open |
-| F18 | Nit | failure | Fenced finish returns normally when the row was closed and nothing newer exists (D10). | open |
-| F19 | Nit | all three | `AgentEvent.payload` does not enforce "no prompt text"; seq scope is per attempt (D8). | open |
-| F20 | Nit | contract | Probe has a no-op line and no recorded run command (task 0.1). | open |
-| F21 | Nit | contract | Worker refusal for non-`openai_agents` templates has no test. | open |
-| F22 | Nit | contract | Stale checkpoint blob recorded before the fenced insert rejects (D10). | open |
-| F23 | Nit | scope | User-namespace probe check still fails; deferred to phase 02 task 1.1 (D3). | open |
-| F24 | Nit | contract | `AgentEvent` lacks durability/retention metadata named in schemas.md (D8). | open |
+| F1 | Major | all three | Fenced checkpoint insert is an unlocked NOT EXISTS under READ COMMITTED; it races a concurrent `attempts.start` (D10). | fixed: per-task advisory lock in start and fenced writes; test_fenced_insert_waits_for_a_concurrent_start (mutation-checked) |
+| F2 | Major | all three | Probe moves only the parent PID into the cgroup; freeze/kill and SIGSTOP checks cannot fail for the tree (task 0.1). | fixed: probe starts the tree inside the cgroup and checks members, freeze, kill and SIGSTOP per process; rerun recorded in notes.md#d3 |
+| F3 | Major | all three | Session store has no load/capture result a DSH store can use; checkpoint assembly stays in the Activity (D1, task 1.1). | fixed: SessionStore.load(checkpoint) and capture() -> SessionSnapshot (position, session_ref); the Activity commits the snapshot through the fence |
+| F4 | Major | failure, scope | Conformance suite never exercises the session store or `run_harness_turn` (R3). | fixed: conformance suite takes sessions from a store (MemorySessionStore); store_contract runs on it and on SQLAlchemySessionStore (Postgres) |
+| F5 | Major | scope, contract | No test reaches the Activity's fenced paths; reverting the fence leaves all tests green (D10). | fixed: test_newer_attempt_mid_run_fences_the_finish (mutation-checked) |
+| F6 | Major | contract | Artifact blobs are published before the fenced finish (D10). | fixed: assert_current before artifact puts; test_newer_attempt_before_publication_blocks_artifacts. Residual: a start between that check and the fenced finish can leave an unreferenced blob, never an artifact |
+| F7 | Nit | all three | Session items are shared across attempts and unfenced (D10 scope; pre-existing). | accepted: pre-existing openai_agents behaviour; DSH sessions are per-attempt blobs (D1), so it does not extend to DSH |
+| F8 | Nit | all three | `AttemptEvents.emit` calls the sink outside the lock; delivery order can differ from seq (D8). | fixed: sink.emit inside the lock; test_concurrent_emitters_deliver_in_seq_order |
+| F9 | Nit | all three | `dsh` profile resolves but no worker serves `tpl.local-dsh` until phase 02 (D5). | accepted: the dsh profile is not default; phase 02 task 1.3 adds the worker |
+| F10 | Nit | all three | Resolve-time harness check duplicated rather than moved (task 2.2). | accepted: the resolve-time check stays as defence in depth |
+| F11 | Nit | failure, contract | No test uses a harness outside the `Harness` Literal (R1). | fixed: test_unknown_harness_value_is_rejected |
+| F12 | Nit | contract, scope | `SYS_ADMIN` grant recorded only in the plan, not the roadmap decision log or ADR-0006 (D3). | fixed: roadmap decision-log entry for SYS_ADMIN and command confinement |
+| F13 | Nit | contract | `concurrency_per_pod: 1` not enforced for `dsh` templates (D3, ADR-0006). | fixed: loader requires concurrency_per_pod 1 for dsh; test_dsh_template_needs_one_attempt_and_a_context_window |
+| F14 | Nit | contract | `context_window` optional for `dsh` templates (D7, D9). | fixed: loader requires context_window for dsh; same test |
+| F15 | Nit | contract | `newer_attempt_exists` still in the seam as an early exit (D10). | accepted: early exit only; the fenced writes are authoritative |
+| F16 | Nit | contract | `close_unfinished` is unfenced on a stale attempt's failure path (D10). | accepted: through_attempt bounds it to rows at or below the failing attempt |
+| F17 | Nit | scope | Fence rejects writes when a higher turn exists, e.g. after a workflow reset (D10). | accepted: workflow resets to an earlier turn are not supported |
+| F18 | Nit | failure | Fenced finish returns normally when the row was closed and nothing newer exists (D10). | accepted: pre-existing behaviour; the task already completed or was cancelled |
+| F19 | Nit | all three | `AgentEvent.payload` does not enforce "no prompt text"; seq scope is per attempt (D8). | accepted: payload content is the emitter's responsibility; R16 tests in phase 02 assert no text; seq is per attempt by design |
+| F20 | Nit | contract | Probe has a no-op line and no recorded run command (task 0.1). | fixed: no-op line removed; run command recorded in the probe header |
+| F21 | Nit | contract | Worker refusal for non-`openai_agents` templates has no test. | accepted: covered when phase 02 task 1.3 replaces the guard with runner selection |
+| F22 | Nit | contract | Stale checkpoint blob recorded before the fenced insert rejects (D10). | accepted: content-addressed task-retention blob without a checkpoint row |
+| F23 | Nit | scope | User-namespace probe check still fails; deferred to phase 02 task 1.1 (D3). | accepted: phase 02 task 1.1 must make it pass |
+| F24 | Nit | contract | `AgentEvent` lacks durability/retention metadata named in schemas.md (D8). | accepted: durability and retention metadata belong to roadmap Phase 2 |

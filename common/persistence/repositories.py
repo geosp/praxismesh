@@ -135,6 +135,7 @@ class AttemptRepository:
         """Record an attempt as started, and mark earlier unfinished attempts of the
         same turn as lost (RFC: cumulative usage and lost attempts)."""
         async with self.engine.begin() as conn:
+            await conn.execute(_TASK_LOCK, {"t": task_id})
             await conn.execute(
                 text(
                     """
@@ -175,6 +176,8 @@ class AttemptRepository:
         """Record an attempt's outcome. With `fenced`, refuse (FenceRejected) when a
         newer attempt exists, in the same transaction as the update (D10)."""
         async with self.engine.begin() as conn:
+            if fenced:
+                await conn.execute(_TASK_LOCK, {"t": task_id})
             done = await conn.execute(
                 text(
                     """
@@ -204,6 +207,20 @@ class AttemptRepository:
                 )
                 if newer.first() is not None:
                     raise FenceRejected("a newer attempt owns this task")
+
+    async def assert_current(self, task_id: str, turn: int, attempt: int) -> None:
+        """Raise FenceRejected if a newer turn or attempt of the task has started.
+
+        Used right before publishing artifacts, which are blobs and cannot share the
+        attempt row's transaction (D10, review F6)."""
+        async with self.engine.begin() as conn:
+            await conn.execute(_TASK_LOCK, {"t": task_id})
+            current = await conn.execute(
+                text("SELECT 1 WHERE " + _NO_NEWER_ATTEMPT),
+                {"t": task_id, "turn": turn, "a": attempt},
+            )
+            if current.first() is None:
+                raise FenceRejected("a newer attempt owns this task")
 
     async def close_unfinished(
         self,
@@ -269,7 +286,10 @@ class FenceRejected(RuntimeError):
 
 
 # Plan 2026-11-15-dsh-production-harness D10: a write by an attempt is valid only
-# while no newer turn or attempt of the same task has started.
+# while no newer turn or attempt of the same task has started. `start` and every
+# fenced write take this per-task transaction lock first, so under READ COMMITTED
+# the check sees any start that committed before it (review F1).
+_TASK_LOCK = text("SELECT pg_advisory_xact_lock(hashtext(:t))")
 _NO_NEWER_ATTEMPT = (
     "NOT EXISTS (SELECT 1 FROM task_attempts n WHERE n.task_id = :t "
     "AND (n.turn > :turn OR (n.turn = :turn AND n.attempt > :a)))"
@@ -283,6 +303,7 @@ class CheckpointRepository:
     async def insert_fenced(self, cp: Checkpoint) -> None:
         """Insert in one statement that refuses if a newer attempt exists."""
         async with self.engine.begin() as conn:
+            await conn.execute(_TASK_LOCK, {"t": cp.task_id})
             done = await conn.execute(
                 text(
                     """

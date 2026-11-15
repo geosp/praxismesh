@@ -131,3 +131,23 @@ def test_mcp_secret_must_be_granted_by_template(registry_copy: Path) -> None:
     )
     with pytest.raises(RegistryError, match="needs secret_refs"):
         load_registry(registry_copy, check_lock=False)
+
+
+def test_unknown_harness_value_is_rejected(registry_copy: Path) -> None:
+    template = registry_copy / "templates" / "local-default.yaml"
+    template.write_text(template.read_text().replace("harness: openai_agents", "harness: foo"))
+    with pytest.raises(RegistryError):
+        load_registry(registry_copy, check_lock=False)
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [("concurrency_per_pod: 1", "concurrency_per_pod: 4"), ("context_window: 32768\n", "")],
+)
+def test_dsh_template_needs_one_attempt_and_a_context_window(
+    registry_copy: Path, old: str, new: str
+) -> None:
+    template = registry_copy / "templates" / "local-dsh.yaml"
+    template.write_text(template.read_text().replace(old, new))
+    with pytest.raises(RegistryError, match="concurrency_per_pod: 1 and a context_window"):
+        load_registry(registry_copy, check_lock=False)
