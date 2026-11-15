@@ -45,6 +45,7 @@ CASES = (
     "retry-protocol",
     "retry-infrastructure",
     "bad-request",
+    "lost-after-finish",
 )
 
 
@@ -111,6 +112,21 @@ async def run_case(case: str, image: str, scratch: Path) -> dict:
             raise AssertionError("questions were lost")
         if case.startswith("retry-") and result.attempts != 2:
             raise AssertionError("transient fixture did not retry exactly once through Temporal")
+        if case == "lost-after-finish":
+            first, second = candidate.records
+            if second.get("short_circuit") != "finish already acknowledged":
+                raise AssertionError("replacement attempt did not complete from the finish")
+            if second["cleanup"].get("container_started") is not False:
+                raise AssertionError("replacement attempt started the candidate")
+            if second["totals"]["physical_dispatches"] or second["tool_entries"]:
+                raise AssertionError("work followed an acknowledged finish")
+            if result.attempts != 2:
+                raise AssertionError("injected loss did not retry exactly once")
+            if (result.tokens_in, result.tokens_out) != (
+                first["totals"]["input_tokens"],
+                first["totals"]["output_tokens"],
+            ):
+                raise AssertionError("lost attempt usage missing from the turn total")
         if case == "bad-request" and result.attempts != 1:
             raise AssertionError("invalid model input was retried")
         if case in ("plain-text", "inner-limit") and result.turns != 6:

@@ -123,6 +123,7 @@ def native_turn(
     instructions: str,
     image: str,
     cancel: threading.Event,
+    live: dict | None = None,
 ) -> tuple[dict | None, dict, Path]:
     name = "praxis-dsh-task-" + uuid.uuid4().hex[:12]
     deadline_seconds = min(600, turn.remaining_wall_time.total_seconds())
@@ -203,6 +204,38 @@ def native_turn(
         "exit": 1,
         "restored": restored,
     }
+    if publication is not None and publication.get("finish") is not None:
+        # Production parity (harness_activity/activity.py): an attempt lost after
+        # its finish was acknowledged completes from that record. The candidate
+        # is not started again, so no model or tool work can follow the finish.
+        digest, payload = authority.restore()
+        restore_pair(payload, scratch / "state")
+        finish = publication["finish"]
+        record.update(
+            exit=0,
+            short_circuit="finish already acknowledged",
+            finish=finish,
+            checkpoint_sha256=digest,
+            candidate=None,
+            model_requests=[],
+            ledger=[],
+            provider_dispatches=[],
+            tool_entries=[],
+            totals=dict(
+                ingress=0,
+                physical_dispatches=0,
+                denied_ingress=0,
+                input_tokens=0,
+                output_tokens=0,
+                unknown_usage=0,
+                logical_steps=0,
+            ),
+            cleanup={"cleanup_ok": True, "container_started": False},
+        )
+        if benchmark:
+            completion.close()
+        (output / (name + "-result.json")).write_text(json.dumps(record, indent=2) + "\n")
+        return finish, record, scratch / "state/workspace"
     gateway = executor = provider = process = log = None
     started = False
     stop_trigger = None
@@ -263,6 +296,8 @@ def native_turn(
             api_key=api_key,
             checkpoint=checkpoint,
         )
+        if live is not None:
+            live["ledger"] = gateway.ledger
         executor = ToolExecutor(
             state,
             authority,
@@ -389,6 +424,12 @@ class TaskActivities:
         prior = [r for r in await self.attempts.list(turn.task_id) if r["turn"] == turn.turn]
         prior_in = sum(r["tokens_in"] for r in prior)
         prior_out = sum(r["tokens_out"] for r in prior)
+        details = activity.info().heartbeat_details
+        if details:
+            # Production parity: the last heartbeat is cumulative over this turn's
+            # attempts, including one lost before it recorded its attempt row.
+            prior_in = max(prior_in, int(details[0].get("tokens_in", 0)))
+            prior_out = max(prior_out, int(details[0].get("tokens_out", 0)))
         remaining = turn.remaining_tokens - prior_in - prior_out
         if remaining <= 0:
             return TurnOutcome(
@@ -403,6 +444,17 @@ class TaskActivities:
         ).decode()
         await self.attempts.start(turn.task_id, turn.turn, attempt, "isolated-dsh-spike")
         cancel = threading.Event()
+        live: dict = {}
+
+        def progress() -> dict:
+            ledger = live.get("ledger")
+            used = ledger.totals() if ledger is not None else {}
+            return {
+                "attempts": attempt,
+                "tokens_in": prior_in + (used.get("input_tokens") or 0),
+                "tokens_out": prior_out + (used.get("output_tokens") or 0),
+            }
+
         task = asyncio.create_task(
             asyncio.to_thread(
                 native_turn,
@@ -415,15 +467,15 @@ class TaskActivities:
                 instructions,
                 self.image,
                 cancel,
+                live,
             )
         )
         try:
             while not task.done():
-                activity.heartbeat(
-                    {"attempts": attempt, "tokens_in": prior_in, "tokens_out": prior_out}
-                )
+                activity.heartbeat(progress())
                 await asyncio.sleep(0.1)
             finish, record, workspace = task.result()
+            activity.heartbeat(progress())
         except asyncio.CancelledError:
             cancel.set()
             with contextlib.suppress(Exception):
@@ -454,6 +506,11 @@ class TaskActivities:
                 non_retryable=not error.retryable,
             ) from error
         self.records.append(record)
+        if self.case == "lost-after-finish" and attempt == 1:
+            # Fault injection: the worker is lost after the finish checkpoint was
+            # acknowledged, before Temporal records the Activity result. Like a
+            # real loss, no attempt row is finished; usage survives in the heartbeat.
+            raise ApplicationError("injected worker loss after finish acknowledgment")
         outputs = []
         if finish and finish["status"] == "done":
             for name in row["outputs"] or []:
