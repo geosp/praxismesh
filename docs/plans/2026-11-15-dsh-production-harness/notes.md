@@ -21,4 +21,5 @@ reference for expected behaviour of each ported case.
 | --- | --- | --- | --- |
 | Docker Compose | sibling container through a socket proxy | create/remove of the pinned image, fixed mounts | proxy is one more component; plain socket is root-equivalent |
 | Kubernetes | per-attempt Pod created by the worker | service account limited to pods in one namespace | adds Pod start-up time per attempt |
-| Either | one-attempt worker with DSH as a subprocess; gateway and executor in a sidecar holding credentials | none beyond normal deployment | worker recycled after each attempt; needs `concurrency_per_pod: 1` (already set) |
+| Either (chosen) | paired DSH container with a launcher; worker holds credentials, gateway and executor; shared attempt volume | none beyond normal deployment | process-group/cgroup isolation per attempt instead of a fresh container |
+| Either | LXC/Incus system containers | Incus API access, scoped by project | second host runtime; still needs start rights; no Kubernetes path |

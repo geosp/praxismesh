@@ -1,31 +1,32 @@
 ---
 phase: 2
-title: DSH runner and worker image
+title: DSH runner and worker pair
 status: draft
 branch: null
 base: null
-delivers: [R3, R4, R5, R6, R7, R8]
-design_review: { status: none, rounds: 0, last: null }
+delivers: [R4, R5, R6, R7, R8, R9, R10, R12, R13]
+design_review: { status: changes-requested, rounds: 1, last: 2026-11-15 }
 impl_review: { status: none, rounds: 0, last: null }
 approved: null
 ---
 
-# Phase 02 · DSH runner and worker image
+# Phase 02 · DSH runner and worker pair
 
 ## Goal
 
-`DshRunner` runs a turn in a pinned per-attempt container with production
-gateway, executor and barrier, and passes the spike's control cases as
-production tests.
+A `tpl.local-dsh` worker and its DSH container run turns through `DshRunner`.
+The spike's control cases pass as production integration tests.
 
 ## Tasks
 
-### 1. Packaging
+### 1. Worker pair
 
-- [ ] 1.1 Build a worker-side DSH image pinning the release, wheel digests and native binary hashes, with licence notices; scope container start to that image (D3). Verify: image build is reproducible from the lock; a preflight rejects a mismatched digest.
+- [ ] 1.1 Build the DSH container image (pinned release, digests, licence notices) and the launcher. The launcher checks digests at start-up, runs one process group per attempt, kills it when the control socket closes, and reaps leftovers at start-up (D3, R7, R12). Verify: a mismatched digest blocks start-up; killing the control socket stops the attempt within 5 s.
+- [ ] 1.2 Add the `dsh` worker and DSH container pair to `infra/docker-compose.yml`, sharing an attempt volume, with no network and no credentials in the DSH container (D3). Verify: `docker compose up` starts both; cgroup freeze and thaw work from the launcher (Assumptions).
+- [ ] 1.3 Choose the runner from `template.harness` in `workers/main.py` (D1). Verify: a `dsh` template's queue gets `DshRunner`; `local-default` is unchanged.
 
 ### 2. Runner
 
-- [ ] 2.1 Port the gateway ledger, executor, ordered ownership and session-marker barrier as production modules (R3, R5, D2, D6). Verify: ported unit tests from `spikes/dsh-harness/test_task_policy.py` and `test_usage_ledger.py` pass.
-- [ ] 2.2 Implement `DshRunner` with production tools, skills and MCP over the executor and DSH events mapped to the R8 interface (R6, R7, R8, D4). Verify: conformance suite runs on a `dsh` test template with a scripted provider.
-- [ ] 2.3 Port the recovery, bounded-stop, accounting and outcome cases (including lost-after-finish, deadline, cancel) as integration tests against real workers (R3, R4, R5, R7). Verify: `uv run pytest -m integration` for those cases passes and leaves no containers.
+- [ ] 2.1 Port the classification, ownership, gateway ledger, executor and barrier to `harness_activity/dsh/` with their spike tests, and add the D7 migration (R4, R5, R8, R9, D2, D6, D7, D9). Verify: the ported unit tests pass; `alembic upgrade head` adds `usage_known` and the nullable token columns.
+- [ ] 2.2 Implement `DshRunner`: production tools, skills and MCP over the executor; commands through the launcher; DSH events mapped to the D8 sink (R10, R11, D4). Verify: the conformance suite, marked `integration` and skipped in CI, passes for `dsh` with a scripted provider.
+- [ ] 2.3 Port the recovery, stop, accounting and R13 outcome cases, plus worker SIGKILL, as integration tests (R4–R9, R13). Verify: `uv run pytest -m integration` passes them and no DSH process remains.
