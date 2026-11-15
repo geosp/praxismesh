@@ -34,7 +34,11 @@ def main():
         session = (
             harness.resume_session("task") if config["resume"] else harness.start_session("task")
         )
-        result = session.run(task_input(config["instructions"]))
+        blocks = task_input(config["instructions"])
+        if config.get("operating_instructions") and not config["resume"]:
+            # Trusted template prompt, ahead of the untrusted task data block.
+            blocks.insert(1, {"type": "text", "text": config["operating_instructions"]})
+        result = session.run(blocks)
         record = {
             "finish_reason": result.finish_reason,
             "primary_usage": primary_usage(result.events),

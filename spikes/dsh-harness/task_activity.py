@@ -13,11 +13,20 @@ import time
 import uuid
 from pathlib import Path
 
+import yaml
 from accounting_boundary import FixtureProvider
 from preflight import environment_digest
 from recovery_boundary import ToolExecutor
 from recovery_store import Authority, capture_pair, restore_pair
-from run_probe import HERE, ROOT, run_manifest, runtime_identity, save_manifest, stage_inputs
+from run_probe import (
+    HERE,
+    ROOT,
+    local_provider,
+    run_manifest,
+    runtime_identity,
+    save_manifest,
+    stage_inputs,
+)
 from run_recovery import docker, recovery_command, stop_owned_attempt
 from task_boundary import TaskBoundary
 from task_completion import Completion, turn_outcome
@@ -26,7 +35,29 @@ from temporalio.exceptions import ApplicationError
 
 from common.persistence.repositories import AttemptRepository, TaskRepository
 from common.schemas import Artifact, BlobRef, TurnInput, TurnOutcome
+from harness_activity.activity import CONTINUE_MESSAGE
 
+SHOP_GRANT = tuple(
+    yaml.safe_load((ROOT / "registry/mcp/sample-shop.yaml").read_text())["tools_allowed"]
+)
+CLI_GRANT = yaml.safe_load((ROOT / "registry/templates/local-default.yaml").read_text())[
+    "cli_tools"
+]
+PRODUCTION_PROMPT = (ROOT / "registry/prompts/local-default.md").read_text()
+SKILL_PLUGINS = """    - id: praxis-skills
+      name: '@deepseek-ai/dsh-skill'
+    - id: praxis-skill-filesystem
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        includeDefaultRoots: false
+        customSkillDirs: [/opt/granted-skills]
+        watch: false
+    - id: praxis-tool-skill
+      name: '@deepseek-ai/dsh-tool-skill'
+    - id: praxis-recovery
+"""
+# Smaller than the Phase 01 probe defaults (1g, 2 CPUs) to protect the host.
+TASK_LIMITS = {"memory": "512m", "cpus": "1"}
 HOST_IDENTITY = runtime_identity(HERE, ROOT / "registry/skills/order-desk")
 
 
@@ -108,11 +139,21 @@ def native_turn(
         task_kind="isolated DSH implementation of run_harness_turn on a unique queue",
         stop_trigger="native return, Activity cancellation, or monotonic turn deadline",
         phase02_stop_oracle_pending=False,
+        container_limits=TASK_LIMITS,
     )
     shared.mkdir(parents=True, exist_ok=True)
     authority = Authority(shared / "authority.sqlite")
     lease = authority.claim()
-    completion = Completion(shared / "unused-host-workspace")
+    output = HERE / ".runs"
+    benchmark = case == "benchmark"
+    if benchmark:
+        from bench_tools import BenchTools
+
+        completion = BenchTools(
+            output / name / "state/workspace", name, turn.task_id, list(SHOP_GRANT)
+        )
+    else:
+        completion = Completion(shared / "unused-host-workspace")
     tools = completion.catalog()
     composition = (
         (HERE / "recovery-composition.yaml")
@@ -123,16 +164,31 @@ def native_turn(
             "        env:\n          PRAXIS_SPIKE_TASK_TOOLS: '1'\n        cwd: /run/workspace\n",
         )
     )
+    if benchmark:
+        composition = composition.replace("    - id: praxis-recovery\n", SKILL_PLUGINS)
     publication = authority.publication()
     restored = publication is not None
     task_input = {"resume": restored, "instructions": instructions}
+    if benchmark:
+        # Production passes the template prompt as agent instructions every turn
+        # and CONTINUE_MESSAGE on resume; DSH receives the prompt as a trusted
+        # first-turn block in its restored conversation instead.
+        task_input.update(
+            operating_instructions=PRODUCTION_PROMPT,
+            instructions=CONTINUE_MESSAGE if restored else instructions,
+        )
+        manifest.update(
+            task_kind="R8 benchmark task through the isolated DSH run_harness_turn",
+            granted_tools=sorted(t["name"] for t in tools),
+            cli_tools=CLI_GRANT,
+            prompt_sha256=hashlib.sha256(PRODUCTION_PROMPT.encode()).hexdigest(),
+        )
     additions = {
         "task-composition.yaml": composition.encode(),
         "task-tools.json": json.dumps(tools, sort_keys=True).encode(),
         "task-input.json": json.dumps(task_input, sort_keys=True).encode(),
     }
     manifest["trusted_additions"] = {k: hashlib.sha256(v).hexdigest() for k, v in additions.items()}
-    output = HERE / ".runs"
     output.mkdir(exist_ok=True)
     manifest_hash = save_manifest(output / (name + "-manifest.json"), manifest)
     scratch = output / name
@@ -191,16 +247,20 @@ def native_turn(
             finally:
                 docker("unpause", name)
 
-        provider = FixtureProvider(case, scripted_response(case, temporal_attempt))
+        upstream, api_key = local_provider() if benchmark else (None, "")
+        if not benchmark:
+            provider = FixtureProvider(case, scripted_response(case, temporal_attempt))
         gateway = TaskBoundary(
             state / "ipc/model.sock",
             name,
             temporal_attempt,
-            {"mcp__task__" + t["name"] for t in tools},
+            {"mcp__task__" + t["name"] for t in tools} | ({"skill"} if benchmark else set()),
             completion,
             budget=remaining_tokens,
             steps=manifest["model_step_ceiling"],
             fixture=provider,
+            upstream=upstream,
+            api_key=api_key,
             checkpoint=checkpoint,
         )
         executor = ToolExecutor(
@@ -211,12 +271,13 @@ def native_turn(
             dispatcher=completion.dispatch,
             allowed_names={t["name"] for t in tools},
         )
-        provider.start()
+        if provider is not None:
+            provider.start()
         gateway.start()
         executor.start()
         started = True
         log = (scratch / "candidate.log").open("w+")
-        command = recovery_command(name, state, "start", image)
+        command = recovery_command(name, state, "start", image, **TASK_LIMITS)
         command[-2:] = ["/opt/spike/task_driver.py", "controlled"]
         process = subprocess.Popen(command, stdout=log, stderr=log)
         until = time.monotonic() + deadline_seconds
@@ -238,7 +299,7 @@ def native_turn(
             model_requests=gateway.requests,
             ledger=gateway.ledger.records,
             totals=gateway.ledger.totals(),
-            provider_dispatches=provider.dispatches,
+            provider_dispatches=provider.dispatches if provider is not None else None,
             tool_entries=executor.entries,
             provider_fault=gateway.fault,
         )
@@ -269,7 +330,12 @@ def native_turn(
                 sum(item[key] for item in primary) for key in ("input_tokens", "output_tokens")
             )
             physical = record["totals"]["physical_dispatches"]
-            if observed != expected or len(provider.dispatches) != physical:
+            dispatched = (
+                len(provider.dispatches)
+                if provider is not None
+                else sum(1 for item in gateway.ledger.records if item["dispatched"])
+            )
+            if observed != expected or dispatched != physical:
                 failure = ("DshAccountingFailure", False)
                 record["exit"] = 1
             else:
@@ -294,6 +360,8 @@ def native_turn(
             except Exception as error:
                 record.update(exit=1, checkpoint_error_type=type(error).__name__)
                 failure = ("DshCheckpointFailure", False)
+        if benchmark:
+            completion.close()
         (output / (name + "-result.json")).write_text(json.dumps(record, indent=2) + "\n")
     if failure:
         raise NativeFailure(failure[0], record, failure[1])
@@ -395,6 +463,13 @@ class TaskActivities:
                     if await self.blobs.get(ref) != path.read_bytes():
                         raise RuntimeError("artifact failed read-back")
                     outputs.append(Artifact(path=name, ref=ref))
+        # Each attempt stages a ~200 MB dependency copy; keep only failed trees.
+        # The acknowledged checkpoint lives in the shared authority, not here.
+        attempt_tree = workspace.parent.parent
+        if attempt_tree.parent == HERE / ".runs" and attempt_tree.name.startswith(
+            "praxis-dsh-task-"
+        ):
+            shutil.rmtree(attempt_tree, ignore_errors=True)
         totals = record["totals"]
         tool_calls = sum(e["admitted"] for e in record["tool_entries"])
         await self.attempts.finish(

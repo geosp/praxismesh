@@ -38,8 +38,8 @@ def wait_barrier(event, process, deadline):
             raise TimeoutError("interruption barrier not reached")
 
 
-def recovery_command(name, state, stage, image):
-    args = command(name, state, "startup", image)
+def recovery_command(name, state, stage, image, **limits):
+    args = command(name, state, "startup", image, **limits)
     # Replace the Phase 01 file mounts with the complete frozen probe code tree.
     result = []
     index = 0

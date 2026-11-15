@@ -14,7 +14,7 @@ import sys
 import uuid
 from pathlib import Path
 
-from run_probe import HERE, IMAGE, ROOT, image_id
+from run_probe import HERE, IMAGE, ROOT, host_memory_available, image_id
 
 sys.path.insert(0, str(ROOT))
 
@@ -142,7 +142,16 @@ def main() -> int:
     scratch.mkdir(parents=True)
     results = []
     for case in CASES if args.case == "all" else (args.case,):
-        result = asyncio.run(run_case(case, args.image, scratch / case))
+        available = host_memory_available()
+        if available < 4 << 30:
+            result = {
+                "case": case,
+                "exit": 1,
+                "status": "blocked",
+                "error": f"host memory {available >> 20} MiB available",
+            }
+        else:
+            result = asyncio.run(run_case(case, args.image, scratch / case))
         results.append(result)
         (scratch / (case + "-result.json")).write_text(json.dumps(result, indent=2) + "\n")
         print(

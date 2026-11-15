@@ -260,6 +260,14 @@ def evidence_error(case: str, requests: list[dict], executions: list[dict]) -> s
     return None
 
 
+def host_memory_available() -> int:
+    """MemAvailable in bytes; the drivers start no candidate below their floor."""
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if line.startswith("MemAvailable:"):
+            return int(line.split()[1]) * 1024
+    raise RuntimeError("blocked: MemAvailable unreadable")
+
+
 def image_id(value: str) -> str:
     if re.fullmatch(r"sha256:[0-9a-f]{64}", value) is None:
         raise argparse.ArgumentTypeError("image must be a local sha256 content ID")
@@ -317,7 +325,9 @@ def run_manifest(case: str, name: str, deadline: float, image: str = IMAGE) -> d
     return manifest
 
 
-def command(name: str, run: Path, case: str, image: str = IMAGE) -> list[str]:
+def command(
+    name: str, run: Path, case: str, image: str = IMAGE, *, memory: str = "1g", cpus: str = "2"
+) -> list[str]:
     site = run.parent / "environment"
     return [
         "docker",
@@ -339,9 +349,9 @@ def command(name: str, run: Path, case: str, image: str = IMAGE) -> list[str]:
         "--pids-limit",
         "128",
         "--memory",
-        "1g",
+        memory,
         "--cpus",
-        "2",
+        cpus,
         "--tmpfs",
         "/tmp:rw,exec,nosuid,nodev,mode=1777",
         "--tmpfs",

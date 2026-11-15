@@ -239,6 +239,59 @@ host-produced files become artifact refs; model-supplied refs are rejected.
 Unknown usage cannot be published as zero tokens. Each attempt follows the
 same cleanup and observation policy as the bounded probes.
 
+To protect the host, task-Activity containers (these probes and the benchmark)
+run with 512 MiB of memory and one CPU, not the Phase 01 defaults of 1 GiB and two
+CPUs. The limits are recorded as `container_limits` in each run manifest. After
+a successful attempt has uploaded its artifacts, its `.runs/praxis-dsh-task-*`
+scratch tree (about 200 MB of staged dependencies) is removed; failed trees stay.
+Both drivers check `MemAvailable` before each case or task. Below 4 GiB they start
+no candidate and record the item as blocked.
+
+## Phase 02 benchmark comparison
+
+The ten existing benchmark tasks need `git` (t06), which the Phase 01 image lacks.
+`Dockerfile.benchmark` adds `git=1:2.39.5-0+deb12u3` to the same pinned base,
+using that base image's own Debian snapshot (20261104T212339Z). Earlier probes
+keep the Phase 01 image. Build it and run the tasks against the local model:
+
+```bash
+docker build -f spikes/dsh-harness/Dockerfile.benchmark --build-arg SPIKE_UID="$(id -u)" --build-arg SPIKE_GID="$(id -g)" --iidfile /tmp/praxis-dsh-bench-image-id spikes/dsh-harness
+uv run --env-file infra/.env python spikes/dsh-harness/run_benchmark.py --image "$(cat /tmp/praxis-dsh-bench-image-id)"
+```
+
+Each task runs through the existing `TaskWorkflow` with the `default` profile.
+Turns go to the isolated DSH `run_harness_turn` (`case=benchmark`) on a unique
+queue prefix. The checks are the production checks in
+`tests/benchmarks/agent_tasks/tasks.py`. They read the final acknowledged
+checkpoint's workspace. `docs/benchmarks/baseline.json` is read, never written.
+Results go to `.runs/benchmark-*/benchmark.json`.
+
+To keep capability semantics comparable, DSH's native file and shell tools stay
+disabled. The candidate sees one MCP catalog built from the production
+`harness_activity/tools.py` schemas (`read_file`, `write_file`, `list_files`,
+`run_command` limited to the template's `cli_tools`, `finish_task`) plus the
+template's five `sample-shop` tools. The trusted host executor records and
+admits every call:
+
+- File tools run the production wrappers against the bind-mounted workspace.
+- Shop tools run the real `sample_mcp` server in the host process, so the
+  database secret never enters the candidate.
+- `run_command` applies the production allowlist, then runs with a cleared
+  environment through `docker exec` inside the owned candidate container.
+
+Model traffic goes through the same budget gateway to the local vLLM endpoint.
+The granted `order-desk` skill is loaded by DSH's skill plugins.
+
+Known differences from the baseline harness:
+
+- DSH adds its own `sdk-minimal` system prompt. The template prompt (same hash
+  as the baseline) is a trusted first-turn input block, not per-call agent
+  instructions.
+- Tool names reach the model with the `mcp__task__` prefix.
+- The candidate composition caps each request at 2048 output tokens.
+- Checkpoints keep regular files only; empty directories and file modes are
+  not restored.
+
 ## Checks and cleanup
 
 ```bash
