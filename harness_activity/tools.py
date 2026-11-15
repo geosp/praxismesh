@@ -16,6 +16,7 @@ import logging
 import os
 import shlex
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -67,41 +68,134 @@ def command_env(workspace: Path) -> dict[str, str]:
     }
 
 
-def build_tools(workspace: Path, cli_tools: list[str], state: TurnState) -> list[FunctionTool]:
+@dataclass(frozen=True)
+class CommandResult:
+    exit: int | None
+    stdout: str = ""
+    stderr: str = ""
+    timed_out: bool = False
+
+
+CommandRunner = Callable[[str], CommandResult]
+
+
+def local_command_runner(workspace: Path) -> CommandRunner:
+    """Run a command with `sh -c` in the workspace, as openai_agents does."""
+
+    def run(command: str) -> CommandResult:
+        try:
+            done = subprocess.run(
+                ["sh", "-c", command],
+                cwd=workspace,
+                env=command_env(workspace),
+                capture_output=True,
+                text=True,
+                timeout=COMMAND_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired:
+            return CommandResult(None, timed_out=True)
+        return CommandResult(done.returncode, done.stdout, done.stderr)
+
+    return run
+
+
+# Tool bodies, shared by every runner (DSH migration plan D4). The openai_agents
+# wrappers below and the DSH executor call these, so both runners present the same
+# semantics; only where a command runs differs (the CommandRunner).
+
+
+def read_file_body(workspace: Path, path: str) -> str:
+    try:
+        return inside(workspace, path).read_text()
+    except (WorkspaceError, OSError, UnicodeDecodeError) as e:
+        return f"error: {e}"
+
+
+def write_file_body(workspace: Path, path: str, content: str) -> str:
+    try:
+        target = inside(workspace, path)
+        if target.relative_to(workspace.resolve()).parts[:1] == (SKILLS_DIR,):
+            raise WorkspaceError("skills are read-only")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    except (WorkspaceError, OSError) as e:
+        return f"error: {e}"
+    return f"wrote {len(content)} characters to {path}"
+
+
+def list_files_body(workspace: Path, path: str = ".") -> list[str] | str:
+    try:
+        base = inside(workspace, path)
+    except WorkspaceError as e:
+        return f"error: {e}"
+    root = workspace.resolve()
+    return sorted(
+        str(p.relative_to(root)) for p in base.rglob("*") if p.is_file() and not p.is_symlink()
+    )
+
+
+def finish_task_body(
+    state: TurnState,
+    status: Literal["done", "needs_input"],
+    summary: str,
+    questions: list[str] | None = None,
+) -> str:
+    state.finish = FinishReport(status, summary[:2000], list(questions or []))
+    return "recorded"
+
+
+def run_command_body(
+    state: TurnState, cli_tools: list[str], command: str, runner: CommandRunner
+) -> str:
+    allowed = ", ".join(cli_tools)
+    try:
+        first = shlex.split(command)[0] if command.strip() else ""
+    except ValueError:
+        first = ""
+    if first not in cli_tools:
+        state.refused.append(f"run_command:{first or '?'}")
+        log.warning("refused command", extra={"fields": {"program": first or "?"}})
+        return f"refused: the command must start with one of: {allowed}"
+    done = runner(command)
+    if done.timed_out:
+        return f"error: the command did not finish within {COMMAND_TIMEOUT_S} s"
+    return (
+        f"exit={done.exit}\nstdout:\n{done.stdout[-OUTPUT_CAP:]}"
+        f"\nstderr:\n{done.stderr[-OUTPUT_CAP // 2 :]}"
+    )
+
+
+def run_command_description(cli_tools: list[str]) -> str:
+    return (
+        "Run a shell command in the project directory and return its exit code and "
+        f"output. The command must start with one of: {', '.join(cli_tools)}."
+    )
+
+
+def build_tools(
+    workspace: Path,
+    cli_tools: list[str],
+    state: TurnState,
+    runner: CommandRunner | None = None,
+) -> list[FunctionTool]:
     # File tools return their errors as text: the SDK would otherwise replace an
     # exception with a generic message, and the model could not tell why it failed.
+    run = runner or local_command_runner(workspace)
+
     @function_tool
     def read_file(path: str) -> str:
         """Return the text content of a file in the project directory."""
-        try:
-            return inside(workspace, path).read_text()
-        except (WorkspaceError, OSError, UnicodeDecodeError) as e:
-            return f"error: {e}"
+        return read_file_body(workspace, path)
 
     @function_tool
     def write_file(path: str, content: str) -> str:
         """Create or overwrite a file in the project directory with the given text."""
-        try:
-            target = inside(workspace, path)
-            if target.relative_to(workspace.resolve()).parts[:1] == (SKILLS_DIR,):
-                raise WorkspaceError("skills are read-only")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content)
-        except (WorkspaceError, OSError) as e:
-            return f"error: {e}"
-        return f"wrote {len(content)} characters to {path}"
+        return write_file_body(workspace, path, content)
 
     @function_tool
     def list_files(path: str = ".") -> list[str] | str:
         """List the files under a directory of the project, recursively."""
-        try:
-            base = inside(workspace, path)
-        except WorkspaceError as e:
-            return f"error: {e}"
-        root = workspace.resolve()
-        return sorted(
-            str(p.relative_to(root)) for p in base.rglob("*") if p.is_file() and not p.is_symlink()
-        )
+        return list_files_body(workspace, path)
 
     @function_tool
     def finish_task(
@@ -110,44 +204,16 @@ def build_tools(workspace: Path, cli_tools: list[str], state: TurnState) -> list
         """Call exactly once: when the task is complete (status "done"), or when you
         cannot continue without information from the user (status "needs_input",
         with your questions)."""
-        state.finish = FinishReport(status, summary[:2000], list(questions or []))
-        return "recorded"
+        return finish_task_body(state, status, summary, questions)
 
     tools: list[FunctionTool] = [read_file, write_file, list_files, finish_task]
     if cli_tools:
-        allowed = ", ".join(cli_tools)
 
         @function_tool(
-            name_override="run_command",
-            description_override=(
-                "Run a shell command in the project directory and return its exit code and "
-                f"output. The command must start with one of: {allowed}."
-            ),
+            name_override="run_command", description_override=run_command_description(cli_tools)
         )
         def run_command(command: str) -> str:
-            try:
-                first = shlex.split(command)[0] if command.strip() else ""
-            except ValueError:
-                first = ""
-            if first not in cli_tools:
-                state.refused.append(f"run_command:{first or '?'}")
-                log.warning("refused command", extra={"fields": {"program": first or "?"}})
-                return f"refused: the command must start with one of: {allowed}"
-            try:
-                done = subprocess.run(
-                    ["sh", "-c", command],
-                    cwd=workspace,
-                    env=command_env(workspace),
-                    capture_output=True,
-                    text=True,
-                    timeout=COMMAND_TIMEOUT_S,
-                )
-            except subprocess.TimeoutExpired:
-                return f"error: the command did not finish within {COMMAND_TIMEOUT_S} s"
-            return (
-                f"exit={done.returncode}\nstdout:\n{done.stdout[-OUTPUT_CAP:]}"
-                f"\nstderr:\n{done.stderr[-OUTPUT_CAP // 2 :]}"
-            )
+            return run_command_body(state, cli_tools, command, run)
 
         tools.append(run_command)
     return tools
