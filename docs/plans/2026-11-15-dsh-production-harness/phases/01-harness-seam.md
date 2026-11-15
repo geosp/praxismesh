@@ -35,4 +35,4 @@ session store, and the registry accepts `dsh`, `local-dsh` and the `dsh` profile
 
 ### 3. Events
 
-- [ ] 3.1 Add the `AgentEvent` sink with no-op and in-memory implementations (D8). Verify: a unit test records ordered events with attempt ID.
+- [x] 3.1 Add the `AgentEvent` sink with no-op and in-memory implementations (D8). Verify: a unit test records ordered events with attempt ID.
