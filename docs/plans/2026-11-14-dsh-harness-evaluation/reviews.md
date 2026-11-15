@@ -314,3 +314,17 @@ deterministically, and failures emit only missing/extra file-line-rule locations
 Twenty repeated runs pass. Ruff/format and targeted mypy pass. Exception regexes,
 paths, rules, CI invocation, and all runtime inputs are unchanged. This fixture
 change receives a final scoped check; no earlier result is relabeled.
+
+
+## 2026-11-14 · final scanner fixture check · passed
+
+- Frozen helper change: 90fd53058e3045a27a7ebe4cd05222a66acf03a8.
+- [Fresh check](../../reviews/general-dsh-harness-evaluation/scanner-fixture-final.md).
+- A new verifier confirmed the deterministic public vector and safe location-only
+  diagnostics cannot broaden detection exceptions. Ten independent canary runs,
+  missing-rule/OR negative mutations, Ruff, targeted mypy and redacted feature-history
+  scan passed. No unresolved scoped issue. Exception policy/CI invocation unchanged.
+- Full runtime verification remains pinned to 65d03f0; its input files are unchanged.
+  The affected scanner guard and final fixture changes have their own review,
+  execution and immutable-revision evidence. Earlier reports are not relabeled.
+- Owner review-waiver decision and latest final-head CI remain the closure gates.
