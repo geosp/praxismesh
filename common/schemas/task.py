@@ -83,6 +83,8 @@ class TurnOutcome(Strict):
     questions: list[str] = []
     outputs: list[Artifact] = []
     error: str | None = None
+    # False when some usage could not be observed (DSH migration plan D7, D9).
+    usage_known: bool = True
 
 
 class TaskResult(Strict):
@@ -102,9 +104,12 @@ class TaskResult(Strict):
     tokens_in: int = Field(ge=0)
     tokens_out: int = Field(ge=0)
     inner_turns: int = Field(default=0, ge=0)
+    usage_known: bool = True
 
 
-AttemptOutcome = Literal["started", "done", "continue", "needs_input", "failed", "lost"]
+AttemptOutcome = Literal[
+    "started", "done", "continue", "needs_input", "failed", "lost", "refused", "cancelled"
+]
 
 
 class ExecutionAttempt(Strict):
@@ -117,8 +122,9 @@ class ExecutionAttempt(Strict):
     worker_identity: str
     outcome: AttemptOutcome
     failure_category: str | None = None
-    tokens_in: int = 0
-    tokens_out: int = 0
+    tokens_in: int | None = 0  # None when usage_known is false (D7)
+    tokens_out: int | None = 0
+    usage_known: bool = True
     tool_calls: int = 0
     started_at: datetime
     ended_at: datetime | None = None
@@ -160,3 +166,4 @@ class CompleteTaskInput(Strict):
     tokens_in: int = Field(ge=0)
     tokens_out: int = Field(ge=0)
     inner_turns: int = Field(default=0, ge=0)
+    usage_known: bool = True

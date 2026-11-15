@@ -27,7 +27,7 @@ the spike's control cases pass as production integration tests.
 
 ### 2. Runner
 
-- [ ] 2.1 Add the D7 migration and update `Checkpoint`, `CheckpointRepository`, the restore path and the result schemas (`schemas.md`, decision log) (D1, D7, R12). Verify: `alembic upgrade head` on a copy of the dev database; checkpoint round-trip tests with a session blob.
+- [x] 2.1 Add the D7 migration and update `Checkpoint`, `CheckpointRepository`, the restore path and the result schemas (`schemas.md`, decision log) (D1, D7, R12). Verify: `alembic upgrade head` on a copy of the dev database; checkpoint round-trip tests with a session blob.
 - [ ] 2.2 Port classification, attempt order, gateway ledger with pre-dispatch rows, and barrier to `harness_activity/dsh/` with their spike tests (D2, D6, D9, R11, R13). Verify: ported unit tests pass, including the D9 charge.
 - [ ] 2.3 Split the tool bodies out of `FunctionTool` (`harness_activity/tools.py`) so the executor and `openai_agents` share them (D4). Verify: conformance suite unchanged for `openai_agents`.
 - [ ] 2.4 Implement `DshRunner`: executor tools and skills, commands through the launcher, notes.md#r14 features off, events from executor and gateway (R14, R16). Verify: a test per disabled feature; the conformance suite (marked `integration`, skipped in CI) passes for `dsh` with a scripted provider.

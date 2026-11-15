@@ -87,6 +87,7 @@ class OrchestratorActivities:
             tokens_in=payload.tokens_in,
             tokens_out=payload.tokens_out,
             inner_turns=payload.inner_turns,
+            usage_known=payload.usage_known,
         )
         # Rows still open (for example after schedule_to_close expired, when no
         # Activity code ran) are closed with the task (gate F2).

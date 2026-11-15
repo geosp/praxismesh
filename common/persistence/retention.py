@@ -27,4 +27,5 @@ PHASE1_TABLES = (
     "sample_orders",
     "agent_sessions",
     "agent_messages",
+    "usage_ledger",  # migration 0004 (DSH migration plan D9)
 )

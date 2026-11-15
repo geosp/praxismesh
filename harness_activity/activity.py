@@ -289,9 +289,6 @@ class HarnessActivities:
             data = await asyncio.to_thread(ws.pack, workdir)
             ref = await self.blobs.put(data, content_type="application/gzip", retention="task")
             snapshot = await store.capture()
-            if snapshot.session_ref is not None:
-                # Checkpoint rows gain session refs in the DSH migration's phase 02.
-                raise NotImplementedError("session blobs need the phase 02 checkpoint columns")
             position = snapshot.position
             cp_id = f"{turn.task_id}:{turn.turn}:{attempt}:{seq}"
             try:
@@ -306,6 +303,8 @@ class HarnessActivities:
                         position,
                         ref,
                         finish,
+                        session_ref=snapshot.session_ref,
+                        session_digest=snapshot.session_digest,
                     )
                 )
             except FenceRejected as e:
