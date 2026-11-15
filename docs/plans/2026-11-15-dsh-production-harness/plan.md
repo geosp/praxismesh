@@ -248,7 +248,7 @@ supported.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | [Harness seam and registry](phases/01-harness-seam.md) | in-progress | 6/6 |
+| 01 | [Harness seam and registry](phases/01-harness-seam.md) | done | 6/6 |
 | 02 | [DSH runner and worker pair](phases/02-dsh-runner.md) | approved | 0/8 |
 | 03 | [Acceptance and default switch](phases/03-acceptance.md) | approved | 0/4 |
 

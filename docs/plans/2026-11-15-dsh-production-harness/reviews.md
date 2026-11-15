@@ -209,3 +209,14 @@ phase 02 tasks: no findings.
 | F55 | Nit | codebase fit | "Referenced only through the fenced finish" is imprecise; references are in the returned `TurnOutcome`. | fixed: D10 and notes.md#d10 |
 | F56 | Nit | codebase fit | R7 statement and scenario disagreed; place of observation unnamed. | fixed: R7 "returns no artifact reference or outcome"; Then names `TurnOutcome` and task-result outputs |
 | F57 | Nit | codebase fit | `record_refusal` and `close_unfinished` write rows without the fence, against R6 as worded. | fixed: R6 scoped to checkpoints and attempt outcomes through the run path; notes.md#d10 |
+
+## 2026-11-15 · verification · phase 01 · pass
+
+code_sha 4969d4d, docs_sha 38e379c; fresh verifier subagents (acceptance, as-built, follow-up).
+Report: docs/reviews/general-dsh-production-harness/verification-phase-01.md; demo:
+docs/demos/general-dsh-production-harness-01.md; raw reports under that review folder.
+
+## 2026-11-15 · done · phase 01
+
+Shared done gate passed; all six tasks checked; design review passed (3 rounds), impl review
+passed (2 rounds), verification and demo passed.

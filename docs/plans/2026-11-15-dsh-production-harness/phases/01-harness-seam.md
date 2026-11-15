@@ -1,13 +1,21 @@
 ---
 phase: 1
 title: Harness seam and registry
-status: in-progress
+status: done
 branch: feat/62-dsh-harness-seam
 base: 0f32d7dd3077fcc13d03f7b16e7de7481e34c954
 delivers: [R1, R2, R3]
-design_review: { status: waived, rounds: 2, last: 2026-11-15 }
+design_review: { status: passed, rounds: 3, last: 2026-11-15 }
 impl_review: { status: passed, rounds: 2, last: 2026-11-15 }
 approved: 2026-11-15
+verification: { status: passed, last: 2026-11-15 }
+demo: { status: passed, last: 2026-11-15 }
+evidence:
+  code_sha: 4969d4dbeaddd6fd8f6af777a9b0fdbe50db0bb3
+  docs_sha: 38e379ce6849e315e3f4a779bf1ef08d1cbb060a
+  review: docs/plans/2026-11-15-dsh-production-harness/reviews.md
+  verification: docs/reviews/general-dsh-production-harness/verification-phase-01.md
+  demo: docs/demos/general-dsh-production-harness-01.md
 ---
 
 # Phase 01 · Harness seam and registry
