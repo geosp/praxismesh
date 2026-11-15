@@ -3,10 +3,13 @@
 Date: 2026-11-14. Tracking: [issue #62](https://github.com/geosp/praxismesh/issues/62).
 Contract: [approved implementation plan](../plans/2026-11-14-dsh-harness-evaluation/plan.md).
 
-The isolated runtime can execute the local quote task with the granted skill and
-MCP tools. This is preliminary Phase 01 evidence. Recovery, cancellation, complete
-accounting, TaskResult mapping and benchmark suitability have not been established.
-No adoption recommendation or production replacement follows from these results.
+Phase 01 established an isolated, controlled DSH runtime. Phase 02 tested recovery,
+bounded stop, usage accounting, TaskResult mapping and the ten-task benchmark; its
+author-run results and recommendation are in [Phase 02 results](#phase-02-results).
+They await independent review and verification. No production replacement follows
+from this spike; adoption is a separate owner decision.
+
+The sections before Phase 02 are the historical Phase 01 record and are unchanged.
 
 ## Reproduction and identity
 
@@ -278,3 +281,145 @@ closure-record CI is a delivery prerequisite on PR63, which remains draft.
 Phase 02 remains unstarted. This completion establishes the isolated controlled
 runtime and authority probes; recovery, full accounting, cancellation, explicit
 TaskResult outcomes, workload benchmark and adoption assessment remain future work.
+
+
+## Phase 02 results
+
+Frozen source: `2c900dbff72f016c12d6c5f621cd3b7c84430423`. Every probe below ran
+once from that commit with a clean tree, back to back, on 2026-11-15. All 46 run
+manifests name that commit. [Sanitized manifests, results and driver summaries](dsh-phase02-evidence.json)
+retain request hashes, ledgers, tool-body entries and cleanup observations; the
+repository root is replaced by `<repo>`, and a pinned gitleaks 8.30.1 scan found
+no leaks. These are author-run results, not independent review or verification.
+Reproduction commands are in the [spike README](../../spikes/dsh-harness/README.md).
+
+Host: Linux x86_64, 32 CPUs, 46 GiB RAM. The runner checked between runs that
+available memory stayed above 4 GiB, that no spike container remained and that the
+source was still frozen; every check passed (about 40 GiB available throughout).
+
+### Requirement status
+
+| Req | Status | Evidence |
+| --- | --- | --- |
+| R1 Reproducible | pass, with limitation | Pins in artifacts.json and uv.lock; benchmark image adds pinned git. Native build provenance remains unestablished (Phase 01). |
+| R2 Local capabilities | pass | Phase 01 `local` probe; ten real benchmark tasks used the local model, granted skill, shop tools and commands. |
+| R3 No authority expansion | pass | Phase 01 poison, denied-tool and native-text probes; the benchmark gateway rejects any catalog or model change. |
+| R4 Recovery | pass under the spike barrier | Clean-worker restore, one business effect after retry, superseded attempt fenced; `lost-after-finish` completes from the acknowledged finish. |
+| R5 Bounded stop | pass | Stalled model/tool, cancelled model/tool and step limit all stopped cooperatively within 5 s; no surviving work through 10 s. |
+| R6 Accounting | pass | Exhaustion, retry, auxiliary and tool probes reconciled; all ten live benchmark attempts reconciled, zero unknown usage. |
+| R7 Result contract | pass | Twelve TaskWorkflow cases (O1–O5 plus lost-after-finish) gave the expected TaskResult. |
+| R8 Benchmark | pass | 10/10 against the 10/10 baseline; 0 lost. |
+| R10 Orchestration | pass | Temporal owns dispatch and retries; DSH jobs, child agents and auxiliary producers disabled except measured manual compaction. |
+
+R9 is this report. No requirement failed or was blocked in the frozen run.
+
+### Recovery, stop and accounting
+
+| Probe | Result |
+| --- | --- |
+| recovery | pass; conversation and edit restored without the old worker's disk; 1 business effect; superseded attempt rejected |
+| exhaustion | 1 dispatch (7+3 tokens), next admission denied |
+| retry | 2 dispatches for 1 logical step, total 7+3, third dispatch denied |
+| auxiliary | native compaction 4+6 tokens under a fresh budget of 10, then denied |
+| tools | 6 dispatches, every granted tool observed by the trusted executor; ungranted call never entered it |
+| stall-model, stall-tool | cooperative stop within grace; 10 s observation clean |
+| cancel-model, cancel-tool | cooperative stop within grace; 10 s observation clean |
+| step-limit | third step refused; cooperative stop within grace |
+
+The checkpoint barrier is a spike mechanism, not a DSH API. The controller
+holds the next model request, relies on DSH's checkpoint policy flushing earlier
+results, pauses the container with one tool call in flight at most, then captures
+`home/sessions/` and `workspace/`. Cancellation was delivered through the Temporal
+SDK's Activity test environment, not a deployed worker's heartbeat transport.
+
+### Outcome mapping
+
+All twelve cases ran through the existing `TaskWorkflow`, orchestrator Activities,
+Postgres and S3 on a unique queue prefix. Completion validation reuses the
+production `finish_task` wrapper in the trusted host executor.
+
+| Case | TaskResult |
+| --- | --- |
+| done | succeeded, artifact read back |
+| plain-text, inner-limit | failed after six outer turns |
+| needs-input | needs_input, question preserved |
+| invalid-status, invalid-payload, invalid-reference | first completion refused; later valid completion succeeded |
+| retry-model, retry-protocol, retry-infrastructure | succeeded after two attempts |
+| bad-request | failed after one attempt |
+| lost-after-finish | succeeded after two attempts; second attempt started no container and made no dispatch; lost attempt's 7+3 tokens kept |
+
+### Benchmark
+
+Same ten tasks and checks, `default` profile, `local-default@1` template, model
+`spark` on the local vLLM endpoint. Template prompt hash matches the baseline
+(`sha256:9de242ae…`). Baseline: openai-agents 0.24.0, recorded 2026-11-12;
+`docs/benchmarks/baseline.json` was read, not written.
+
+| Totals | Baseline | DSH candidate |
+| --- | --- | --- |
+| Passed | 10/10 | 10/10 |
+| Tokens in / out | 140,774 / 9,741 | 162,409 / 12,340 |
+| Tool calls | 105 (harness count) | 96 (executed tool bodies) |
+| Model dispatches | not recorded | 65 |
+| Wall time | 225 s | 415 s |
+
+Every task finished in one turn and one attempt. Differences the comparison does not
+control for:
+
+- DSH adds its `sdk-minimal` system prompt; the template prompt is a trusted first-turn input, not per-call instructions.
+- Tools are presented over MCP with an `mcp__task__` prefix. File and shop tools run on the host; commands run in the container through `docker exec`.
+- Each model request pauses the container for a checkpoint. This and `docker exec` add integration overhead to wall time.
+- Tool counts measure different things.
+
+The plan sets no latency or cost threshold; these figures are for owner judgement.
+
+### Failures and corrections before the frozen run
+
+All are retained in ignored `.runs/` records.
+
+- The Phase 01 gateway's eight-request cap ran before admission. In a live
+  benchmark run, t01's ninth request was refused without a recorded step denial, and
+  the bridge classified inner-step exhaustion as a retryable failure instead of
+  continuation. Fixed in `287e574`; a regression test pins it. t08 later exercised
+  the corrected continuation path live.
+- The bridge restarted the model after an already acknowledged finish, and a lost
+  attempt's usage dropped out of the turn total. Both now follow the production
+  Activity (`6fb6a4a`).
+- The first t01 smoke run failed with an unexplained Temporal `RPCError` from the
+  result wait; its native attempt was then cancelled by driver shutdown. It did not
+  recur.
+- Chained long runs on a 15 GiB host (before a BIOS change to the GPU memory
+  reservation) left the desktop unresponsive. No kernel OOM event was recorded.
+  Task containers are now limited to 512 MiB and one CPU, successful attempt trees
+  are removed, and drivers refuse to start below 4 GiB available.
+
+### Recommendation
+
+The evidence supports **writing a separate adoption proposal**: an ADR and a
+migration plan. It does not support adopting DSH now. Every hard gate passed in
+this isolated spike, and the benchmark met the regression rule. Before an adoption
+decision, the proposal should address:
+
+- **Independent confirmation.** These results need the phase's independent review
+  and verification.
+- **Preview runtime.** DSH 0.2.2rc2 is a release candidate, upstream calls it
+  experimental, and native build provenance is unestablished.
+- **Checkpoint barrier.** Consistency depends on a spike mechanism (held request,
+  checkpoint-policy flush, container pause). Production needs a supported DSH
+  export/flush contract or an equivalent reviewed barrier.
+- **Integration work.** Session abstraction and checkpoint encoding, worker
+  packaging with a container per attempt, capability presentation over MCP,
+  registry harness versioning, and Phase 2 event mapping.
+- **Cost.** About 15% more input tokens and roughly 1.8× wall time in this
+  integration, partly from spike overhead.
+- **Deployment cancellation.** It is tested through the SDK test environment only.
+
+Adoption, any production change, and the ADR are owner decisions outside this spike.
+
+### Teardown
+
+Each run removed its container and host gateway, executor and fixture threads, and
+confirmed absence for ten seconds. No spike container remained after the frozen
+run. Successful task-attempt scratch trees were removed; failed ones remain under
+the ignored `.runs/` directory. Production deployment, registry, templates and the
+benchmark baseline are unchanged.
