@@ -65,3 +65,67 @@ Reviewers: fresh reader completed · codebase fit completed · zoom out complete
 | F25 | fixed: docs/adr/README.md |
 | F26 | fixed: R1-R14 split |
 | F27 | fixed: Terms; repeats removed |
+
+## 2026-11-15 · design-review · plan · round 2 · changes-requested
+
+Reviewers: fresh reader completed · codebase fit completed · zoom out completed · structure 0 errors, 1 warning.
+
+| ID | Sev | Reviewer | Place | Finding | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| F28 | Blocker | zoom out, fresh reader | D9, R8, R9, Impact › Data | The gateway ledger is in memory in the worker (`spikes/dsh-harness/usage_ledger.py:14`), so it dies with the worker. No durable store or writer exists for a lost attempt's `usage_known = false` row. The ported admission denial is fail-closed, which D9 rejects. | open |
+| F29 | Blocker | codebase fit, zoom out | D3, Why table, Open questions | ADR-0005 condition 3 requires one container per attempt. D3 uses one container per worker and doesn't flag the departure. There is no superseding ADR, decision-log entry or open question, and `concurrency_per_pod` > 1 would share a filesystem across tasks. | open |
+| F30 | Major | zoom out, codebase fit | D7, D9, R9 | The unknown flag and the estimate stop at the attempt row. `Progress`, `TurnOutcome`, `ExecutionAttempt` and `TaskResult` are non-null ints (`task.py:77,102,120,160`), so changing them is a `Strict` payload-contract change. No template has a context-window field. Code rollback below D7 reads NULL into ints. | open |
+| F31 | Major | codebase fit, zoom out | D1, Impact › Data, phase 02 › 2.1 | `session_position` is `Integer NOT NULL` (`0003_phase1_tables.py:84`) and no column holds a session blob ref. No task changes `CheckpointRepository` or the restore path. | open |
+| F32 | Major | zoom out, fresh reader, codebase fit | R5, D2, D6 step 4, Terms | The ownership fence has no storage or rule. Production checks and then writes (`activity.py:310-312`) and `_finish` doesn't fence. "Owner" collides with the repo owner. The plan doesn't say whether the fence replaces `newer_attempt_exists` or also covers `openai_agents`. | open |
+| F33 | Major | zoom out, codebase fit, fresh reader | Assumptions, D3, D6 step 3, phase 02 › 1.2 | The cgroup freeze inside an unprivileged container is untested: the spike used `docker pause`, and Docker mounts cgroupfs read-only. It's checked late, there's no fallback, and the Kubernetes claim is unverified. "Verified in phase 02 task 1.2" reads as done. | open |
+| F34 | Major | zoom out, codebase fit | D4, D1, R6, R7, R10 | Commands (`sh` is granted) may run outside the attempt cgroup, so background children escape the freeze and kill. They can read session files, sockets and other attempts' trees. | open |
+| F35 | Major | zoom out | D3, R7 | The backing (tmpfs or persistent) and file cleanup of the shared attempt volume are unstated. The current `finally` cleanup (`activity.py:237`) never runs on SIGKILL. | open |
+| F36 | Major | zoom out, fresh reader | Rollout & rollback | It omits the migration step and its order, the additive/no-backfill note, the drain bound (`max_wall_time`), and what happens to multi-turn DSH tasks with DSH checkpoints after rollback. | open |
+| F37 | Major | codebase fit | phase 02 › 1.2-2.3, phase 03 › 1.1 | Phase 02 needs `local-dsh@1` and the `dsh` profile, which phase 03 › 1.1 creates (`workers/main.py:68`). | open |
+| F38 | Major | codebase fit, zoom out, fresh reader | R11, D8, phase 01/02 delivers | R11 is listed in phase 01, which has no DSH turn, and is missing from phase 02. `token` events are undefined for non-streamed `Runner.run` (`runner.py:202`), and the DSH-side event source is unnamed. | open |
+| F39 | Major | codebase fit | R2, phase 03 › 2.1 | `local-default@1` fails `Name` validation (`base.py:9`), so R2's test passes without the rule. The match check already exists at resolve time (`loader.py:101-105`). | open |
+| F40 | Major | fresh reader | Summary | It says the worker executor runs every tool, while D4 runs commands in DSH. It omits the usage migration and the D9 policy reversal, and the cost and latency risk and open question. | open |
+| F41 | Major | fresh reader, zoom out | D6 | No trigger, no failure path (what a failed barrier becomes), no first-request case. "Acknowledged" and DSH's checkpoint policy are undefined. | open |
+| F42 | Major | fresh reader | Why table, R10 | Disabling DSH discovery, jobs and delegation has no mechanism. | open |
+| F43 | Major | fresh reader | D1, Terms, R14 | Undefined: `session_position`, truncation, `SQLAlchemySession`, workspace tarball. "Task lost" (benchmark) collides with "Lost attempt". | open |
+| F44 | Major | fresh reader | D2, D3 | Rejected alternatives and their reasons live only in notes.md and can't be judged from the plan. | open |
+| F45 | Major | fresh reader | R6 scenario 2 | "fails even though the launcher kills it" reads as a contradiction. | open |
+| F46 | Nit | codebase fit, zoom out | R12, phase 01 › 2.3 | Digests are pinned before the image exists, and the plan doesn't say how the launcher reads the worker's lock. ADR-0005 says "in the worker image". | open |
+| F47 | Nit | codebase fit, fresh reader | Decision log; D3, D7 | D3 and D7 need decision-log entries; the plan's Decision log section is empty. | open |
+| F48 | Nit | codebase fit | phase 03 › 1.1 | `running_workers` already takes `template` (`tests/support/workers.py:20`). | open |
+| F49 | Nit | codebase fit | D4 | `build_tools` returns SDK `FunctionTool`s (`tools.py:70`), so a refactor is needed. The DSH image must ship the granted `cli_tools`. | open |
+| F50 | Nit | fresh reader | Terms, R8, R12, R13, D2, D7 | Minor undefined terms: admission denials, settled tokens, F1/F2, blocked error, queue naming, conformance suite, R13 case names, phase numbering, Profile `harness` field. D3 also says "Kubernetes" although it is a non-goal. | open |
+| F51 | Nit | fresh reader | Summary | It omits R12 pinning, the D1 seam, and why this comes before Phase 2. | open |
+| F52 | Nit | fresh reader | Summary, D1, D3, R3, R5, R6, R9, R12, R13 | Long sentences, repeated facts (default-switch gate, R14 rule, disabled features), and multi-rule requirements. | open |
+| F53 | Nit | structure | plan.md | 271 body lines (budget 250). Move evidence and mechanics to notes.md. | open |
+
+## 2026-11-15 · design-review · round 2 · resolutions
+
+| ID | Resolution |
+| --- | --- |
+| F28 | fixed: D9, notes.md#d9 usage_ledger, R12, R13 |
+| F29 | fixed: ADR-0006 amends condition 3; D3; adr_review pending |
+| F30 | fixed: D7, notes.md#d7, Rollout |
+| F31 | fixed: D1, notes.md#d7, phase 02 task 2.1 |
+| F32 | fixed: D10, R6, R7, Terms |
+| F33 | fixed: phase 01 task 0.1, notes.md#d3 fallback, Assumptions |
+| F34 | fixed: D4, R15, ADR-0006 |
+| F35 | fixed: Terms (tmpfs), R10, phase 02 task 1.1 |
+| F36 | fixed: Rollout & rollback |
+| F37 | fixed: phase 01 task 2.3 |
+| F38 | fixed: R16, phase 02 delivers |
+| F39 | fixed: R2, phase 01 task 2.2 |
+| F40 | fixed: Summary |
+| F41 | fixed: D6, notes.md#d6, Terms, Assumptions |
+| F42 | fixed: R14, notes.md#r14, phase 02 task 2.4 |
+| F43 | fixed: Terms; "task failed" |
+| F44 | fixed: D2, D3 inline reasons |
+| F45 | fixed: R9 |
+| F46 | fixed: R17, phase 02 task 1.1 |
+| F47 | fixed: Decision log |
+| F48 | fixed: phase 03 task 1.1 |
+| F49 | fixed: D4, phase 02 task 2.3 |
+| F50 | fixed: Terms |
+| F51 | fixed: Summary |
+| F52 | fixed: R3/R4, R6/R7, R8/R9, R12/R13 split |
+| F53 | fixed: plan.md under 250 body lines; check 0 errors, 0 warnings |

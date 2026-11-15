@@ -14,3 +14,4 @@ One record per consequential architecture decision, written when the decision is
 | [0003](0003-early-compose-task-ui.md) | Deliver a Compose task UI in Phase 4A; keep Kubernetes administration in Phase 8 | accepted |
 | [0004](0004-use-implementation-plans-for-development.md) | Use implementation plans in docs/plans for development | proposed |
 | [0005](0005-adopt-dsh-as-primary-agent-harness.md) | Adopt DeepSeek Harness as the primary agent harness inside Temporal Activities | accepted |
+| [0006](0006-per-attempt-isolation-boundary-for-dsh.md) | Isolate each DSH attempt by cgroup, UID and mount namespace in a paired container (amends 0005 condition 3) | accepted |
