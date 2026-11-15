@@ -282,3 +282,23 @@ DSH runtime/code/configuration/dependency/skill inputs remain identical to the
 independently verified revision. Fresh scoped verification precedes publication
 of this correction. Phase closure and the earlier independence limitation remain
 unapproved.
+
+
+## 2026-11-14 · affected scanner/CI verification · passed
+
+- Frozen affected-scope code: 295d5d30566a8007319c55face1756ecea94fd38.
+- [Fresh executed follow-up](../../reviews/general-dsh-harness-evaluation/scanner-prose-follow-up.md).
+- A fresh verifier independently reviewed the guard and executed current/schema
+  canaries, whitespace/path/rule boundary fixtures, missing-exception/OR/unanchored/
+  disabled-default mutations, complete frozen ancestry and feature-range scans,
+  actionlint, Ruff and targeted mypy. All passed; no unresolved findings.
+- Default rules remain active. Both known exceptions require exact paths and full
+  known lines. Added credentials, changed lines and sibling/unrelated paths are
+  detected. Original reports and all previous verdicts remain unchanged.
+- Runtime equality to independently verified 65d03f0 was established by exact diff
+  and comprehensive path inventory. Only three scanner/CI files differ outside
+  docs; their affected review/tests/verification are recorded separately here.
+  Earlier verification SHAs are not relabeled or retroactively changed.
+- Independent execution verification and scanner clearance are complete for their
+  stated scopes. Owner acceptance of the implementation-review limitation and
+  latest-head CI remain prerequisites for phase closure. No waiver is inferred.
