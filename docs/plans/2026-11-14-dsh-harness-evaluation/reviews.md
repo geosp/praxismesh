@@ -393,3 +393,48 @@ benchmark prerequisite explicitly. SDK cancellation currently uses the real
 Temporal Activity test context, not a deployed worker/server. Complete the final
 evidence/demo, independent reviews, verification and owner gates before closure.
 All four task boxes remain unchecked.
+
+## 2026-11-15 · impl-review · phase 02 · round 1 · changes-requested
+
+- Frozen review commit: bc4227c18c2b0e9cb294b26369919002c6b958bb.
+- Diff base: 99ad2d2ec1402768abf81dbe2dfc3dab785dee30 (phase `base:`).
+- Reviewers: Contract completed; Failure and retry completed; Scope and composition completed.
+- Mechanical checks: plan-tool check 0 errors/0 warnings; R4–R10 defined with scenarios;
+  tasks 2.1–2.4 unticked (repository rule defers ticks until verification).
+  Reviewers were read-only and did not rerun tests or probes.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F1 | Major | Contract; Failure; Scope | Heartbeat during an in-flight request reports `unknown` usage as 0, dropping the attempt's settled tokens on worker loss (R6). | open |
+| F2 | Major | Contract; Failure; Scope | Failure/deadline/cancel paths record unknown or uncopied usage as 0, and non-zero exit is classified retryable before unknown usage (R6, R5). | open |
+| F3 | Major | Scope | `AttemptsExhausted` raised without details; workflow reports 0 tokens / 1 attempt for the turn (R6). | open |
+| F4 | Major | Failure | Failures before container start are overwritten as non-retryable `DshCleanupFailure`; gateway/provider not closed if executor start fails (R7, R5). | open |
+| F5 | Major | Contract; Failure | Lease goes to the last `claim()`, not the newest Temporal attempt; a resumed stale attempt supersedes the newer one (R4, D3). | open |
+| F6 | Major | Contract | Superseded task attempt still writes attempt rows (feeding later budgets) and uploads artifacts unfenced (R4). | open |
+| F7 | Major | Contract | Task Activity acknowledges checkpoints via `capture_pair(state, None)`, skipping the flush/consistency check (D3, R4). | open |
+| F8 | Major | Contract | Granted `skill` tool runs natively with no trusted executor observation; manifest omits it (R6, R10). | open |
+| F9 | Major | Contract | Run manifests are never validated; Phase 02 manifests carry stale Phase 01 auxiliary inventory and contradictory fields (R5, R10). | open |
+| F10 | Major | Scope | Checkpoint size/symlink/file-count limits fail deterministically per admission and are retried five times as a provider failure (R4, R5). | open |
+| F11 | Nit | Contract; Failure; Scope | Stop/cancel/deadline untested through the Activity; SIGTERM timeout plus forced `rm -f` can still report cleanup_ok (R5). | open |
+| F12 | Nit | Failure | Cancellation leaves the attempt row open; a second cancel abandons the shielded thread (R6, R10). | open |
+| F13 | Nit | Contract; Scope | Ceilings and `CLI_TOOLS` hardcoded instead of derived from template/`CLI_GRANT` (R5). | open |
+| F14 | Nit | Contract; Scope | Heartbeat omits inner_turns; failed attempts record `tool_calls=0` (R6). | open |
+| F15 | Nit | Failure; Scope | Dispatcher-tool ownership is checked once, non-atomically, before the effect (R4). | open |
+| F16 | Nit | Failure; Scope | `docker pause`/`unpause` failures mask causes or leave the candidate paused until the deadline (D3, R5). | open |
+| F17 | Nit | Scope | Invalid `finish_task` executions logged as denials, not admitted entries (R6). | open |
+| F18 | Nit | Scope | `AccountingBoundary` keeps the Phase 01 eight-request pre-admission cap (R6). | open |
+| F19 | Nit | Failure; Scope | Benchmark driver: memory-floor break leaves later tasks unrecorded; timeout does not cancel the workflow (metric bleed); restore outside try (R8). | open |
+| F20 | Nit | Scope | Admission check `tokens < budget` can overshoot by one step (R6; matches production). | open |
+| F21 | Nit | Contract; Failure | Stale-attempt fence shown only by controller-ordered calls; no "newer attempt while incomplete" or task-Activity case (R4). | open |
+| F22 | Nit | Failure | Transient real-provider 5xx/timeouts become non-retryable `DshUsageUnknown` (R7). | open |
+| F23 | Nit | Failure | Containers orphaned if a driver is SIGKILLed; no reaper (R5). | open |
+| F24 | Nit | Contract | Denied main request after compaction tagged purpose `compaction` (R6). | open |
+| F25 | Nit | Contract | Post-exhaustion auxiliary denial tested only in unit test, not live (R6). | open |
+| F26 | Nit | Contract | `invalid-*`/`retry-*` cases assert only final status, not refusal/category (R7). | open |
+| F27 | Nit | Contract | Live dispatched vs physical counts come from the same ledger (R6). | open |
+| F28 | Nit | Contract | Stall-tool probe records no descendant/cgroup identity (R5). | open |
+| F29 | Nit | Contract | Report marks cancellation "pass" though only ActivityEnvironment was used; R4 "pass" vs R9 barrier rule (R5, R9). | open |
+| F30 | Nit | Contract | No current-runner rerun; benchmark.json lacks model/composition/hardware metadata; image not cross-checked (R8). | open |
+| F31 | Nit | Contract | 4096-byte tool request limit undisclosed as a known difference (R8). | open |
+| F32 | Nit | Contract | Spike tests absent from README checks and CI; no unit tests for `progress()`, failure classification, finish short-circuit (all). | open |
+| F33 | Nit | Contract | `bench_tools` mutates global `os.environ` for idempotency scope (R4). | open |
