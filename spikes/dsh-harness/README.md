@@ -232,11 +232,14 @@ Scripted provider responses cover O1–O5 in the plan's outcome checklist:
 | invalid-status, invalid-payload, invalid-reference | first completion refused; a later valid completion succeeds |
 | retry-model, retry-protocol, retry-infrastructure | succeeded after exactly two Temporal attempts |
 | bad-request | failed after one attempt; invalid input is non-retryable |
+| lost-after-finish | succeeded after two attempts; the second completes from the acknowledged finish without starting the candidate, and the lost attempt's usage stays in the total |
 
 The bridge acknowledges a paused-container session/workspace pair before each
 model admission and publishes the finish record under the attempt fence. Only
 host-produced files become artifact refs; model-supplied refs are rejected.
-Unknown usage cannot be published as zero tokens. Each attempt follows the
+Unknown usage cannot be published as zero tokens. As in production, the Activity
+heartbeat carries live cumulative usage, and a retry reads it back, so a lost
+attempt's tokens stay in the turn total. Each attempt follows the
 same cleanup and observation policy as the bounded probes.
 
 To protect the host, task-Activity containers (these probes and the benchmark)
