@@ -68,10 +68,23 @@ def serve_relay(socket_path: str) -> http.server.ThreadingHTTPServer:
 
 
 class Boundary:
-    def __init__(self, path: Path, case: str, upstream: str | None = None, api_key: str = ""):
+    # Phase 01 probes allow at most eight completion requests. Subclasses whose
+    # ledger enforces and records step limits set this to None.
+    request_cap: int | None = 8
+
+    def __init__(
+        self,
+        path: Path,
+        case: str,
+        upstream: str | None = None,
+        api_key: str = "",
+        *,
+        allowed_tools: set[str] | None = None,
+    ):
         self.case = case
         self.upstream = upstream
         self.api_key = api_key
+        self.allowed_tools = ALLOWED_TOOLS if allowed_tools is None else frozenset(allowed_tools)
         self.requests: list[dict] = []
         self.calls = 0
         self.lock = threading.Lock()
@@ -122,11 +135,14 @@ class Boundary:
                         ),
                     }
                     owner.requests.append(record)
-                if set(names) != ALLOWED_TOOLS or request.get("model") != "spark":
+                if set(names) != owner.allowed_tools or request.get("model") != "spark":
                     self.send_error(403, "effective model/tool grants changed")
                     return
-                if len(owner.requests) > 8:
+                if owner.request_cap is not None and len(owner.requests) > owner.request_cap:
                     self.send_error(429, "probe request allowance exhausted")
+                    return
+                if not owner.admit(request, record):
+                    self.send_error(429, "trusted probe admission refused")
                     return
                 if owner.upstream is not None:
                     if request.get("model") != "spark":
@@ -135,6 +151,8 @@ class Boundary:
                     owner.forward(self, body, record)
                     return
                 message = owner.answer(request)
+                if owner.stopping.is_set():
+                    return
                 usage = {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}
                 if request.get("stream"):
                     self.send_response(200)
@@ -247,6 +265,9 @@ class Boundary:
     def owned_work_alive(self) -> bool:
         with self.lock:
             return self.thread.is_alive() or bool(self.handlers or self.connections or self.sockets)
+
+    def admit(self, request: dict, record: dict) -> bool:
+        return True
 
     def forward(
         self, handler: http.server.BaseHTTPRequestHandler, body: bytes, record: dict

@@ -59,5 +59,15 @@
     ]
   },
   "environment_sha256": "c581df47358cb4972ea951c6ffe715b5d0218a702c5c9311d93d9ab47f2fa421",
-  "environment_hash_policy": "Sorted relative paths and SHA-256 of every regular installed file, excluding bytecode caches; symlinks rejected. dist-info RECORD hashes canonicalize sorted in-tree rows, omitting entries for launchers outside the mounted tree. Candidate uses a verified private copy with a separate empty bytecode-cache prefix."
+  "environment_hash_policy": "Sorted relative paths and SHA-256 of every regular installed file, excluding bytecode caches; symlinks rejected. dist-info RECORD hashes canonicalize sorted in-tree rows, omitting entries for launchers outside the mounted tree. Candidate uses a verified private copy with a separate empty bytecode-cache prefix.",
+  "benchmark_image": {
+    "dockerfile": "Dockerfile.benchmark",
+    "base_image": "python@sha256:a83ba18aef0f865b1a4a611c2cf460fe446f2795673bbb9fe43be570439e3b39",
+    "observed_image": "sha256:4864ab7b96af413faeaea2fa9dffa9b9fc69553ab83aeacb19ac4f5eb8fceb0b",
+    "added_packages": {
+      "git": "1:2.39.5-0+deb12u3"
+    },
+    "debian_snapshot": "20261104T212339Z",
+    "purpose": "R8 benchmark task t06 needs git; Phase 01 and other Phase 02 probes keep observed_image"
+  }
 }

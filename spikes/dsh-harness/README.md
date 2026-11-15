@@ -96,10 +96,240 @@ R5 cancellation/barrier-injection test or the R6 token-budget test.
 The full Phase 02 stop oracle is explicitly marked pending. No heartbeat or
 Temporal Activity is launched in Phase 01.
 
+## Phase 02 recovery probe
+
+```bash
+spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_recovery.py --image "$spike_image"
+```
+
+This scripted-provider probe exercises the pinned native SDK/runtime and MCP client.
+Its separate `recovery-composition.yaml` grants only three recovery fixture tools.
+The controller hashes this overlay before execution and stages all Python files
+in the same verified private code snapshot. The candidate mounts that snapshot
+read-only. It never mounts the host authority database.
+
+The controller holds the model request following a workspace edit. The pinned
+[checkpoint policy](https://github.com/deepseek-ai/deepseek-harness/blob/ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c/packages/session/session-checkpoint-policy/README.md)
+flushes the preceding results before that request reaches the adapter. With one
+tool at a time and auxiliary producers disabled, pausing the container freezes
+the remaining candidate writers. The controller captures only `home/sessions/`
+and `workspace/`, checks the conversation marker and edit, and acknowledges the
+pair in a host-owned SQLite transaction with `synchronous=FULL`.
+
+Worker-loss injection kills the exact owned container before releasing the held
+response. Each replacement deletes the preceding worker's writable state and
+restores only the acknowledged pair into a new directory. It calls the public
+`resume_session` API. The gateway observes the restored conversation, while the
+trusted fixture executor checks the actual restored note contents.
+
+A second interruption holds an idempotent effect's response after its business
+transaction commits. Retrying from the acknowledged pair enters the body again
+but leaves one business effect. A further attempt is superseded while its tool
+response is held; the tool's final ownership check and bridge checkpoint/outcome
+publications reject that old attempt. Attempt and operation identities are bound
+by host-created fixture endpoints, not supplied by the model.
+
+The JSON manifest/result records live under `.runs/`. The probe closes host
+gateway/executor threads and observes their absence along with the owned
+container for ten seconds after each injected loss. Successful scratch trees
+are removed; failed scratch trees remain for diagnosis. This R4 fixture is not
+a Temporal cancellation test, a structured TaskResult adapter, or benchmark
+acceptance. Those are separate Phase 02 tasks.
+
+## Phase 02 accounting probes
+
+Run these sequentially using the same pinned image:
+
+```bash
+spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_accounting.py exhaustion --image "$spike_image"
+spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_accounting.py retry --image "$spike_image"
+spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_accounting.py auxiliary --image "$spike_image"
+spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_accounting.py tools --image "$spike_image"
+```
+
+A host gateway records every ingress and a separate HTTP fixture records provider
+dispatches. A serialized guard refuses further dispatch after token exhaustion or
+unresolved usage. Unknown usage remains unknown. The gateway buffers bounded
+responses to settle their usage before releasing them to DSH. The full candidate
+stream still reaches the SDK; buffering is an integration difference.
+
+Exhaustion admits one response with 7 input and 3 output tokens under a budget of
+10. Retry enables one native provider retry: the first fixture dispatch fails
+before generation, then the retry consumes 7+3 tokens. Both physical attempts
+belong to the same logical step; later ingress denials stay in the ledger.
+Only the independently recorded fixture failure may establish zero usage.
+
+The auxiliary composition enables manual compaction, with automatic compaction
+disabled, 1024 tokens of headroom, a 128-token summary output cap and one retained
+token. Three completed setup turns are counted under a separate budget. The
+controller then admits one native `/compact` request under a fresh budget of 10;
+its response reports 4+6 tokens. A subsequent main request must be refused.
+All remaining auxiliary producers stay disabled.
+
+The tool probe separately exercises a missing-note failure, three successful body
+entries covering every granted tool, and an ungranted-tool proposal refused by
+DSH without entering the fixture executor. Its budget is 1000 tokens. SDK
+`assistant/message` usage events are reconciled with provider totals, including
+setup and compaction. Embedded copies of usage in stream events are diagnostic
+only; they are never added again. Native completion here ends a control probe;
+arbitrary assistant text does not establish a succeeded TaskResult.
+
+## Phase 02 bounded execution probes
+
+These controllers use the repository's trusted root uv environment for Temporal's
+SDK; the candidate SDK still runs only in Docker. Run sequentially:
+
+```bash
+uv run python spikes/dsh-harness/run_bounds.py stall-model --image "$spike_image"
+uv run python spikes/dsh-harness/run_bounds.py stall-tool --image "$spike_image"
+uv run python spikes/dsh-harness/run_bounds.py cancel-model --image "$spike_image"
+uv run python spikes/dsh-harness/run_bounds.py cancel-tool --image "$spike_image"
+uv run python spikes/dsh-harness/run_bounds.py step-limit --image "$spike_image"
+```
+
+Stalled calls have a two-second deadline measured from independent provider or
+tool-body entry. The tool fixture also starts a child Python process inside the
+candidate namespace. The step guard admits two model steps and refuses the next.
+Cancellation cases launch the candidate inside a Temporal SDK Activity context,
+heartbeat every 50 ms, then call `ActivityEnvironment.cancel()` immediately after
+independent entry observation. This tests SDK Activity cancellation delivery; it
+does not test a deployed worker's heartbeat transport or server-side scheduling.
+
+The bridge sends SIGTERM to the exact owned container. Its Python driver handles
+that signal by calling the public SDK `close()` method, which attempts runtime
+shutdown before bounded termination. A pass requires the container to disappear
+cooperatively within five seconds. Forced removal afterward cannot establish a
+pass. The controller then closes host fixture resources and observes all owned
+work through the same ten-second window, using the original stop timestamp.
+Failed results and disposable diagnostic trees stay under `.runs/`.
+
+Only the deterministic fixture can prove zero generation cost for an interrupted
+request held before generation. Other missing usage stays unknown and closes
+further admission. These stop probes do not establish structured completion or
+benchmark acceptance.
+
+## Phase 02 structured outcome probes
+
+These run the existing `TaskWorkflow`, orchestrator Activities, Postgres and S3
+from local infrastructure, with an isolated DSH implementation of
+`run_harness_turn` on a unique `dsh-spike-*` queue prefix. Production workers
+never receive these tasks. Run sequentially from the repository root:
+
+```bash
+uv run --env-file infra/.env python spikes/dsh-harness/run_tasks.py all --image "$spike_image"
+```
+
+The candidate receives none of the host environment. Its only task tool is
+`finish_task`, whose catalog and validation come from the existing
+`harness_activity/tools.py` wrapper running in the trusted host executor.
+Scripted provider responses cover O1–O5 in the plan's outcome checklist:
+
+| Case | Expected TaskResult |
+| --- | --- |
+| done | succeeded, one trusted artifact ref read back from S3 |
+| plain-text, inner-limit | failed after six outer turns; text or invalid completion never succeeds |
+| needs-input | needs_input with the question preserved |
+| invalid-status, invalid-payload, invalid-reference | first completion refused; a later valid completion succeeds |
+| retry-model, retry-protocol, retry-infrastructure | succeeded after exactly two Temporal attempts |
+| bad-request | failed after one attempt; invalid input is non-retryable |
+| lost-after-finish | succeeded after two attempts; the second completes from the acknowledged finish without starting the candidate, and the lost attempt's usage stays in the total |
+| deadline | attempt 1's request is held; a 2 s deadline from provider entry stops the container cooperatively with proven zero usage; attempt 2 succeeds |
+| cancel | the workflow is cancelled while the request is held; the Activity stops the container cooperatively and the attempt row is closed |
+
+The invalid-completion cases also check that the rejected call was an admitted
+tool-body entry with an error outcome, not a policy denial. The retry cases check
+the first attempt's failure category.
+
+The bridge acknowledges a paused-container session/workspace pair before each
+model admission and publishes the finish record under the attempt fence. A pair
+is acknowledged only when the newest tool-call ID in the held request is already
+in DSH's session files, so a stale session cannot be paired with a newer workspace.
+Ownership follows the Temporal turn and attempt order: an older attempt that
+resumes late is refused, and a superseded attempt writes no attempt row,
+publication or artifact. Only
+host-produced files become artifact refs; model-supplied refs are rejected.
+Unknown usage cannot be published as zero tokens. As in production, the Activity
+heartbeat carries live cumulative usage (settled tokens plus a count of requests
+still in flight), and a retry reads it back, so a lost attempt's tokens stay in
+the turn total. After five attempts the turn fails with those totals.
+Each run manifest is validated before the candidate starts; a missing or
+inconsistent field blocks the run.
+
+Failure classification is in `task_policy.py`, in this order: failed cleanup,
+forced stop (SIGTERM not honoured within the 5 s grace), unknown usage, checkpoint
+limits (a socket or other non-regular file, over 4 MiB per file, 16 MiB or 1000
+files), supersession, then
+deadline or cancellation, then the ordinary runtime, provider and model cases.
+Failed cleanup, forced stop, unknown usage and checkpoint limits are never retried. Each attempt follows the
+same cleanup and observation policy as the bounded probes.
+
+To protect the host, task-Activity containers (these probes and the benchmark)
+run with 512 MiB of memory and one CPU, not the Phase 01 defaults of 1 GiB and two
+CPUs. The limits are recorded as `container_limits` in each run manifest. After
+a successful attempt has uploaded its artifacts, its `.runs/praxis-dsh-task-*`
+scratch tree (about 200 MB of staged dependencies) is removed; failed trees stay.
+Both drivers check `MemAvailable` before each case or task. Below 4 GiB they start
+no candidate and record the item as blocked.
+
+## Phase 02 benchmark comparison
+
+The ten existing benchmark tasks need `git` (t06), which the Phase 01 image lacks.
+`Dockerfile.benchmark` adds `git=1:2.39.5-0+deb12u3` to the same pinned base,
+using that base image's own Debian snapshot (20261104T212339Z). Earlier probes
+keep the Phase 01 image. Build it and run the tasks against the local model:
+
+```bash
+docker build -f spikes/dsh-harness/Dockerfile.benchmark --build-arg SPIKE_UID="$(id -u)" --build-arg SPIKE_GID="$(id -g)" --iidfile /tmp/praxis-dsh-bench-image-id spikes/dsh-harness
+uv run --env-file infra/.env python spikes/dsh-harness/run_benchmark.py --image "$(cat /tmp/praxis-dsh-bench-image-id)"
+```
+
+Each task runs through the existing `TaskWorkflow` with the `default` profile.
+Turns go to the isolated DSH `run_harness_turn` (`case=benchmark`) on a unique
+queue prefix. The checks are the production checks in
+`tests/benchmarks/agent_tasks/tasks.py`. They read the final acknowledged
+checkpoint's workspace. `docs/benchmarks/baseline.json` is read, never written.
+Results go to `.runs/benchmark-*/benchmark.json`.
+
+To keep capability semantics comparable, DSH's native file and shell tools stay
+disabled. The candidate sees one MCP catalog built from the production
+`harness_activity/tools.py` schemas (`read_file`, `write_file`, `list_files`,
+`run_command` limited to the template's `cli_tools`, `finish_task`) plus the
+template's five `sample-shop` tools. The trusted host executor records and
+admits every call:
+
+- File tools run the production wrappers against the bind-mounted workspace.
+- Shop tools run the real `sample_mcp` server in the host process, so the
+  database secret never enters the candidate.
+- `run_command` applies the production allowlist, then runs with a cleared
+  environment through `docker exec` inside the owned candidate container.
+
+Model traffic goes through the same budget gateway to the local vLLM endpoint.
+DSH's skill plugins are disabled. As in production, the template's `order-desk`
+bundle is mounted read-only at `workspace/.skills/` and listed in the
+instructions with the production `skills.index()` text, and the model reads it
+with `read_file`, so every skill read is a recorded executor entry. Like
+production snapshots, checkpoints skip `.skills/` and symlinks in the workspace.
+
+Known differences from the baseline harness:
+
+- DSH adds its own `sdk-minimal` system prompt. The template prompt (same hash
+  as the baseline) is a trusted first-turn input block, not per-call agent
+  instructions.
+- Tool names reach the model with the `mcp__task__` prefix.
+- The candidate composition caps each request at 2048 output tokens.
+- Checkpoints keep regular files only; empty directories and file modes are
+  not restored.
+- DSH's own skill loader is not evaluated; skills use the production mount.
+- Tool requests are bounded by the gateway's 2 MiB body limit; the recovery
+  probe keeps its 4 KiB fixture bound.
+- Live usage of a request interrupted mid-generation is unknown and stops the
+  turn (fail-closed), where production would retry it.
+
 ## Checks and cleanup
 
 ```bash
-spikes/dsh-harness/.venv/bin/python -m pytest -c spikes/dsh-harness/pyproject.toml spikes/dsh-harness/test_probe.py spikes/dsh-harness/test_corrections.py spikes/dsh-harness/test_final_corrections.py -q
+spikes/dsh-harness/.venv/bin/python -m pytest -c spikes/dsh-harness/pyproject.toml spikes/dsh-harness/test_*.py -q
+PYTHONPATH=spikes/dsh-harness uv run pytest -q -p no:cacheprovider spikes/dsh-harness/test_completion.py
 uv run ruff check --no-respect-gitignore --exclude '' spikes/dsh-harness/*.py
 uv run ruff format --check --no-respect-gitignore --exclude '' spikes/dsh-harness/*.py
 ```

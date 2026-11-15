@@ -1,0 +1,16 @@
+FROM python@sha256:a83ba18aef0f865b1a4a611c2cf460fe446f2795673bbb9fe43be570439e3b39
+# Benchmark-only image: the Phase 01 Dockerfile plus git for task t06. Packages
+# come from the base image's own Debian snapshot so the version is fixed.
+ARG SPIKE_UID=1000
+ARG SPIKE_GID=1000
+RUN rm /etc/apt/sources.list.d/debian.sources \
+ && printf '%s\n' \
+    'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20261104T212339Z bookworm main' \
+    'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20261104T212339Z bookworm-security main' \
+    > /etc/apt/sources.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends git=1:2.39.5-0+deb12u3 \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --gid "$SPIKE_GID" spike \
+ && useradd --uid "$SPIKE_UID" --gid "$SPIKE_GID" --create-home --shell /usr/sbin/nologin spike
+USER spike
