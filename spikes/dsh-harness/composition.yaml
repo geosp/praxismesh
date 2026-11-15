@@ -1,0 +1,72 @@
+- id: llm-deepseek
+  disabled: true
+- id: session-title
+  disabled: true
+- id: jobs
+  disabled: true
+- id: mcp-resources
+  disabled: true
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+    workspaceRoot: /run/workspace
+- id: tool-fs
+  disabled: true
+- id: tool-working-directory
+  disabled: true
+- id: persistent-bash
+  disabled: true
+- id: persistent-pwsh
+  disabled: true
+- id: compaction-basic
+  disabled: true
+- id: image-offload
+  disabled: true
+- id: agent-loop
+  config:
+    agents: []
+    maxParallelToolCalls: 1
+- insert:
+    - id: praxis-local-model
+      name: '@deepseek-ai/dsh-llm-pi-ai'
+      config:
+        providers:
+          praxis-local:
+            api: openai-completions
+            baseURL: http://127.0.0.1:8080/v1
+            apiKeyEnv: PRAXIS_SPIKE_MODEL_KEY
+            defaultContextWindow: 32768
+            defaultMaxTokens: 2048
+            retryPolicy:
+              mode: normal
+              maxRetries: 0
+            models:
+              - id: spark
+                name: spark
+                contextWindow: 32768
+                maxTokens: 2048
+    - id: praxis-skills
+      name: '@deepseek-ai/dsh-skill'
+    - id: praxis-skill-filesystem
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        includeDefaultRoots: false
+        customSkillDirs: [/opt/granted-skills]
+        watch: false
+    - id: praxis-tool-skill
+      name: '@deepseek-ai/dsh-tool-skill'
+    - id: praxis-shop
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: sample-shop
+        transport: stdio
+        command: /usr/local/bin/python
+        args: [/opt/spike/mcp_fixture.py]
+        env:
+          PRAXIS_TASK_ID: dsh-phase01
+        cwd: /run/workspace
+        startupTimeoutMs: 10000
+        toolCallTimeoutMs: 10000
+        failOnStartupError: true
+        reconnect:
+          enabled: false

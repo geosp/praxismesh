@@ -1,0 +1,1131 @@
+{
+  "date": "2026-11-14",
+  "purpose": "Corrected Phase 01 implementer walkthrough; independent verification still due",
+  "mutation_tests": [
+    {
+      "finding": "F1",
+      "test": "test_complete_environment_blocks_changed_unlisted_dependency",
+      "mutation_detected": true
+    },
+    {
+      "finding": "F2",
+      "test": "test_cleanup_daemon_errors_never_confirm_absence",
+      "mutation_detected": true
+    },
+    {
+      "finding": "F3",
+      "test": "test_unexpected_tool_catalog_is_rejected",
+      "mutation_detected": true
+    },
+    {
+      "finding": "F4",
+      "test": "test_auxiliary_paths_have_enforced_admission_policy",
+      "mutation_detected": true
+    },
+    {
+      "finding": "F5",
+      "test": "test_observer_detects_late_work_through_full_window",
+      "mutation_detected": true
+    },
+    {
+      "finding": "F6",
+      "test": "test_gateway_shutdown_joins_stalled_provider_handler",
+      "mutation_detected": true
+    },
+    {
+      "finding": "F7",
+      "test": "test_manifest_identifies_exact_nonoverlapping_scratch_paths",
+      "mutation_detected": true
+    }
+  ],
+  "runs": [
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "881c464387a3e872c98a96eed4e018e6ced6c709a3206f1a13322dc727f61730",
+        "auxiliary_inventory": {
+          "compaction": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "delegation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "image_offload": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "internal_timers": {
+            "accounting": "no model/tool producer; gateway catalog and request ledger",
+            "admission": "internal only",
+            "bounds": "container wall deadline and observation"
+          },
+          "jobs": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "mcp_resources": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "skill_and_mcp": {
+            "accounting": "gateway skill-result evidence and fixture body-entry ledger; full reconciliation Phase 02",
+            "admission": "three granted tools",
+            "bounds": "container wall deadline; MCP call timeout 10s"
+          },
+          "title_generation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          }
+        },
+        "case": "startup",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "8609f86ba37530e145f9e8efe8103748ed9bc2856d213f83bcb945fcf18e8dad",
+        "environment_sha256": "c581df47358cb4972ea951c6ffe715b5d0218a702c5c9311d93d9ab47f2fa421",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": [
+          "Docker container praxis-dsh-ee32991e0615",
+          "host gateway listener, handlers and provider sockets for praxis-dsh-ee32991e0615"
+        ],
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-ee32991e0615",
+        "scratch_directory": "/home/geo/develop/praxismesh/spikes/dsh-harness/.runs/praxis-dsh-ee32991e0615",
+        "session": "probe",
+        "source_commit": "75a3746ba8159059070c1565f086fdf8db154b53",
+        "sources": {
+          "container_driver.py": "fecb1147fa9e20e400203b0adcd1fbc4c7df47b7cf124e74c9c9f9f107f2c850",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "8f2617bebe080ee882c65ad5897a4a6ae2c6443d692015652c5e915e76d6f9a1",
+          "preflight.py": "9d2af2de07594d0a2d8b2a690ddf6d17943fd151cc1053ca3845f2709f832201",
+          "run_probe.py": "031663b57c03b5b992e5ee12a6337397db79e69748876ff0ea8fc20c96cc1a9e",
+          "test_corrections.py": "a8645a774d9661642036b37d8c39af525158f8efd68f1658dec74cfcb3f9cbb9",
+          "test_probe.py": "ac73ee6521a794b4756ad47dc04dd1339c83a6df676acfe1135bf9d361459eb5"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "0e94abc0bc632aa41205ae41ee159473a947b10ea32c56379346d708bfa8f01e",
+      "result": {
+        "case": "startup",
+        "exit": 0,
+        "manifest_sha256": "0e94abc0bc632aa41205ae41ee159473a947b10ea32c56379346d708bfa8f01e",
+        "seconds": 2.495,
+        "container_absent": true,
+        "cleanup_ok": true,
+        "observations": 21,
+        "cleanup_command_exit": 0,
+        "observation_seconds": 10.015,
+        "candidate_summary": {
+          "case": "startup",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "881c464387a3e872c98a96eed4e018e6ced6c709a3206f1a13322dc727f61730",
+        "auxiliary_inventory": {
+          "compaction": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "delegation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "image_offload": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "internal_timers": {
+            "accounting": "no model/tool producer; gateway catalog and request ledger",
+            "admission": "internal only",
+            "bounds": "container wall deadline and observation"
+          },
+          "jobs": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "mcp_resources": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "skill_and_mcp": {
+            "accounting": "gateway skill-result evidence and fixture body-entry ledger; full reconciliation Phase 02",
+            "admission": "three granted tools",
+            "bounds": "container wall deadline; MCP call timeout 10s"
+          },
+          "title_generation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          }
+        },
+        "case": "catalog",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "8609f86ba37530e145f9e8efe8103748ed9bc2856d213f83bcb945fcf18e8dad",
+        "environment_sha256": "c581df47358cb4972ea951c6ffe715b5d0218a702c5c9311d93d9ab47f2fa421",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": [
+          "Docker container praxis-dsh-c766682310ac",
+          "host gateway listener, handlers and provider sockets for praxis-dsh-c766682310ac"
+        ],
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-c766682310ac",
+        "scratch_directory": "/home/geo/develop/praxismesh/spikes/dsh-harness/.runs/praxis-dsh-c766682310ac",
+        "session": "probe",
+        "source_commit": "75a3746ba8159059070c1565f086fdf8db154b53",
+        "sources": {
+          "container_driver.py": "fecb1147fa9e20e400203b0adcd1fbc4c7df47b7cf124e74c9c9f9f107f2c850",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "8f2617bebe080ee882c65ad5897a4a6ae2c6443d692015652c5e915e76d6f9a1",
+          "preflight.py": "9d2af2de07594d0a2d8b2a690ddf6d17943fd151cc1053ca3845f2709f832201",
+          "run_probe.py": "031663b57c03b5b992e5ee12a6337397db79e69748876ff0ea8fc20c96cc1a9e",
+          "test_corrections.py": "a8645a774d9661642036b37d8c39af525158f8efd68f1658dec74cfcb3f9cbb9",
+          "test_probe.py": "ac73ee6521a794b4756ad47dc04dd1339c83a6df676acfe1135bf9d361459eb5"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "23c0578338a78ea5deee1c566c43199ab1cc669d0359b1f1ed9bdb96abcd3198",
+      "result": {
+        "case": "catalog",
+        "exit": 0,
+        "manifest_sha256": "23c0578338a78ea5deee1c566c43199ab1cc669d0359b1f1ed9bdb96abcd3198",
+        "seconds": 3.56,
+        "gateway_stopped": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "03048d08111a7106019e397481c55ba152b37d4effe0a01ca47a4d8bd9559e92",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": false
+          }
+        ],
+        "tool_executions": [],
+        "container_absent": true,
+        "cleanup_ok": true,
+        "observations": 21,
+        "cleanup_command_exit": 0,
+        "observation_seconds": 10.014,
+        "candidate_summary": {
+          "case": "catalog",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "e7f099332273bb2648ff5ac9c4b14e5d7abe7f977ca9a1097001ce7bd93bb286"
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "881c464387a3e872c98a96eed4e018e6ced6c709a3206f1a13322dc727f61730",
+        "auxiliary_inventory": {
+          "compaction": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "delegation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "image_offload": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "internal_timers": {
+            "accounting": "no model/tool producer; gateway catalog and request ledger",
+            "admission": "internal only",
+            "bounds": "container wall deadline and observation"
+          },
+          "jobs": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "mcp_resources": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "skill_and_mcp": {
+            "accounting": "gateway skill-result evidence and fixture body-entry ledger; full reconciliation Phase 02",
+            "admission": "three granted tools",
+            "bounds": "container wall deadline; MCP call timeout 10s"
+          },
+          "title_generation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          }
+        },
+        "case": "capability",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "8609f86ba37530e145f9e8efe8103748ed9bc2856d213f83bcb945fcf18e8dad",
+        "environment_sha256": "c581df47358cb4972ea951c6ffe715b5d0218a702c5c9311d93d9ab47f2fa421",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": [
+          "Docker container praxis-dsh-f20f34c62cd8",
+          "host gateway listener, handlers and provider sockets for praxis-dsh-f20f34c62cd8"
+        ],
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-f20f34c62cd8",
+        "scratch_directory": "/home/geo/develop/praxismesh/spikes/dsh-harness/.runs/praxis-dsh-f20f34c62cd8",
+        "session": "probe",
+        "source_commit": "75a3746ba8159059070c1565f086fdf8db154b53",
+        "sources": {
+          "container_driver.py": "fecb1147fa9e20e400203b0adcd1fbc4c7df47b7cf124e74c9c9f9f107f2c850",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "8f2617bebe080ee882c65ad5897a4a6ae2c6443d692015652c5e915e76d6f9a1",
+          "preflight.py": "9d2af2de07594d0a2d8b2a690ddf6d17943fd151cc1053ca3845f2709f832201",
+          "run_probe.py": "031663b57c03b5b992e5ee12a6337397db79e69748876ff0ea8fc20c96cc1a9e",
+          "test_corrections.py": "a8645a774d9661642036b37d8c39af525158f8efd68f1658dec74cfcb3f9cbb9",
+          "test_probe.py": "ac73ee6521a794b4756ad47dc04dd1339c83a6df676acfe1135bf9d361459eb5"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "c2145481cf764be613a417dc52b5bc3433a615720c8bba1a443eb0b27e1ac3f1",
+      "result": {
+        "case": "capability",
+        "exit": 0,
+        "manifest_sha256": "c2145481cf764be613a417dc52b5bc3433a615720c8bba1a443eb0b27e1ac3f1",
+        "seconds": 3.564,
+        "gateway_stopped": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "03048d08111a7106019e397481c55ba152b37d4effe0a01ca47a4d8bd9559e92",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": false
+          },
+          {
+            "sequence": 2,
+            "path": "/v1/chat/completions",
+            "request_hash": "2399577bb8aaedcd49b2403a35140a115f4831a6c298201545001b8e25af786e",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          },
+          {
+            "sequence": 3,
+            "path": "/v1/chat/completions",
+            "request_hash": "0120fa4598fffe7f6e6b7966264f070884bd5078468a388568170f87e50d232c",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          },
+          {
+            "sequence": 4,
+            "path": "/v1/chat/completions",
+            "request_hash": "317e3900175a10d464f1ee78d448dbc4e71fcc7304307a568b5ff6a42f008a34",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          }
+        ],
+        "tool_executions": [
+          {
+            "tool": "lookup_price",
+            "admitted": true
+          },
+          {
+            "tool": "lookup_stock",
+            "admitted": true
+          }
+        ],
+        "container_absent": true,
+        "cleanup_ok": true,
+        "observations": 21,
+        "cleanup_command_exit": 0,
+        "observation_seconds": 10.016,
+        "candidate_summary": {
+          "case": "capability",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "e7f099332273bb2648ff5ac9c4b14e5d7abe7f977ca9a1097001ce7bd93bb286",
+          "quote_matches": true
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "881c464387a3e872c98a96eed4e018e6ced6c709a3206f1a13322dc727f61730",
+        "auxiliary_inventory": {
+          "compaction": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "delegation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "image_offload": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "internal_timers": {
+            "accounting": "no model/tool producer; gateway catalog and request ledger",
+            "admission": "internal only",
+            "bounds": "container wall deadline and observation"
+          },
+          "jobs": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "mcp_resources": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "skill_and_mcp": {
+            "accounting": "gateway skill-result evidence and fixture body-entry ledger; full reconciliation Phase 02",
+            "admission": "three granted tools",
+            "bounds": "container wall deadline; MCP call timeout 10s"
+          },
+          "title_generation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          }
+        },
+        "case": "poison",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "8609f86ba37530e145f9e8efe8103748ed9bc2856d213f83bcb945fcf18e8dad",
+        "environment_sha256": "c581df47358cb4972ea951c6ffe715b5d0218a702c5c9311d93d9ab47f2fa421",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": [
+          "Docker container praxis-dsh-e52a3a3163ca",
+          "host gateway listener, handlers and provider sockets for praxis-dsh-e52a3a3163ca"
+        ],
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-e52a3a3163ca",
+        "scratch_directory": "/home/geo/develop/praxismesh/spikes/dsh-harness/.runs/praxis-dsh-e52a3a3163ca",
+        "session": "probe",
+        "source_commit": "75a3746ba8159059070c1565f086fdf8db154b53",
+        "sources": {
+          "container_driver.py": "fecb1147fa9e20e400203b0adcd1fbc4c7df47b7cf124e74c9c9f9f107f2c850",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "8f2617bebe080ee882c65ad5897a4a6ae2c6443d692015652c5e915e76d6f9a1",
+          "preflight.py": "9d2af2de07594d0a2d8b2a690ddf6d17943fd151cc1053ca3845f2709f832201",
+          "run_probe.py": "031663b57c03b5b992e5ee12a6337397db79e69748876ff0ea8fc20c96cc1a9e",
+          "test_corrections.py": "a8645a774d9661642036b37d8c39af525158f8efd68f1658dec74cfcb3f9cbb9",
+          "test_probe.py": "ac73ee6521a794b4756ad47dc04dd1339c83a6df676acfe1135bf9d361459eb5"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "9f3fd9d7e191ac02ef623f1a66cbb02ed4b0223aef0b530094ae0353e8df1e6e",
+      "result": {
+        "case": "poison",
+        "exit": 0,
+        "manifest_sha256": "9f3fd9d7e191ac02ef623f1a66cbb02ed4b0223aef0b530094ae0353e8df1e6e",
+        "seconds": 3.569,
+        "gateway_stopped": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "03048d08111a7106019e397481c55ba152b37d4effe0a01ca47a4d8bd9559e92",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": false
+          },
+          {
+            "sequence": 2,
+            "path": "/v1/chat/completions",
+            "request_hash": "2399577bb8aaedcd49b2403a35140a115f4831a6c298201545001b8e25af786e",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          },
+          {
+            "sequence": 3,
+            "path": "/v1/chat/completions",
+            "request_hash": "0120fa4598fffe7f6e6b7966264f070884bd5078468a388568170f87e50d232c",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          },
+          {
+            "sequence": 4,
+            "path": "/v1/chat/completions",
+            "request_hash": "317e3900175a10d464f1ee78d448dbc4e71fcc7304307a568b5ff6a42f008a34",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false
+          },
+          {
+            "sequence": 5,
+            "path": "/v1/chat/completions",
+            "request_hash": "b5c60e6606efbacb8f2ab703072157ced32151dcd8ae26978cf1eebd36dad6d6",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": true
+          }
+        ],
+        "tool_executions": [
+          {
+            "tool": "lookup_price",
+            "admitted": true
+          },
+          {
+            "tool": "lookup_stock",
+            "admitted": true
+          }
+        ],
+        "container_absent": true,
+        "cleanup_ok": true,
+        "observations": 21,
+        "cleanup_command_exit": 0,
+        "observation_seconds": 10.034,
+        "candidate_summary": {
+          "case": "poison",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "e7f099332273bb2648ff5ac9c4b14e5d7abe7f977ca9a1097001ce7bd93bb286",
+          "quote_matches": true
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "881c464387a3e872c98a96eed4e018e6ced6c709a3206f1a13322dc727f61730",
+        "auxiliary_inventory": {
+          "compaction": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "delegation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "image_offload": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "internal_timers": {
+            "accounting": "no model/tool producer; gateway catalog and request ledger",
+            "admission": "internal only",
+            "bounds": "container wall deadline and observation"
+          },
+          "jobs": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "mcp_resources": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "skill_and_mcp": {
+            "accounting": "gateway skill-result evidence and fixture body-entry ledger; full reconciliation Phase 02",
+            "admission": "three granted tools",
+            "bounds": "container wall deadline; MCP call timeout 10s"
+          },
+          "title_generation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          }
+        },
+        "case": "denied-tool",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "8609f86ba37530e145f9e8efe8103748ed9bc2856d213f83bcb945fcf18e8dad",
+        "environment_sha256": "c581df47358cb4972ea951c6ffe715b5d0218a702c5c9311d93d9ab47f2fa421",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": [
+          "Docker container praxis-dsh-3c9fadc479f7",
+          "host gateway listener, handlers and provider sockets for praxis-dsh-3c9fadc479f7"
+        ],
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-3c9fadc479f7",
+        "scratch_directory": "/home/geo/develop/praxismesh/spikes/dsh-harness/.runs/praxis-dsh-3c9fadc479f7",
+        "session": "probe",
+        "source_commit": "75a3746ba8159059070c1565f086fdf8db154b53",
+        "sources": {
+          "container_driver.py": "fecb1147fa9e20e400203b0adcd1fbc4c7df47b7cf124e74c9c9f9f107f2c850",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "8f2617bebe080ee882c65ad5897a4a6ae2c6443d692015652c5e915e76d6f9a1",
+          "preflight.py": "9d2af2de07594d0a2d8b2a690ddf6d17943fd151cc1053ca3845f2709f832201",
+          "run_probe.py": "031663b57c03b5b992e5ee12a6337397db79e69748876ff0ea8fc20c96cc1a9e",
+          "test_corrections.py": "a8645a774d9661642036b37d8c39af525158f8efd68f1658dec74cfcb3f9cbb9",
+          "test_probe.py": "ac73ee6521a794b4756ad47dc04dd1339c83a6df676acfe1135bf9d361459eb5"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "bcf7344db60158f3dfdbaf66db2aa4a218a8227ad4fb3eb1b7a2f1ffb5243eb7",
+      "result": {
+        "case": "denied-tool",
+        "exit": 0,
+        "manifest_sha256": "bcf7344db60158f3dfdbaf66db2aa4a218a8227ad4fb3eb1b7a2f1ffb5243eb7",
+        "seconds": 3.362,
+        "gateway_stopped": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "03048d08111a7106019e397481c55ba152b37d4effe0a01ca47a4d8bd9559e92",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": false
+          },
+          {
+            "sequence": 2,
+            "path": "/v1/chat/completions",
+            "request_hash": "f20f32cd3302146deaf47e195f33fcede37e3ab164d73d3311f7c7c5008bb5d4",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": true
+          }
+        ],
+        "tool_executions": [],
+        "container_absent": true,
+        "cleanup_ok": true,
+        "observations": 21,
+        "cleanup_command_exit": 0,
+        "observation_seconds": 10.02,
+        "candidate_summary": {
+          "case": "denied-tool",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "e7f099332273bb2648ff5ac9c4b14e5d7abe7f977ca9a1097001ce7bd93bb286"
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "881c464387a3e872c98a96eed4e018e6ced6c709a3206f1a13322dc727f61730",
+        "auxiliary_inventory": {
+          "compaction": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "delegation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "image_offload": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "internal_timers": {
+            "accounting": "no model/tool producer; gateway catalog and request ledger",
+            "admission": "internal only",
+            "bounds": "container wall deadline and observation"
+          },
+          "jobs": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "mcp_resources": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "skill_and_mcp": {
+            "accounting": "gateway skill-result evidence and fixture body-entry ledger; full reconciliation Phase 02",
+            "admission": "three granted tools",
+            "bounds": "container wall deadline; MCP call timeout 10s"
+          },
+          "title_generation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          }
+        },
+        "case": "native-text",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "8609f86ba37530e145f9e8efe8103748ed9bc2856d213f83bcb945fcf18e8dad",
+        "environment_sha256": "c581df47358cb4972ea951c6ffe715b5d0218a702c5c9311d93d9ab47f2fa421",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": [
+          "Docker container praxis-dsh-700fb9a58721",
+          "host gateway listener, handlers and provider sockets for praxis-dsh-700fb9a58721"
+        ],
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-700fb9a58721",
+        "scratch_directory": "/home/geo/develop/praxismesh/spikes/dsh-harness/.runs/praxis-dsh-700fb9a58721",
+        "session": "probe",
+        "source_commit": "75a3746ba8159059070c1565f086fdf8db154b53",
+        "sources": {
+          "container_driver.py": "fecb1147fa9e20e400203b0adcd1fbc4c7df47b7cf124e74c9c9f9f107f2c850",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "8f2617bebe080ee882c65ad5897a4a6ae2c6443d692015652c5e915e76d6f9a1",
+          "preflight.py": "9d2af2de07594d0a2d8b2a690ddf6d17943fd151cc1053ca3845f2709f832201",
+          "run_probe.py": "031663b57c03b5b992e5ee12a6337397db79e69748876ff0ea8fc20c96cc1a9e",
+          "test_corrections.py": "a8645a774d9661642036b37d8c39af525158f8efd68f1658dec74cfcb3f9cbb9",
+          "test_probe.py": "ac73ee6521a794b4756ad47dc04dd1339c83a6df676acfe1135bf9d361459eb5"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 40.0
+      },
+      "manifest_sha256": "24b0a1a5156dd20e2838efd5b561d560530e2b951626449928ad399d46233a9f",
+      "result": {
+        "case": "native-text",
+        "exit": 0,
+        "manifest_sha256": "24b0a1a5156dd20e2838efd5b561d560530e2b951626449928ad399d46233a9f",
+        "seconds": 3.334,
+        "gateway_stopped": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "96ee639c6a2317f0661e3daa2e9b484c4cc55e08a8a2900667175f99db36ddfb",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": true,
+            "skill_body_seen": false,
+            "denial_seen": false
+          },
+          {
+            "sequence": 2,
+            "path": "/v1/chat/completions",
+            "request_hash": "a777ef500ee6ca4a60adb59268fd01aa5d89ad4d18bc1c0db0aee1602a3e4c51",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": true,
+            "skill_body_seen": false,
+            "denial_seen": true
+          }
+        ],
+        "tool_executions": [],
+        "container_absent": true,
+        "cleanup_ok": true,
+        "observations": 21,
+        "cleanup_command_exit": 0,
+        "observation_seconds": 10.016,
+        "candidate_summary": {
+          "case": "native-text",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "e7f099332273bb2648ff5ac9c4b14e5d7abe7f977ca9a1097001ce7bd93bb286"
+        }
+      }
+    },
+    {
+      "manifest": {
+        "activity_attempt": 1,
+        "artifact_manifest_sha256": "881c464387a3e872c98a96eed4e018e6ced6c709a3206f1a13322dc727f61730",
+        "auxiliary_inventory": {
+          "compaction": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "delegation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "image_offload": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "internal_timers": {
+            "accounting": "no model/tool producer; gateway catalog and request ledger",
+            "admission": "internal only",
+            "bounds": "container wall deadline and observation"
+          },
+          "jobs": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "mcp_resources": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          },
+          "skill_and_mcp": {
+            "accounting": "gateway skill-result evidence and fixture body-entry ledger; full reconciliation Phase 02",
+            "admission": "three granted tools",
+            "bounds": "container wall deadline; MCP call timeout 10s"
+          },
+          "title_generation": {
+            "accounting": "not admitted",
+            "admission": "disabled",
+            "bounds": "not admitted"
+          }
+        },
+        "case": "local",
+        "cleanup_grace_seconds": 5,
+        "clock": "host time.monotonic",
+        "composition_sha256": "8609f86ba37530e145f9e8efe8103748ed9bc2856d213f83bcb945fcf18e8dad",
+        "environment_sha256": "c581df47358cb4972ea951c6ffe715b5d0218a702c5c9311d93d9ab47f2fa421",
+        "heartbeat_seconds": 30,
+        "image": "sha256:f09faecdfc827f110dfd901bd9be02c84750f6fe220364d13dfad08e037928fb",
+        "inherited_inner_turns": 8,
+        "lock_sha256": "f82a3f6bacf9f1aaace9cd4d97ec8638bd7ab2ab9403c444abae14b62b807597",
+        "model_request_ceiling": 8,
+        "observation_seconds": 10,
+        "owned_work": [
+          "Docker container praxis-dsh-8bbc1e358032",
+          "host gateway listener, handlers and provider sockets for praxis-dsh-8bbc1e358032"
+        ],
+        "phase02_stop_oracle_pending": true,
+        "probe_output_tokens_per_request": 2048,
+        "profile": "default",
+        "run_id": "praxis-dsh-8bbc1e358032",
+        "scratch_directory": "/home/geo/develop/praxismesh/spikes/dsh-harness/.runs/praxis-dsh-8bbc1e358032",
+        "session": "probe",
+        "source_commit": "75a3746ba8159059070c1565f086fdf8db154b53",
+        "sources": {
+          "container_driver.py": "fecb1147fa9e20e400203b0adcd1fbc4c7df47b7cf124e74c9c9f9f107f2c850",
+          "mcp_fixture.py": "3c2189c3902eccc9c67e9a83fb31110b74ae5df2b6c66f27b2cfefb7d2d92d77",
+          "model_gateway.py": "8f2617bebe080ee882c65ad5897a4a6ae2c6443d692015652c5e915e76d6f9a1",
+          "preflight.py": "9d2af2de07594d0a2d8b2a690ddf6d17943fd151cc1053ca3845f2709f832201",
+          "run_probe.py": "031663b57c03b5b992e5ee12a6337397db79e69748876ff0ea8fc20c96cc1a9e",
+          "test_corrections.py": "a8645a774d9661642036b37d8c39af525158f8efd68f1658dec74cfcb3f9cbb9",
+          "test_probe.py": "ac73ee6521a794b4756ad47dc04dd1339c83a6df676acfe1135bf9d361459eb5"
+        },
+        "stop_trigger": "host monotonic subprocess deadline",
+        "task_kind": "disposable quote; no Temporal Activity launched",
+        "task_outer_turns": 6,
+        "task_token_ceiling": 1000000,
+        "template": "local-default@1",
+        "wall_seconds": 180.0
+      },
+      "manifest_sha256": "e519eef0e2cad7801e81e677ac26c42c13ce77e4c7f52c81cba6649cc32276e3",
+      "result": {
+        "case": "local",
+        "exit": 0,
+        "manifest_sha256": "e519eef0e2cad7801e81e677ac26c42c13ce77e4c7f52c81cba6649cc32276e3",
+        "seconds": 9.728,
+        "gateway_stopped": true,
+        "model_requests": [
+          {
+            "sequence": 1,
+            "path": "/v1/chat/completions",
+            "request_hash": "03048d08111a7106019e397481c55ba152b37d4effe0a01ca47a4d8bd9559e92",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": false,
+            "denial_seen": false,
+            "provider_status": 200,
+            "provider_usage": {
+              "prompt_tokens": 738,
+              "total_tokens": 849,
+              "completion_tokens": 111,
+              "completion_tokens_details": {
+                "reasoning_tokens": 82
+              }
+            }
+          },
+          {
+            "sequence": 2,
+            "path": "/v1/chat/completions",
+            "request_hash": "a27fd8c594b6bc7be241ef18831e62f4a0bbf2d3d3bddd7157bd21f56b049ae1",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false,
+            "provider_status": 200,
+            "provider_usage": {
+              "prompt_tokens": 1121,
+              "total_tokens": 1243,
+              "completion_tokens": 122,
+              "completion_tokens_details": {
+                "reasoning_tokens": 52
+              }
+            }
+          },
+          {
+            "sequence": 3,
+            "path": "/v1/chat/completions",
+            "request_hash": "1c4b1bc8b301848dd5e13560e5665dc15b9af25b1a0fc82d90d579e14f6c1bf6",
+            "tools": [
+              "mcp__sample-shop__lookup_price",
+              "mcp__sample-shop__lookup_stock",
+              "skill"
+            ],
+            "model": "spark",
+            "poison_visible": false,
+            "native_input_visible": false,
+            "skill_body_seen": true,
+            "denial_seen": false,
+            "provider_status": 200,
+            "provider_usage": {
+              "prompt_tokens": 1268,
+              "total_tokens": 1323,
+              "completion_tokens": 55,
+              "completion_tokens_details": {
+                "reasoning_tokens": 36
+              }
+            }
+          }
+        ],
+        "tool_executions": [
+          {
+            "tool": "lookup_price",
+            "admitted": true
+          },
+          {
+            "tool": "lookup_stock",
+            "admitted": true
+          }
+        ],
+        "container_absent": true,
+        "cleanup_ok": true,
+        "observations": 21,
+        "cleanup_command_exit": 0,
+        "observation_seconds": 10.012,
+        "candidate_summary": {
+          "case": "local",
+          "initialized": true,
+          "profile": "sdk-minimal",
+          "host_environment_absent": true,
+          "direct_ip_blocked": true,
+          "unapproved_gateway_path_blocked": true,
+          "finish_reason": "completed",
+          "policy_unchanged": true,
+          "response_hash": "122075797970321a08deecb7bb8afe7dbe8437bf989266e4f7cc2d5923d55bd9",
+          "quote_matches": true
+        }
+      }
+    }
+  ]
+}
