@@ -115,6 +115,7 @@ def cleanup_container(
     window: float = 10,
     trigger: float | None = None,
     grace: float = 5,
+    owned_work_absent=None,
 ) -> dict:
     started = clock() if trigger is None else trigger
     result = {"container_absent": False, "cleanup_ok": True, "observations": 0}
@@ -150,6 +151,8 @@ def cleanup_container(
                 timeout=2,
             )
             absent = inspection.returncode == 0 and not inspection.stdout.strip()
+            if owned_work_absent is not None:
+                absent = absent and owned_work_absent()
         except (OSError, subprocess.TimeoutExpired):
             absent = False
         result["observations"] += 1

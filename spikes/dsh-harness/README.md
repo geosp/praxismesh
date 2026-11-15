@@ -96,6 +96,46 @@ R5 cancellation/barrier-injection test or the R6 token-budget test.
 The full Phase 02 stop oracle is explicitly marked pending. No heartbeat or
 Temporal Activity is launched in Phase 01.
 
+## Phase 02 recovery probe
+
+```bash
+spikes/dsh-harness/.venv/bin/python spikes/dsh-harness/run_recovery.py --image "$spike_image"
+```
+
+This scripted-provider probe exercises the pinned native SDK/runtime and MCP client.
+Its separate `recovery-composition.yaml` grants only three recovery fixture tools.
+The controller hashes this overlay before execution and stages all Python files
+in the same verified private code snapshot. The candidate mounts that snapshot
+read-only. It never mounts the host authority database.
+
+The controller holds the model request following a workspace edit. The pinned
+[checkpoint policy](https://github.com/deepseek-ai/deepseek-harness/blob/ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c/packages/session/session-checkpoint-policy/README.md)
+flushes the preceding results before that request reaches the adapter. With one
+tool at a time and auxiliary producers disabled, pausing the container freezes
+the remaining candidate writers. The controller captures only `home/sessions/`
+and `workspace/`, checks the conversation marker and edit, and acknowledges the
+pair in a host-owned SQLite transaction with `synchronous=FULL`.
+
+Worker-loss injection kills the exact owned container before releasing the held
+response. Each replacement deletes the preceding worker's writable state and
+restores only the acknowledged pair into a new directory. It calls the public
+`resume_session` API. The gateway observes the restored conversation, while the
+trusted fixture executor checks the actual restored note contents.
+
+A second interruption holds an idempotent effect's response after its business
+transaction commits. Retrying from the acknowledged pair enters the body again
+but leaves one business effect. A further attempt is superseded while its tool
+response is held; the tool's final ownership check and bridge checkpoint/outcome
+publications reject that old attempt. Attempt and operation identities are bound
+by host-created fixture endpoints, not supplied by the model.
+
+The JSON manifest/result records live under `.runs/`. The probe closes host
+gateway/executor threads and observes their absence along with the owned
+container for ten seconds after each injected loss. Successful scratch trees
+are removed; failed scratch trees remain for diagnosis. This R4 fixture is not
+a Temporal cancellation test, a structured TaskResult adapter, or benchmark
+acceptance. Those are separate Phase 02 tasks.
+
 ## Checks and cleanup
 
 ```bash
