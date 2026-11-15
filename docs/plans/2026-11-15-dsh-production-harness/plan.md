@@ -3,7 +3,7 @@ title: Run production agents on DSH
 status: in-progress
 created: 2026-11-15
 updated: 2026-11-15
-design_review: { status: changes-requested, rounds: 2, last: 2026-11-15 }
+design_review: { status: passed, rounds: 3, last: 2026-11-15 }
 approved: 2026-11-15
 adr_review: pending
 ---
@@ -63,8 +63,7 @@ ADR-0005 adopts DSH under five conditions (condition 3 amended by ADR-0006). The
 - **Executor**: the worker-side process that runs granted file, shop and skill tool bodies and records each call.
 - **Barrier**: the D6 steps that make a checkpoint consistent before it is committed.
 - **Committed checkpoint**: a checkpoint row written through the D10 fence.
-- **Current / stale attempt**: the highest (turn, attempt) seen for a task / any lower one.
-- **Lost attempt**: an attempt that ended without writing its attempt row.
+- **Current / stale / lost attempt**: the highest (turn, attempt) seen for a task / any lower one / one that ended without writing its attempt row.
 - **Session store**: the D1 interface; **`SQLAlchemySession`** is the OpenAI SDK session it wraps for `openai_agents`.
 - **`session_position`**: the item count a checkpoint records for `SQLAlchemySession`; truncation pops items after it on resume.
 - **Workspace tarball**: the packed workspace blob a checkpoint references (`harness_activity/workspace.py`).
@@ -94,13 +93,13 @@ A profile may only allow templates whose `harness` equals its own.
 A DSH checkpoint is committed only after the D6 barrier succeeds.
 - **Given** worker loss after a committed checkpoint, **when** a new worker resumes, **then** conversation and edits survive without the old attempt tree.
 
-### R6 · Stale attempts write no checkpoint or attempt row
-A stale attempt never writes a checkpoint or attempt row.
+### R6 · Stale attempts write no checkpoint or attempt outcome
+A stale attempt never writes a checkpoint or an attempt outcome through the run path.
 - **Given** attempt 1 resumes after attempt 2 started, **when** it writes, **then** the fence rejects it.
 
-### R7 · Stale attempts publish no artifact or outcome
-A stale attempt never publishes an artifact or outcome.
-- **Given** a stale attempt that finished, **when** it publishes, **then** no artifact reference or outcome is recorded.
+### R7 · Stale attempts return no artifact reference or outcome
+A stale attempt never returns an artifact reference or outcome; staleness is judged at the fenced write.
+- **Given** a stale attempt that finished, **when** it publishes, **then** it returns no `TurnOutcome` and the task result has none of its outputs.
 
 ### R8 · Attempts stop within the 5 s grace
 Every DSH process must exit within 5 s of a deadline, cancellation or step limit, and nothing it started may run during the following 10 s.
@@ -203,8 +202,9 @@ failing the turn (makes worker loss fatal); charging 0 (hides spend). Details: n
 
 ### D10 · A transactional fence
 Start, checkpoint insert and finish each check, under a per-task lock in one transaction,
-that no newer (turn, attempt) exists; refusals record a row. Artifact blobs are referenced
-only through the fenced finish. Rejected: an unlocked pre-check (races a new attempt).
+that no newer (turn, attempt) exists. Artifact references leave the Activity only after the
+fenced finish; unreferenced blobs can remain. Rejected: a separate pre-check as the guarantee
+(races a new attempt). Details: notes.md#d10
 
 ## Assumptions
 

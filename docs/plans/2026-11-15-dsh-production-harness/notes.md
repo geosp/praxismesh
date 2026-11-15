@@ -94,3 +94,13 @@ DSH features turned off, by composition id (spike `composition.yaml`):
 `tool-fs`, `tool-working-directory`, `persistent-bash`, `persistent-pwsh`, the
 `dsh-skill*` plugins, `agent-loop.agents: []` (no delegation) and
 `includeDefaultRoots: false` (no discovery).
+
+## D10
+
+- The lock is `pg_advisory_xact_lock(hashtext(task_id))`, taken by `start`, the fenced
+  checkpoint insert, the fenced finish, `assert_current` and `record_refusal`.
+- `record_refusal` inserts its `refused` row under the lock without the newer-attempt check;
+  `close_unfinished` is unfenced but touches only rows at or below the writer.
+- Artifact references exist only in the `TurnOutcome` that `_finish` returns after the fenced
+  finish succeeds. A stale attempt may still upload audit artifact blobs that nothing
+  references: `assert_current` before upload is an early exit, not a guarantee.

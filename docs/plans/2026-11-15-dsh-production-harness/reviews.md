@@ -196,3 +196,16 @@ Branch `feat/62-dsh-harness-seam` from 0f32d7dd3077fcc13d03f7b16e7de7481e34c954 
 | F35 | Nit | contract | `docs/roadmap/schemas.md` lacks `context_window` (D7). | fixed: docs/roadmap/schemas.md lists context_window |
 | F36 | Nit | failure | The `session_ref` stub fails retryably after the workspace upload (D1). | accepted: stub until phase 02 task 2.1 replaces it |
 | F37 | Nit | scope | Early exit checks the same turn only, unlike the fence (D10). | accepted: early exit only; the fence covers newer turns |
+
+## 2026-11-15 · design-review · round 3 · passed
+
+Targeted follow-up (docs/reviews/README.md rule 6) on the D10 and R7 clarification, one fresh
+`design-reviewer` subagent at 38e379c compared with 10ef351. ADR-0005 condition 2, R5, R12 and
+phase 02 tasks: no findings.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F54 | Major | codebase fit | D10 implied a locked pre-check is a guarantee and did not name the unreferenced-blob residual. | fixed: D10 rejects a separate pre-check as the guarantee and names the residual; notes.md#d10 |
+| F55 | Nit | codebase fit | "Referenced only through the fenced finish" is imprecise; references are in the returned `TurnOutcome`. | fixed: D10 and notes.md#d10 |
+| F56 | Nit | codebase fit | R7 statement and scenario disagreed; place of observation unnamed. | fixed: R7 "returns no artifact reference or outcome"; Then names `TurnOutcome` and task-result outputs |
+| F57 | Nit | codebase fit | `record_refusal` and `close_unfinished` write rows without the fence, against R6 as worded. | fixed: R6 scoped to checkpoints and attempt outcomes through the run path; notes.md#d10 |
