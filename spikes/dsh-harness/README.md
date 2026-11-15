@@ -174,6 +174,40 @@ setup and compaction. Embedded copies of usage in stream events are diagnostic
 only; they are never added again. Native completion here ends a control probe;
 arbitrary assistant text does not establish a succeeded TaskResult.
 
+## Phase 02 bounded execution probes
+
+These controllers use the repository's trusted root uv environment for Temporal's
+SDK; the candidate SDK still runs only in Docker. Run sequentially:
+
+```bash
+uv run python spikes/dsh-harness/run_bounds.py stall-model --image "$spike_image"
+uv run python spikes/dsh-harness/run_bounds.py stall-tool --image "$spike_image"
+uv run python spikes/dsh-harness/run_bounds.py cancel-model --image "$spike_image"
+uv run python spikes/dsh-harness/run_bounds.py cancel-tool --image "$spike_image"
+uv run python spikes/dsh-harness/run_bounds.py step-limit --image "$spike_image"
+```
+
+Stalled calls have a two-second deadline measured from independent provider or
+tool-body entry. The tool fixture also starts a child Python process inside the
+candidate namespace. The step guard admits two model steps and refuses the next.
+Cancellation cases launch the candidate inside a Temporal SDK Activity context,
+heartbeat every 50 ms, then call `ActivityEnvironment.cancel()` immediately after
+independent entry observation. This tests SDK Activity cancellation delivery; it
+does not test a deployed worker's heartbeat transport or server-side scheduling.
+
+The bridge sends SIGTERM to the exact owned container. Its Python driver handles
+that signal by calling the public SDK `close()` method, which attempts runtime
+shutdown before bounded termination. A pass requires the container to disappear
+cooperatively within five seconds. Forced removal afterward cannot establish a
+pass. The controller then closes host fixture resources and observes all owned
+work through the same ten-second window, using the original stop timestamp.
+Failed results and disposable diagnostic trees stay under `.runs/`.
+
+Only the deterministic fixture can prove zero generation cost for an interrupted
+request held before generation. Other missing usage stays unknown and closes
+further admission. These stop probes do not establish structured completion or
+benchmark acceptance.
+
 ## Checks and cleanup
 
 ```bash

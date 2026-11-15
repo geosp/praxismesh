@@ -38,11 +38,17 @@ class FixtureProvider:
                     ).hexdigest(),
                 }
                 owner.dispatches.append(record)
-                owner.entered.set()
                 if owner.case in ("stall-model", "cancel-model"):
+                    record.update(
+                        disposition="known stalled before generation",
+                        input_tokens=0,
+                        output_tokens=0,
+                    )
+                    owner.entered.set()
                     owner.release.wait(60)
-                    record["disposition"] = "interrupted fixture; no generation"
+                    record["disposition"] = "known interrupted before generation"
                     return
+                owner.entered.set()
                 if owner.case == "retry" and number == 1:
                     record.update(
                         disposition="known pre-generation failure", input_tokens=0, output_tokens=0
@@ -214,6 +220,19 @@ class AccountingBoundary(Boundary):
             handler.send_header("Content-Type", response.getheader("Content-Type"))
             handler.end_headers()
             handler.wfile.write(encoded)
+        except (OSError, http.client.HTTPException) as error:
+            record["provider_error_type"] = type(error).__name__
+            # Only this independent fixture can prove that it never generated.
+            # Other disconnected providers retain unknown usage.
+            if self.provider.dispatches and self.provider.dispatches[-1].get("disposition") in (
+                "known stalled before generation",
+                "known interrupted before generation",
+            ):
+                self.ledger.settle(
+                    record["accounting"], None, known_pre_generation=True, cancelled=True
+                )
+            if not self.stopping.is_set():
+                handler.send_error(502, "fixture provider interrupted")
         finally:
             connection.close()
             with self.lock:

@@ -370,3 +370,26 @@ remains draft; issue62 remains open. No adoption, merge or new phase start occur
 The owner accepted branch `spike/62-dsh-recovery-evaluation` from clean main at
 99ad2d2ec1402768abf81dbe2dfc3dab785dee30. The shared start gate passed. Phase 02 is in progress; all four tasks
 remain unchecked. No production adoption or runtime Phase 2 start is authorized.
+
+## 2026-11-14 · implementation checkpoint · phase 02
+
+After the owner reported a VS Code crash, the coordinator confirmed the branch
+and saved working files, checked for surviving spike processes/containers, and
+saved logical local commits. Recovery and accounting work is in `75dcd74` and
+`301d6c1`; bounded-execution work follows in the next local commit. Nothing from
+Phase 02 has been pushed or published as a PR.
+
+Author-run exploratory recovery, exhaustion, retry, native compaction, tool
+accounting, stalled-provider/tool, SDK Activity-context cancellation and model-step
+fixtures have successful records in ignored `spikes/dsh-harness/.runs/`. Earlier
+failed cleanup observations remain there as failures; retry and compaction were
+rerun sequentially. The latest local unit suite passed 49 tests. These observations
+are not independent implementation review or verification, and do not close a task
+or gate. Later accounting/cleanup changes still need final frozen-source reruns.
+
+Resume with task 2.2's structured outcome/error fixtures, then task 2.3's benchmark.
+The pinned Phase 01 image has Python, sh and wc but lacks git; account for that
+benchmark prerequisite explicitly. SDK cancellation currently uses the real
+Temporal Activity test context, not a deployed worker/server. Complete the final
+evidence/demo, independent reviews, verification and owner gates before closure.
+All four task boxes remain unchecked.

@@ -43,7 +43,14 @@ class UsageLedger:
             self.records.append(record)
             return record
 
-    def settle(self, record: dict, usage: dict | None, *, known_pre_generation: bool = False):
+    def settle(
+        self,
+        record: dict,
+        usage: dict | None,
+        *,
+        known_pre_generation: bool = False,
+        cancelled: bool = False,
+    ):
         with self.lock:
             if (
                 not any(record is item for item in self.records)
@@ -54,7 +61,13 @@ class UsageLedger:
             if known_pre_generation:
                 if usage is not None:
                     raise ValueError("pre-generation failure cannot also report generated usage")
-                record.update(input_tokens=0, output_tokens=0, disposition="pre-generation failure")
+                record.update(
+                    input_tokens=0,
+                    output_tokens=0,
+                    disposition="pre-generation cancellation"
+                    if cancelled
+                    else "pre-generation failure",
+                )
                 return
             if usage is None:
                 return  # remains explicitly unknown and blocks further admission

@@ -69,3 +69,12 @@ def test_model_steps_do_not_count_retry_twice():
     for step in (1, 1, 2):
         ledger.settle(ledger.ingress("main", step), {"prompt_tokens": 1, "completion_tokens": 0})
     assert ledger.ingress("main", 3)["denial"] == "model-step limit"
+
+
+def test_independently_proven_cancellation_is_distinct_from_missing_usage():
+    ledger = UsageLedger("run", "root", 1, 10)
+    first = ledger.ingress("main", 1)
+    ledger.settle(first, None, known_pre_generation=True, cancelled=True)
+    assert first["disposition"] == "pre-generation cancellation"
+    assert ledger.totals()["input_tokens"] == 0
+    assert ledger.totals()["unknown_usage"] == 0
