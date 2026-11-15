@@ -203,12 +203,12 @@ The review protocol should cost roughly what the phase is worth. Two tiers apply
 |---|---|---|
 | Specification | One implementation plan tracing to project-plan requirements | Same |
 | Design | Readable plan with design decisions; one independent design review | Plan with full design depth and independent design review (§4.17) |
-| Implementation review and verification | **One** fresh independent session that runs the implementation-review skill and then the verification skill against the same `code_sha` | Separate fresh sessions, neither seeing the other's verdict |
+| Implementation review and verification | **One** coordinator runs fresh implementation-review subagents and then a fresh verifier against the same `code_sha` | Separate fresh subagent rounds, neither seeing the other's verdict |
 | As-built documentation | A section added to `docs/architecture/overview.md` | Cumulative as-built update, independently validated |
 | Evidence linkage | `code_sha` and final `head_sha` in the PR record; `docs_sha` only if docs land in a separate commit | Full `code_sha` / `docs_sha` / `head_sha` protocol (§4.17) |
 | Documentation skill | May be created at any point; must exist before Phase 3A | Used |
 
-Both tiers keep the non-negotiables: reviewers never share the implementation session, reviews target an immutable commit, required checks pass on the latest head, and the phase demo is run and recorded. In the light tier, independence **between** review and verification is knowingly waived; independence **from the implementer** is not. A design reviewer may move a light-tier phase to the full tier by recording the reason.
+Both tiers keep the non-negotiables: reviewers are fresh-context subagents that never share the implementer's context, reviews target an immutable commit, required checks pass on the latest head, and the phase demo is run and recorded. In the light tier, independence **between** review and verification is knowingly waived; independence **from the implementer** is not. A design reviewer may move a light-tier phase to the full tier by recording the reason.
 
 ### 7.1 Risk register and rethink triggers (rev 2.10)
 
