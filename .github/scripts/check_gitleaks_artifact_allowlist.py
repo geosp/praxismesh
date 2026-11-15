@@ -33,6 +33,8 @@ def main() -> int:
         other = directory / "other/notes.md"
         other.parent.mkdir()
         other.write_text(line + "\n")
+        sibling_path = "spikes/dsh-harness/notes.md"
+        (directory / sibling_path).write_text(line + "\n")
         report = directory / "report.json"
         result = subprocess.run(
             [
@@ -59,6 +61,7 @@ def main() -> int:
         }
         expected = {(artifact_path, number, "generic-api-key") for number in (2, 3, 4)}
         expected.add(("other/notes.md", 1, "generic-api-key"))
+        expected.add((sibling_path, 1, "generic-api-key"))
         if observed != expected:
             raise SystemExit("artifact canary failed: exact path/line/digest restrictions changed")
     print(

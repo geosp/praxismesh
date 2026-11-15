@@ -197,3 +197,23 @@ The feature-branch history scan now passes with the corrected configuration.
 A fresh targeted review of this security-relevant configuration/CI change and the
 required local checks precede publication. No repository protection/settings or
 scanner rules were disabled.
+
+
+## 2026-11-14 · targeted scanner-exception review · passed
+
+- Frozen scanner change: 7459b10f316e099f90661b03cec2500aac53c550.
+- [Fresh scoped report](../../reviews/general-dsh-harness-evaluation/scanner-exception-review.md).
+- Reviewer: fresh impl-reviewer completed; static PASS, no Blocker or Major.
+- Nit S1: the canary lacked a same-directory sibling-path negative fixture.
+  Reproduced: broadening the path to the whole spike directory left the old canary
+  green. Fixed by adding the exact digest at a sibling path; the broadened-path
+  mutation now fails and the restored exact exception passes. This strengthens
+  the test without broadening the already reviewed exception.
+- Full repository tests: 165 passed, 91 integration tests deselected. Isolated
+  tests: 30 passed. Locked sync, lint/format, mypy, agent sync, plan validation,
+  actionlint, offline links and scanner history checks passed locally.
+- Added a standalone as-built verification input containing current runtime
+  claims and documented operator prerequisites, without earlier review verdicts.
+  Historical reports remain preserved and are excluded from verifier inputs.
+- Draft delivery and independent execution verification remain next. Phase tasks
+  and the review-independence question remain open.
