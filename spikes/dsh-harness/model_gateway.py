@@ -68,6 +68,10 @@ def serve_relay(socket_path: str) -> http.server.ThreadingHTTPServer:
 
 
 class Boundary:
+    # Phase 01 probes allow at most eight completion requests. Subclasses whose
+    # ledger enforces and records step limits set this to None.
+    request_cap: int | None = 8
+
     def __init__(
         self,
         path: Path,
@@ -134,7 +138,7 @@ class Boundary:
                 if set(names) != owner.allowed_tools or request.get("model") != "spark":
                     self.send_error(403, "effective model/tool grants changed")
                     return
-                if len(owner.requests) > 8:
+                if owner.request_cap is not None and len(owner.requests) > owner.request_cap:
                     self.send_error(429, "probe request allowance exhausted")
                     return
                 if not owner.admit(request, record):

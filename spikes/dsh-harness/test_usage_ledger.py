@@ -78,3 +78,17 @@ def test_independently_proven_cancellation_is_distinct_from_missing_usage():
     assert first["disposition"] == "pre-generation cancellation"
     assert ledger.totals()["input_tokens"] == 0
     assert ledger.totals()["unknown_usage"] == 0
+
+
+def test_task_boundary_ledger_owns_the_eight_step_limit():
+    # Regression: the Phase 01 eight-request cap ran before admission, so a ninth
+    # live step was refused without a recorded model-step denial.
+    from model_gateway import Boundary
+    from task_boundary import TaskBoundary
+
+    assert Boundary.request_cap == 8
+    assert TaskBoundary.request_cap is None
+    ledger = UsageLedger("run", "task", 1, 1_000_000, 8)
+    for step in range(1, 9):
+        ledger.settle(ledger.ingress("main", step), {"prompt_tokens": 1, "completion_tokens": 1})
+    assert ledger.ingress("main", 9)["denial"] == "model-step limit"

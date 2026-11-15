@@ -18,6 +18,10 @@ FIXTURE_FAULTS = {
 
 
 class TaskBoundary(Boundary):
+    # The usage ledger owns the model-step limit so its denial is recorded and
+    # inner-step exhaustion maps to continuation, not a retryable failure.
+    request_cap = None
+
     def __init__(
         self,
         path,
