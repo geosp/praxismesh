@@ -1,4 +1,4 @@
-"""Exercise the exact artifact-digest exception without suppressing other keys."""
+"""Keep reviewed metadata/prose exceptions bounded by exact lines and paths."""
 
 from __future__ import annotations
 
@@ -23,6 +23,12 @@ def main() -> int:
     line = "    " + json.dumps(module_path) + ": " + json.dumps(digest) + ","
     changed = ("0" if digest[0] != "0" else "1") + digest[1:]
     key_line = 'api_key = "' + secrets.token_urlsafe(32) + '"'
+    report_path = "docs/reviews/general-dsh-harness-evaluation/verification-acceptance.md"
+    statement = next(
+        line
+        for line in (root / report_path).read_text().splitlines()
+        if line.startswith("Root checks passed:")
+    )
     with tempfile.TemporaryDirectory(prefix="gitleaks-artifact-canary-") as scratch:
         directory = Path(scratch)
         target = directory / artifact_path
@@ -32,9 +38,26 @@ def main() -> int:
         )
         other = directory / "other/notes.md"
         other.parent.mkdir()
-        other.write_text(line + "\n")
+        other.write_text(line + "\n" + statement + "\n")
         sibling_path = "spikes/dsh-harness/notes.md"
         (directory / sibling_path).write_text(line + "\n")
+        result_prose = directory / report_path
+        result_prose.parent.mkdir(parents=True)
+        result_prose.write_text(
+            "\n".join(
+                (
+                    statement,
+                    key_line,
+                    statement + " " + key_line,
+                    statement.replace("165", "164", 1),
+                    "",
+                    statement,
+                )
+            )
+            + "\n"
+        )
+        prose_sibling = "docs/reviews/general-dsh-harness-evaluation/notes.md"
+        (directory / prose_sibling).write_text(statement + "\n")
         report = directory / "report.json"
         result = subprocess.run(
             [
@@ -61,12 +84,15 @@ def main() -> int:
         }
         expected = {(artifact_path, number, "generic-api-key") for number in (2, 3, 4)}
         expected.add(("other/notes.md", 1, "generic-api-key"))
+        expected.add(("other/notes.md", 2, "generic-api-key"))
         expected.add((sibling_path, 1, "generic-api-key"))
+        expected.update((report_path, number, "generic-api-key") for number in (2, 3, 4))
+        expected.add((prose_sibling, 1, "generic-api-key"))
         if observed != expected:
             raise SystemExit("artifact canary failed: exact path/line/digest restrictions changed")
     print(
-        "artifact canary passed: exact digest suppressed; "
-        "changed digest, added keys and other path detected"
+        "scoped canaries passed: exact metadata/prose suppressed; "
+        "changed lines, added keys and other paths detected"
     )
     return 0
 

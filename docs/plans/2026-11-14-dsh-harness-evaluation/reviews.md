@@ -264,3 +264,21 @@ scanner rules were disabled.
 - Initial failed verification remains frozen. The owner has not yet accepted the
   earlier implementation-review independence limitation. Phase metadata/tasks
   remain open; no closure or waiver is inferred from this verification PASS.
+
+
+## 2026-11-14 · verifier-report scanner prose false positive
+
+Publishing the independent evidence exposed a second generic-api-key false
+positive: ordinary result-summary prose in the immutable acceptance report.
+The first evidence push completed before the final scanner result was inspected;
+no endpoint or credential was exposed. The report remains unchanged.
+
+A separate AND-scoped exception now requires the exact report path and complete
+known summary statement. Canaries cover the statement at first/later lines,
+changed text, appended/new keys, sibling and unrelated paths. OR and path-widening
+mutations were detected. The exact feature-history scan passes locally. This
+changes only scanner configuration/canaries and the corresponding CI step name;
+DSH runtime/code/configuration/dependency/skill inputs remain identical to the
+independently verified revision. Fresh scoped verification precedes publication
+of this correction. Phase closure and the earlier independence limitation remain
+unapproved.

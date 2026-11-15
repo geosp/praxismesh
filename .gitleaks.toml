@@ -24,3 +24,13 @@ regexTarget = "line"
 regexes = [
   '''^\s*"deepseek_harness/api\.py": "9c772909775196fc4070182191738ad227a3bfdccc68d1b6f4e8b90dec08430b",?\s*$''',
 ]
+
+[[allowlists]]
+description = "Reviewed verification result prose; exact report path and complete statement only"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^docs/reviews/general-dsh-harness-evaluation/verification-acceptance\.md$''']
+regexTarget = "line"
+regexes = [
+  '''^\s*Root checks passed: 165 selected pytest tests, lint, formatting, mypy, agent sync and plan validation\. Spike tests passed 30/30 after authorized socket access\. Actionlint, frozen-ancestry secret scan, artifact[/]scoped canaries and committed Markdown link checks passed\. 91 integration tests are intentionally deselected by root configuration; no production stack deployment was run for this isolated Phase 01 scope\. GitHub hosted dependency-review is not reproduced by these local checks\.\s*$''',
+]
