@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
-import secrets
 import subprocess
 import tempfile
 from pathlib import Path
@@ -22,7 +22,8 @@ def main() -> int:
     digest = artifact["installed_sha256"][module_path]
     line = "    " + json.dumps(module_path) + ": " + json.dumps(digest) + ","
     changed = ("0" if digest[0] != "0" else "1") + digest[1:]
-    key_line = 'api_key = "' + secrets.token_urlsafe(32) + '"'
+    # Public, deterministic fixture: scanner coverage must not depend on RNG.
+    key_line = 'api_key = "' + hashlib.sha256(b"public scanner canary fixture").hexdigest() + '"'
     report_path = "docs/reviews/general-dsh-harness-evaluation/verification-acceptance.md"
     statement = next(
         line
@@ -89,6 +90,8 @@ def main() -> int:
         expected.update((report_path, number, "generic-api-key") for number in (2, 3, 4))
         expected.add((prose_sibling, 1, "generic-api-key"))
         if observed != expected:
+            print("missing finding locations:", sorted(expected - observed))
+            print("unexpected finding locations:", sorted(observed - expected))
             raise SystemExit("artifact canary failed: exact path/line/digest restrictions changed")
     print(
         "scoped canaries passed: exact metadata/prose suppressed; "

@@ -302,3 +302,15 @@ unapproved.
 - Independent execution verification and scanner clearance are complete for their
   stated scopes. Owner acceptance of the implementation-review limitation and
   latest-head CI remain prerequisites for phase closure. No waiver is inferred.
+
+
+## 2026-11-14 · scoped canary fixture stabilization
+
+One subsequent local canary run reported an expected-location mismatch with its
+random generated token; the temporary fixture had already been cleaned and the
+exact missing location was not retained. Fifteen diagnostic reruns passed, so no
+specific root cause is claimed. The public fake-key vector is now derived
+deterministically, and failures emit only missing/extra file-line-rule locations.
+Twenty repeated runs pass. Ruff/format and targeted mypy pass. Exception regexes,
+paths, rules, CI invocation, and all runtime inputs are unchanged. This fixture
+change receives a final scoped check; no earlier result is relabeled.
