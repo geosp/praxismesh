@@ -248,7 +248,7 @@ supported.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | [Harness seam and registry](phases/01-harness-seam.md) | in-progress | 0/6 |
+| 01 | [Harness seam and registry](phases/01-harness-seam.md) | in-progress | 1/6 |
 | 02 | [DSH runner and worker pair](phases/02-dsh-runner.md) | approved | 0/8 |
 | 03 | [Acceptance and default switch](phases/03-acceptance.md) | approved | 0/4 |
 
@@ -256,3 +256,4 @@ supported.
 
 2026-11-15 · D3 adopted after design review round 2: paired DSH container per worker; ADR-0006 amends ADR-0005 condition 3.
 2026-11-15 · D7, D9 and D10 adopted after round 2: explicit unknown usage, conservative charge, transactional fence.
+2026-11-15 · Phase 01 gate: per-attempt cgroup, mount namespace and freeze need `SYS_ADMIN` in the DSH container, held by the launcher only; commands drop all capabilities and get a seccomp filter blocking user namespaces (notes.md#d3).

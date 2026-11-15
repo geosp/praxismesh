@@ -21,7 +21,7 @@ the spike's control cases pass as production integration tests.
 
 ### 1. Worker pair
 
-- [ ] 1.1 Build the DSH image with the pinned release and digests recorded in the registry lock and the granted `cli_tools`. Build the launcher: it reports its digests, gives each attempt a cgroup, command UID and mount namespace, kills on control-socket close, and reaps processes and orphan trees at start (D3, D4, R17). Verify: the worker refuses a launcher whose reported digest differs from the lock.
+- [ ] 1.1 Build the DSH image with the pinned release and digests recorded in the registry lock and the granted `cli_tools`. Build the launcher: it reports its digests, gives each attempt a cgroup, command UID and mount namespace, runs commands with all capabilities dropped and a seccomp filter that blocks new user namespaces (notes.md#probe-result-phase-01-task-01-2026-11-15), kills on control-socket close, and reaps processes and orphan trees at start (D3, D4, R17). Verify: the worker refuses a launcher whose reported digest differs from the lock; `infra/dsh/isolation-probe.sh` passes every check in the DSH container.
 - [ ] 1.2 Add the DSH worker pair to `infra/docker-compose.yml` with a tmpfs attempt volume and the notes.md#d3 settings (D3). Verify: `docker compose up` starts both with no network or credentials in the DSH container.
 - [ ] 1.3 Choose the runner from `template.harness` in `workers/main.py` (D1). Verify: `tpl.local-dsh` gets `DshRunner`; `local-default` is unchanged.
 

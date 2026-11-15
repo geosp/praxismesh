@@ -21,7 +21,7 @@ session store, and the registry accepts `dsh`, `local-dsh` and the `dsh` profile
 
 ### 0. Gate
 
-- [ ] 0.1 Probe cgroup v2 freeze, per-attempt UID and mount namespace in a container with the notes.md#d3 Compose settings (D3, Assumptions). Verify: a probe script freezes and kills a process tree; if freeze fails, SIGSTOP works with its stated limit; if both fail, stop and return to the owner.
+- [x] 0.1 Probe cgroup v2 freeze, per-attempt UID and mount namespace in a container with the notes.md#d3 Compose settings (D3, Assumptions). Verify: a probe script freezes and kills a process tree; if freeze fails, SIGSTOP works with its stated limit; if both fail, stop and return to the owner.
 
 ### 1. Seam
 

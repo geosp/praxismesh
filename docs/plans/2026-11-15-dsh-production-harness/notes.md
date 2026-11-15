@@ -24,9 +24,30 @@ expected behaviour for each ported case.
 | LXC/Incus per attempt | Incus API | second host runtime; still needs start rights |
 | Docker-in-Docker | privileged container | privileged |
 
-Compose settings the pair needs: `cgroupns: private`, a writable cgroup v2 subtree
-for the launcher, a tmpfs-backed attempt volume, `network_mode: none` and a
-read-only root for the DSH container.
+Compose settings the pair needs: `cgroupns: private`, `cap_add: [SYS_ADMIN]` (for the
+launcher only), `no-new-privileges`, a tmpfs-backed attempt volume,
+`network_mode: none` and a read-only root for the DSH container.
+
+### Probe result (phase 01 task 0.1, 2026-11-15)
+
+`infra/dsh/isolation-probe.sh` in the pinned Python base image, Docker on Fedora
+(cgroup v2, SELinux enforcing):
+
+| Check | Default caps | `SYS_ADMIN` |
+| --- | --- | --- |
+| Remount cgroupfs rw, create sub-cgroup, freeze, `cgroup.kill` | no | yes |
+| SIGSTOP a process group | yes | yes |
+| Command UID via `setpriv` | yes | yes |
+| Per-attempt mount namespace (`unshare -m`) | no | yes |
+| Command with all caps dropped: cannot escape cgroup, cannot mount, no effective caps | - | yes |
+| Command cannot create a user namespace | - | **no** |
+
+Docker rejects `--sysctl user.max_user_namespaces=0`. Conditions for phase 02:
+- the launcher alone holds `SYS_ADMIN`;
+- every command runs through `setpriv --inh-caps=-all --bounding-set=-all --no-new-privs` as a separate UID;
+- the launcher installs a seccomp filter on each command that rejects `CLONE_NEWUSER`
+  in `clone`/`unshare` and makes `clone3` return `ENOSYS`;
+- the probe's user-namespace check must then pass.
 
 Fallback if cgroup freeze is unavailable: SIGSTOP the attempt's process group. Its
 limit: a process that leaves the group escapes the freeze, so commands must not be
