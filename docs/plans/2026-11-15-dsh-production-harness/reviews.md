@@ -138,3 +138,7 @@ resolved in the round resolution tables above. The open cost question moved to
 the owner's approval in phase 03 task 2.1.
 
 ## 2026-11-15 · approved · plan and phases 01-03 (with the waiver above)
+
+## 2026-11-15 · start · phase 01
+
+Branch `feat/62-dsh-harness-seam` from 0f32d7dd3077fcc13d03f7b16e7de7481e34c954 (stacked on the plan branch while PR #64 is open).

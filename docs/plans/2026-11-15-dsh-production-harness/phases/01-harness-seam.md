@@ -1,9 +1,9 @@
 ---
 phase: 1
 title: Harness seam and registry
-status: approved
-branch: null
-base: null
+status: in-progress
+branch: feat/62-dsh-harness-seam
+base: 0f32d7dd3077fcc13d03f7b16e7de7481e34c954
 delivers: [R1, R2, R3]
 design_review: { status: waived, rounds: 2, last: 2026-11-15 }
 impl_review: { status: none, rounds: 0, last: null }
