@@ -136,6 +136,12 @@ class AttemptRepository:
         same turn as lost (RFC: cumulative usage and lost attempts)."""
         async with self.engine.begin() as conn:
             await conn.execute(_TASK_LOCK, {"t": task_id})
+            current = await conn.execute(
+                text("SELECT 1 WHERE " + _NO_NEWER_ATTEMPT),
+                {"t": task_id, "turn": turn, "a": attempt},
+            )
+            if current.first() is None:  # a stale attempt that started late (review F28)
+                raise FenceRejected("a newer attempt owns this task")
             await conn.execute(
                 text(
                     """
@@ -207,6 +213,37 @@ class AttemptRepository:
                 )
                 if newer.first() is not None:
                     raise FenceRejected("a newer attempt owns this task")
+
+    async def record_refusal(self, task_id: str, turn: int, attempt: int, worker: str) -> None:
+        """Record a Temporal attempt that refused the task (wrong template version).
+
+        It never runs, but it is newer than the attempts before it, so it must fence
+        them (D10, review F27). Earlier open rows of the turn become lost, as in start."""
+        async with self.engine.begin() as conn:
+            await conn.execute(_TASK_LOCK, {"t": task_id})
+            await conn.execute(
+                text(
+                    """
+                    UPDATE task_attempts SET outcome = 'lost',
+                        failure_category = COALESCE(failure_category, 'lost_or_timed_out'),
+                        ended_at = CURRENT_TIMESTAMP
+                    WHERE task_id = :t AND turn = :turn AND attempt < :a AND outcome = 'started'
+                    """
+                ),
+                {"t": task_id, "turn": turn, "a": attempt},
+            )
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO task_attempts (task_id, turn, attempt, worker_identity, outcome,
+                        failure_category, ended_at, retention_class)
+                    VALUES (:t, :turn, :a, :w, 'refused', 'template_version_unavailable',
+                        CURRENT_TIMESTAMP, 'audit')
+                    ON CONFLICT (task_id, turn, attempt) DO NOTHING
+                    """
+                ),
+                {"t": task_id, "turn": turn, "a": attempt, "w": worker},
+            )
 
     async def assert_current(self, task_id: str, turn: int, attempt: int) -> None:
         """Raise FenceRejected if a newer turn or attempt of the task has started.

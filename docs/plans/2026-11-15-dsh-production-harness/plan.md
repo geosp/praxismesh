@@ -3,7 +3,7 @@ title: Run production agents on DSH
 status: in-progress
 created: 2026-11-15
 updated: 2026-11-15
-design_review: { status: waived, rounds: 2, last: 2026-11-15 }
+design_review: { status: changes-requested, rounds: 2, last: 2026-11-15 }
 approved: 2026-11-15
 adr_review: pending
 ---
@@ -100,7 +100,7 @@ A stale attempt never writes a checkpoint or attempt row.
 
 ### R7 · Stale attempts publish no artifact or outcome
 A stale attempt never publishes an artifact or outcome.
-- **Given** a stale attempt that finished, **when** it publishes, **then** no blob or outcome is recorded.
+- **Given** a stale attempt that finished, **when** it publishes, **then** no artifact reference or outcome is recorded.
 
 ### R8 · Attempts stop within the 5 s grace
 Every DSH process must exit within 5 s of a deadline, cancellation or step limit, and nothing it started may run during the following 10 s.
@@ -202,9 +202,9 @@ each, and the turn retries. This replaces the spike's fail-closed denial. Reject
 failing the turn (makes worker loss fatal); charging 0 (hides spend). Details: notes.md#d9
 
 ### D10 · A transactional fence
-Checkpoint insert, attempt finish and artifact publication each run in one
-transaction that checks no newer (turn, attempt) exists. It replaces
-`newer_attempt_exists` in the seam. Rejected: a separate pre-check (races with a new attempt).
+Start, checkpoint insert and finish each check, under a per-task lock in one transaction,
+that no newer (turn, attempt) exists; refusals record a row. Artifact blobs are referenced
+only through the fenced finish. Rejected: an unlocked pre-check (races a new attempt).
 
 ## Assumptions
 
@@ -255,4 +255,4 @@ supported.
 ## Decision log
 
 2026-11-15 · D3 adopted after design review round 2: paired DSH container per worker; ADR-0006 amends ADR-0005 condition 3.
-2026-11-15 · D7, D9, D10 adopted after round 2 (unknown usage, conservative charge, fence). Phase 01 gate: per-attempt cgroup, mount namespace and freeze need `SYS_ADMIN` in the DSH container, held by the launcher only; commands drop all capabilities and get a seccomp filter blocking user namespaces (notes.md#d3).
+2026-11-15 · D7, D9, D10 adopted after round 2 (unknown usage, conservative charge, fence). Phase 01 gate: per-attempt cgroup, mount namespace and freeze need `SYS_ADMIN` in the DSH container, held by the launcher only; commands drop all capabilities and get a seccomp filter blocking user namespaces (notes.md#d3). D10, R7 clarified after phase 01 impl review round 2 (lock, refusal rows, artifact refs).

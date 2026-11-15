@@ -175,3 +175,24 @@ Branch `feat/62-dsh-harness-seam` from 0f32d7dd3077fcc13d03f7b16e7de7481e34c954 
 | F22 | Nit | contract | Stale checkpoint blob recorded before the fenced insert rejects (D10). | accepted: content-addressed task-retention blob without a checkpoint row |
 | F23 | Nit | scope | User-namespace probe check still fails; deferred to phase 02 task 1.1 (D3). | accepted: phase 02 task 1.1 must make it pass |
 | F24 | Nit | contract | `AgentEvent` lacks durability/retention metadata named in schemas.md (D8). | accepted: durability and retention metadata belong to roadmap Phase 2 |
+
+## 2026-11-15 · impl-review · phase 01 · round 2 · changes-requested
+
+- Diff base: 0f32d7dd3077fcc13d03f7b16e7de7481e34c954; frozen review commit: 9f9f1da0de895d3cec4145b4d727ddf91d3c967e.
+- Reviewers: Contract completed; Failure and retry completed; Scope and composition completed (fresh subagents). Round-1 resolutions held; none reopened except F6 below.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F25 | Major | contract, scope | Artifact blobs are written after a separate currency check, which D10 rejects; a newer start in between leaves audit blobs (reopens F6, D10, R7). | fixed: plan D10 and R7 clarified (artifact refs only through the fenced finish; unreferenced blobs possible); design review due for the change |
+| F26 | Major | contract | No test covers the lock in `attempts.start`; removing it re-opens the F1 race undetected (D10). | fixed: test_start_waits_for_the_task_lock (mutation-checked) |
+| F27 | Major | scope | A template-version refusal writes no row, so a newer Temporal attempt is invisible to the fence (D10, R6). | fixed: AttemptRepository.record_refusal called on refusal; test_refusal_fences_older_attempts |
+| F28 | Nit | failure | A stale attempt that starts late writes a row and truncates the shared session before the fence stops it (D10, D1). | fixed: start rejects a stale attempt before any write; test_late_stale_start_is_refused; Activity maps it to Superseded |
+| F29 | Nit | contract, scope | Fenced finish has no Activity-level or newer-turn test; the UPDATE's fence clause is unobserved (D10). | fixed: test_fenced_finish_rejects_a_newer_turn |
+| F30 | Nit | all three | Store has no commit step; conformance uses only `store.session`; contract uses one instance (D1, R3). | accepted: the Activity commits through the fence (D10); the DSH store and its multi-instance contract arrive in phase 02 task 2.1 |
+| F31 | Nit | failure | The fence does not require the writer's own row to be `started`; a closed newest attempt can still checkpoint (D10). | accepted: a closed newest attempt only adds rows to a completed task; Temporal drops its result |
+| F32 | Nit | scope | Unfenced `finish()`/`insert()` stay public; the fence is opt-in (D10). | accepted: production uses only fenced forms; phase 02 reviews DshRunner against D10 |
+| F33 | Nit | failure, scope | `hashtext` gives a 32-bit lock key in the shared advisory space (D10). | accepted: throughput only; no other advisory-lock users |
+| F34 | Nit | failure, scope | Event seq gaps after a failing sink; seq is per `AttemptEvents` instance (D8). | accepted: in-memory sinks never fail; roadmap Phase 2 owns transport semantics |
+| F35 | Nit | contract | `docs/roadmap/schemas.md` lacks `context_window` (D7). | fixed: docs/roadmap/schemas.md lists context_window |
+| F36 | Nit | failure | The `session_ref` stub fails retryably after the workspace upload (D1). | accepted: stub until phase 02 task 2.1 replaces it |
+| F37 | Nit | scope | Early exit checks the same turn only, unlike the fence (D10). | accepted: early exit only; the fence covers newer turns |

@@ -301,7 +301,7 @@ async def test_superseded_attempt_writes_nothing(engine: AsyncEngine, tmp_path: 
         "WHERE task_id = :t AND attempt = 1 AND outcome = 'started'",
         t=h.task_id,
     )
-    assert outcome == 1  # no outcome written by the superseded attempt
+    assert outcome == 0  # a stale attempt writes no row at all (review F28)
 
 
 async def test_finish_does_not_overwrite_a_lost_row(engine: AsyncEngine, tmp_path: Path) -> None:

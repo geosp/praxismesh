@@ -181,6 +181,8 @@ class HarnessActivities:
             # refusal count from this heartbeat (review F7).
             prior.refusals += 1
             activity.heartbeat(asdict(prior))
+            # Not a real attempt, but newer than the ones before it (D10, review F27).
+            await self.attempts.record_refusal(turn.task_id, turn.turn, info.attempt, self.identity)
             raise TemplateVersionUnavailable(
                 f"this worker runs {loaded.template.ref if loaded else 'no'} "
                 f"{turn.template}, not version {turn.template_version} of the task"
@@ -233,7 +235,10 @@ class HarnessActivities:
         workdir = self.scratch / turn.task_id / f"{turn.turn}-{attempt}-{uuid.uuid4().hex[:8]}"
         try:
             async with heartbeat.running():
-                await self.attempts.start(turn.task_id, turn.turn, attempt, self.identity)
+                try:
+                    await self.attempts.start(turn.task_id, turn.turn, attempt, self.identity)
+                except FenceRejected as e:  # started late: a newer attempt owns the turn
+                    raise Superseded(str(e)) from e
                 return await self._run(turn, attempt, real_attempt, heartbeat, workdir)
         except (BlobCorrupt, BlobNotFound) as e:
             raise HarnessInputError(f"checkpoint or input unreadable: {e}") from e
