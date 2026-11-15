@@ -255,5 +255,4 @@ supported.
 ## Decision log
 
 2026-11-15 · D3 adopted after design review round 2: paired DSH container per worker; ADR-0006 amends ADR-0005 condition 3.
-2026-11-15 · D7, D9 and D10 adopted after round 2: explicit unknown usage, conservative charge, transactional fence.
-2026-11-15 · Phase 01 gate: per-attempt cgroup, mount namespace and freeze need `SYS_ADMIN` in the DSH container, held by the launcher only; commands drop all capabilities and get a seccomp filter blocking user namespaces (notes.md#d3).
+2026-11-15 · D7, D9, D10 adopted after round 2 (unknown usage, conservative charge, fence). Phase 01 gate: per-attempt cgroup, mount namespace and freeze need `SYS_ADMIN` in the DSH container, held by the launcher only; commands drop all capabilities and get a seccomp filter blocking user namespaces (notes.md#d3).
