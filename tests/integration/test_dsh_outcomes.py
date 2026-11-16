@@ -385,6 +385,16 @@ async def test_cancel_stops_the_attempt_within_the_grace_and_stays_clean(
             )
             assert usage == [(None, None, False)]  # F59: unknown, never 0
             assert await container.stays_clean(10.0) == {}
+        # F98: the task result counts the cancelled request, charged, as unknown.
+        until = asyncio.get_running_loop().time() + 30
+        while not (stored := await query("SELECT result FROM tasks WHERE task_id = :t", t=task_id))[
+            0
+        ][0]:
+            assert asyncio.get_running_loop().time() < until
+            await asyncio.sleep(0.2)
+        result = TaskResult.model_validate(stored[0][0])
+        assert result.usage_known is False
+        assert (result.tokens_in, result.tokens_out) == (WINDOW, DSH_MAX_OUTPUT_TOKENS)
 
 
 async def test_forced_stop_is_recorded_as_a_non_retryable_failure(

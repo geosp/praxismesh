@@ -28,7 +28,7 @@ from common.persistence.repositories import (
     UsageLedgerRepository,
     make_engine,
 )
-from common.schemas import TaskStart, TurnInput
+from common.schemas import CompleteTaskInput, TaskStart, TurnInput
 from harness_activity.activity import HarnessActivities
 from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS
 from harness_activity.runner import AttemptContext, RunnerFailure, RunResult, Usage
@@ -316,3 +316,51 @@ async def test_rows_closed_without_a_finish_hold_the_ledger_usage(
         assert rows == [(1, 0, 0, True), turn_two]  # turn 1 is still open, untouched
     else:
         assert rows == [(1, 100, 10, True), turn_two]
+
+
+async def test_complete_task_charges_what_the_ledger_left_unobserved(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """R11-R13, D9 (review F98): the turn ended with no Activity code running (the
+    worker died with a request in flight, then schedule_to_close expired, or the
+    task was cancelled). The Workflow only had the last heartbeat; complete_task
+    takes the usage from the ledger: settled tokens plus the D9 charge, unknown."""
+    from orchestrator.activities import OrchestratorActivities
+
+    ledger = UsageLedgerRepository(engine)
+    runner = StubRunner(ledger, RunnerFailure("DshUsageUnknown", True), 0, 0)
+    acts, turn = await setup(engine, tmp_path, runner)
+    await AttemptRepository(engine).start(turn.task_id, 1, 1, "dead-worker")
+    await ledger.dispatch(turn.task_id, 1, 1, "req-0001", "main")
+    await ledger.settle(turn.task_id, 1, 1, "req-0001", 100, 10)
+    await ledger.dispatch(turn.task_id, 1, 1, "req-0002", "main")  # the worker died
+    orchestrator = OrchestratorActivities(acts.registry, TaskRepository(engine))
+    resolved = await ActivityEnvironment().run(
+        orchestrator.resolve_capabilities,
+        TaskStart(
+            task_id=turn.task_id,
+            request_id="req-1",
+            profile="dsh",
+            template="local-dsh",
+            instructions_ref=await acts.blobs.put(b"x", retention="task"),
+        ),
+    )
+    result = await ActivityEnvironment().run(
+        orchestrator.complete_task,
+        CompleteTaskInput(
+            task_id=turn.task_id,
+            status="failed",
+            failure_reason="harness turn 1 failed: CancelledError",
+            resolved=resolved,
+            turns=1,
+            attempts=1,
+            tokens_in=100,  # the last heartbeat saw the settled request only
+            tokens_out=10,
+            inner_turns=1,
+        ),
+    )
+    assert (result.tokens_in, result.tokens_out) == (100 + WINDOW, 10 + DSH_MAX_OUTPUT_TOKENS)
+    assert result.usage_known is False
+    assert await attempt_row(engine, turn.task_id, 1) == (
+        "failed", "task_completed", None, None, False
+    )  # fmt: skip

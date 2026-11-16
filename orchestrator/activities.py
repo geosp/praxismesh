@@ -7,7 +7,11 @@ import logging
 from temporalio import activity
 
 from common.observability import log_context
-from common.persistence.repositories import AttemptRepository, TaskRepository
+from common.persistence.repositories import (
+    AttemptRepository,
+    TaskRepository,
+    UsageLedgerRepository,
+)
 from common.schemas import (
     CompleteTaskInput,
     RecordTaskInput,
@@ -15,6 +19,8 @@ from common.schemas import (
     TaskResult,
     TaskStart,
 )
+from harness_activity.dsh.composition import DEFAULT_CONTEXT_WINDOW
+from harness_activity.dsh.ledger import unknown_charge
 from orchestrator.constants import template_queue
 from registry.loader import Registry
 
@@ -31,6 +37,27 @@ class OrchestratorActivities:
         self.registry = registry
         self.tasks = tasks
         self.attempts = AttemptRepository(tasks.engine)
+        self.ledger = UsageLedgerRepository(tasks.engine)
+
+    async def _with_ledger_usage(self, payload: CompleteTaskInput) -> CompleteTaskInput:
+        """Usage at least as the gateway ledger records it (R11). A turn can end
+        with no Activity code running (a dead worker, schedule_to_close, a cancel),
+        so the Workflow's totals may miss requests settled after the last heartbeat
+        and the D9 charge for those never observed (review F98)."""
+        settled_in, settled_out, unknown = await self.ledger.task_totals(payload.task_id)
+        if not (settled_in or settled_out or unknown):
+            return payload  # no ledger rows: openai_agents counts in the Activity
+        template = self.registry.templates[payload.resolved.template].template
+        charge_in, charge_out = unknown_charge(
+            unknown, template.context_window or DEFAULT_CONTEXT_WINDOW
+        )
+        return payload.model_copy(
+            update={
+                "tokens_in": max(payload.tokens_in, settled_in + charge_in),
+                "tokens_out": max(payload.tokens_out, settled_out + charge_out),
+                "usage_known": payload.usage_known and unknown == 0,
+            }
+        )
 
     @activity.defn(name="resolve_capabilities")
     async def resolve_capabilities(self, start: TaskStart) -> ResolvedTask:
@@ -71,6 +98,7 @@ class OrchestratorActivities:
     @activity.defn(name="complete_task")
     async def complete_task(self, payload: CompleteTaskInput) -> TaskResult:
         r = payload.resolved
+        payload = await self._with_ledger_usage(payload)
         result = TaskResult(
             task_id=payload.task_id,
             status=payload.status,
