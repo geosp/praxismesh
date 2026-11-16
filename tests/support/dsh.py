@@ -83,11 +83,15 @@ class MemoryLedgerStore:
 
     def __init__(self) -> None:
         self.rows: dict[tuple[str, int, int, str], tuple[int, int] | None] = {}
+        self.superseded = False  # a newer attempt exists: the fence refuses
 
     async def dispatch(
         self, task_id: str, turn: int, attempt: int, request_id: str, purpose: str
-    ) -> None:
+    ) -> bool:
+        if self.superseded:
+            return False
         self.rows[(task_id, turn, attempt, request_id)] = None
+        return True
 
     async def settle(
         self,

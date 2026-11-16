@@ -260,3 +260,23 @@ async def test_lost_attempt_with_settled_requests_records_them(
     assert await attempt_row(engine, turn.task_id, 1) == (
         "lost", "lost_or_timed_out", 200, 20, True
     )  # fmt: skip
+
+
+async def test_stale_attempt_cannot_dispatch(engine: AsyncEngine, tmp_path: Path) -> None:
+    """D10, R11 (review F61): once a newer attempt started, the stale attempt's
+    dispatch writes no ledger row, so nothing is spent outside the turn's totals."""
+    ledger = UsageLedgerRepository(engine)
+    runner = StubRunner(ledger, RunnerFailure("DshUsageUnknown", True), 0, 0)
+    _, turn = await setup(engine, tmp_path, runner)
+    attempts = AttemptRepository(engine)
+    await attempts.start(turn.task_id, 1, 1, "worker-a")
+    assert await ledger.dispatch(turn.task_id, 1, 1, "req-0001", "main") is True
+    await attempts.start(turn.task_id, 1, 2, "worker-b")
+    assert await ledger.dispatch(turn.task_id, 1, 1, "req-0002", "main") is False
+    assert await ledger.dispatch(turn.task_id, 1, 2, "req-0001", "main") is True
+    async with engine.connect() as conn:
+        found = await conn.execute(
+            text("SELECT attempt, request_id FROM usage_ledger WHERE task_id = :t ORDER BY 1, 2"),
+            {"t": turn.task_id},
+        )
+        assert [tuple(r) for r in found] == [(1, "req-0001"), (2, "req-0001")]

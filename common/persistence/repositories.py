@@ -448,15 +448,20 @@ class UsageLedgerRepository:
 
     async def dispatch(
         self, task_id: str, turn: int, attempt: int, request_id: str, purpose: str
-    ) -> None:
+    ) -> bool:
+        """Write the row before the request is sent, fenced like every attempt write:
+        a stale attempt dispatches nothing, so no spend escapes the totals a newer
+        attempt took from the ledger (D10, review F61)."""
         async with self.engine.begin() as conn:
-            await conn.execute(
+            await conn.execute(_TASK_LOCK, {"t": task_id})
+            done = await conn.execute(
                 text(
                     "INSERT INTO usage_ledger (task_id, turn, attempt, request_id, purpose) "
-                    "VALUES (:t, :turn, :a, :r, :p)"
+                    "SELECT :t, :turn, :a, :r, :p WHERE " + _NO_NEWER_ATTEMPT
                 ),
                 {"t": task_id, "turn": turn, "a": attempt, "r": request_id, "p": purpose},
             )
+            return done.rowcount == 1
 
     async def settle(
         self,

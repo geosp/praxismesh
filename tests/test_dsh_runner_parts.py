@@ -198,6 +198,16 @@ async def test_superseded_in_the_barrier_aborts_the_attempt() -> None:
     assert rig.gateway.error_type == "Superseded" and rig.gateway.abort.is_set()
 
 
+async def test_stale_attempt_dispatches_nothing() -> None:
+    """D10, R11 (review F61): the ledger's fenced dispatch refuses a stale attempt,
+    even on its first request, which runs no barrier; the attempt is aborted."""
+    rig = Rig()
+    rig.store.superseded = True
+    assert (await rig.post(request()))[0] == 429
+    assert rig.sent == [] and rig.store.rows == {}
+    assert rig.gateway.error_type == "Superseded" and rig.gateway.abort.is_set()
+
+
 async def test_failed_barrier_denies_the_request_without_dispatch() -> None:
     rig = Rig()
     await rig.post(request())

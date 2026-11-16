@@ -33,7 +33,7 @@ import httpx
 
 from common.observability.metrics import TOOL_ERRORS
 from harness_activity.dsh.composition import TOOL_PREFIX
-from harness_activity.dsh.ledger import Dispatch, UsageLedger
+from harness_activity.dsh.ledger import SUPERSEDED, Dispatch, UsageLedger
 from harness_activity.events import AttemptEvents
 from harness_activity.runner import StopRun, Superseded, Usage
 
@@ -236,6 +236,10 @@ class Gateway:
         if deny is None and self.dispatched and self.barrier is not None:
             deny = await self._barrier(request)
         record = await self.ledger.admit("main", step, deny=deny)
+        if record.denial == SUPERSEDED:
+            # A newer attempt owns the turn: this attempt spends nothing more (F61).
+            self.error_type = "Superseded"
+            self.abort.set()
         if not record.dispatched:
             return error_reply(429, f"request not admitted: {record.denial}")
         self.dispatched += 1
