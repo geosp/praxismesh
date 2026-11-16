@@ -388,3 +388,8 @@ code_sha 86cfec8, docs_sha 7b06ce6; fresh verifier subagents run one at a time. 
 failed (four integration tests needed the developer's `VLLM_BASE_URL`); fixed in d170701 and
 re-verified. Report: docs/reviews/general-dsh-production-harness/verification-phase-02.md; demo:
 docs/demos/general-dsh-production-harness-02.md; raw reports under that review folder.
+
+## 2026-11-16 · done · phase 02
+
+Shared done gate passed; all eight tasks checked; design review passed (5 rounds), impl review
+passed (4 rounds), verification and demo passed (code 86cfec8, docs 7b06ce6).

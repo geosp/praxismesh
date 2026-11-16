@@ -229,7 +229,7 @@ A profile switch or its revert is an edit, `make registry-lock`, a worker image 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
 | 01 | [Harness seam and registry](phases/01-harness-seam.md) | done | 6/6 |
-| 02 | [DSH runner and worker pair](phases/02-dsh-runner.md) | in-progress | 8/8 |
+| 02 | [DSH runner and worker pair](phases/02-dsh-runner.md) | done | 8/8 |
 | 03 | [Acceptance and default switch](phases/03-acceptance.md) | approved | 0/5 |
 
 ## Decision log
