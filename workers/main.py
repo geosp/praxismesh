@@ -5,7 +5,12 @@
 
 Settings come from the environment (infra/.env, or Compose for containers):
 TEMPORAL_ADDRESS (default 127.0.0.1:TEMPORAL_PORT), the database, S3 and model
-settings, METRICS_PORT and PRAXIS_SCRATCH.
+settings, METRICS_PORT and PRAXIS_SCRATCH. A worker for a `dsh` template also
+needs DSH_CONTROL, the control socket of its paired DSH container's launcher.
+
+The runner comes from the template's `harness` (DSH migration plan D1): `dsh`
+templates run on `DshRunner`, after the launcher's runtime digests matched the
+registry lock (R17); `openai_agents` templates run on `OpenAIAgentsRunner`.
 """
 
 from __future__ import annotations
@@ -18,10 +23,12 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from opentelemetry.sdk.trace import TracerProvider
+from sqlalchemy.ext.asyncio import AsyncEngine
 from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Worker
 
+from common.blob_store import BlobStore
 from common.blob_store.s3 import S3BlobStore
 from common.errors import CapabilityError
 from common.observability import (
@@ -31,13 +38,29 @@ from common.observability import (
     tracing_interceptor,
 )
 from common.observability.metrics import serve_metrics
-from common.persistence.repositories import RecordingBlobStore, TaskRepository, make_engine
+from common.persistence.repositories import (
+    RecordingBlobStore,
+    TaskRepository,
+    UsageLedgerRepository,
+    make_engine,
+)
 from harness_activity.activity import HarnessActivities, worker_identity
+from harness_activity.dsh.launcher_client import LauncherError
+from harness_activity.dsh.pins import verify_launcher_report
+from harness_activity.dsh.runner import DshRunner
 from harness_activity.runner import OpenAIAgentsRunner
 from orchestrator.activities import OrchestratorActivities
 from orchestrator.constants import orchestration_queue, template_queue
 from orchestrator.workflow import TaskWorkflow
-from registry.loader import load_registry
+from registry.loader import (
+    REGISTRY_ROOT,
+    LoadedTemplate,
+    Registry,
+    load_registry,
+    read_runtime_pins,
+)
+
+DEFAULT_DSH_CONTROL = "/attempts/.control.sock"
 
 
 async def connect(service: str, provider: TracerProvider | None = None) -> Client:
@@ -49,6 +72,47 @@ async def connect(service: str, provider: TracerProvider | None = None) -> Clien
         namespace=os.environ.get("TEMPORAL_NAMESPACE", "default"),
         data_converter=pydantic_data_converter,
         interceptors=[tracing_interceptor(provider or configure_tracing(service))],
+    )
+
+
+async def build_harness(
+    registry: Registry,
+    loaded: LoadedTemplate,
+    engine: AsyncEngine,
+    blobs: BlobStore,
+    identity: str,
+    provider: TracerProvider | None = None,
+) -> HarnessActivities:
+    """The `run_harness_turn` Activities for a template, on the runner its
+    `harness` names. A `dsh` worker refuses to serve unless its launcher reports
+    the runtime the registry lock pins."""
+    harness = loaded.template.harness
+    if harness == "dsh":
+        control = Path(os.environ.get("DSH_CONTROL", DEFAULT_DSH_CONTROL))
+        pinned = read_runtime_pins(REGISTRY_ROOT).get("dsh")
+        if pinned is None:
+            raise CapabilityError("the registry lock pins no dsh runtime")
+        dsh = DshRunner(control, UsageLedgerRepository(engine), blobs)
+        try:
+            report = await dsh.digests()
+        except LauncherError as error:
+            raise CapabilityError(f"template {loaded.template.ref}: {error}") from error
+        verify_launcher_report(report, pinned)
+        # The attempt trees live on the volume shared with the DSH container.
+        return HarnessActivities(
+            registry, engine, blobs, dsh, control.parent, identity, open_attempt=dsh.open_attempt
+        )
+    if harness == "openai_agents":
+        return HarnessActivities(
+            registry,
+            engine,
+            blobs,
+            OpenAIAgentsRunner(provider.get_tracer("praxismesh.harness") if provider else None),
+            Path(os.environ.get("PRAXIS_SCRATCH", "/tmp/praxis-scratch")),
+            identity,
+        )
+    raise CapabilityError(
+        f"template {loaded.template.ref} uses harness {harness!r}, which has no runner"
     )
 
 
@@ -68,13 +132,6 @@ async def build_worker(
         )
     assert template is not None
     loaded = registry.templates[template]
-    if loaded.template.harness != "openai_agents":
-        # DSH migration plan phase 02 task 1.3 selects DshRunner here; until then a
-        # dsh template must not run on the OpenAI Agents runner.
-        raise CapabilityError(
-            f"template {loaded.template.ref} uses harness {loaded.template.harness!r}, "
-            "which this worker cannot run yet"
-        )
     if not os.environ.get(loaded.template.base_url_env):
         # Fail at startup rather than fail every task this worker would take.
         raise CapabilityError(
@@ -84,13 +141,8 @@ async def build_worker(
     s3 = S3BlobStore.from_env()
     await s3.ensure_bucket()
     identity = worker_identity(template)
-    harness = HarnessActivities(
-        registry,
-        engine,
-        RecordingBlobStore(s3, engine),
-        OpenAIAgentsRunner(provider.get_tracer("praxismesh.harness") if provider else None),
-        Path(os.environ.get("PRAXIS_SCRATCH", "/tmp/praxis-scratch")),
-        identity,
+    harness = await build_harness(
+        registry, loaded, engine, RecordingBlobStore(s3, engine), identity, provider
     )
     return Worker(
         client,

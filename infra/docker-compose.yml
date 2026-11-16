@@ -180,7 +180,8 @@ services:
   # DSH worker pair (DSH migration plan D3, ADR-0006). The DSH container has no
   # network and no credentials; its launcher alone holds SYS_ADMIN, to give each
   # attempt its own cgroup, command UID and mount view. Profile `dsh`: the worker
-  # serves tpl.local-dsh once the plan's phase 02 task 1.3 selects DshRunner.
+  # serves tpl.local-dsh on DshRunner once the launcher's runtime digests match
+  # the registry lock; until the launcher is up it exits and is restarted.
   dsh-a:
     profiles: [dsh]
     build: { context: ./dsh, dockerfile: Dockerfile }
