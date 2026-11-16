@@ -271,3 +271,29 @@ Branch `feat/62-dsh-runner` from 562733a72b880d13576ced63e8b8ad09716094df (stack
 | F93 | Nit | contract | Conformance `instructions_seen` now joins messages 0 and 1 for every runner, weakening the openai_agents check (task 2.3). | fixed: instructions_seen checks the system message for openai_agents and the first user message for dsh |
 | F94 | Nit | contract | Reap-at-start test checks trees only, not processes or cgroups (task 1.1). | fixed: test_restart_reaps_leftover_attempts kills a live attempt's processes and cgroup through a real launcher restart (mutation-checked) |
 | F95 | Nit | contract | Migration downgrade rewrites NULL tokens to 0 (D7). | accepted: rolling back below D7 is not supported (notes.md#d7) |
+
+## 2026-11-16 · impl-review · phase 02 · round 2 · changes-requested
+
+- Diff base: 562733a72b880d13576ced63e8b8ad09716094df; frozen review commit: e053d233cb39655e47ed0c22d1e37c1ed71fe14b.
+- Reviewers: Contract completed; Failure and retry completed; Scope and composition completed (fresh `impl-reviewer` subagents). The briefs first carried a wrong full SHA; each reviewer got the correction and reviewed the stated range. Raw reports: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-02-round-2-{contract,failure,scope}.md.
+- Round-1 findings closed as accepted stay closed (F70, F72, F74, F76, F80, F82, F85, F95 raised again). Reopened: F59 (as F98), F63 (as F102), F64 (as F96), F68/F69 (as F101), F71 (as F100).
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F96 | Blocker | contract | A step-limit stop removes the attempt tree, then the Activity commits an empty finish checkpoint as a valid `continue` (R5, D6; reopens F64). | open |
+| F97 | Blocker | contract | A declared output symlinked by a command makes the worker publish its own files (e.g. `/proc/self/environ`) as an artifact; `inside()` and `share()` also check then follow (D4, R15). | open |
+| F98 | Major | all three | A cancelled turn, or one ended by schedule_to_close or a dead worker, never gets the D9 charge or `usage_known = false` into the TaskResult; the Workflow reads a pre-charge heartbeat or none (R12, R13, D9; reopens F59). | open |
+| F99 | Major | scope, failure | A pin mismatch or unhealthy container refuses per attempt after `attempts.start`, so the worker keeps polling and each turn burns its five attempts (R17, R10). | open |
+| F100 | Major | scope, failure | A dirty stop inside `run()` (deadline, cancel, step limit), or a `LauncherError` from stop, never marks the runner unhealthy; an errored stop is classified clean (R10; reopens F71). | open |
+| F101 | Major | scope, failure | Rows closed by `close_unfinished` (failed, task_completed) keep their 0 tokens and `usage_known = true` (D7, R12; reopens F68, F69). | open |
+| F102 | Major | contract | Commands still share the container's `/run` and `/dev/shm` across attempts and tasks (R15, D4; reopens F63). | open |
+| F103 | Nit | scope | An `unresolved usage` denial starts no exit timer; a retrying runtime runs to the deadline (R8). | open |
+| F104 | Nit | scope | The charged-once test hands the next attempt the post-charge details, not the last heartbeat Temporal passes (D9 test scope). | open |
+| F105 | Nit | scope | Worker-side tool bodies run outside the frozen cgroup; an abandoned call could write during a capture (D6). | open |
+| F106 | Nit | contract | A stale attempt's `_charge` rewrites usage columns without the fence (R6). | open |
+| F107 | Nit | contract | The output cap does not bound `n > 1` (D9). | open |
+| F108 | Nit | contract | The R17 digest is self-reported by the launcher it vouches for (R17; inherent). | open |
+| F109 | Nit | contract | The CLI attempt listing omits `usage_known` (D7). | open |
+| F110 | Nit | failure | A dirty cleanup after a successful turn keeps the outcome, unlike the in-run path (R8, R10). | open |
+| F111 | Nit | failure | No timeout on `poll` or the in-run `stop`; a stalled launcher skips the stop margin (R8). | open |
+| F112 | Nit | failure | Every `CancelledError` (heartbeat failure, timeout) is recorded as `DshCancelled` (R8, R18). | open |
