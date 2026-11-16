@@ -287,11 +287,13 @@ class AttemptRepository:
         N1). Task-wide completion intentionally leaves it unset.
         """
         async with self.engine.begin() as conn:
-            # The rows close without a finish: give them the ledger's usage (F101).
+            # The rows close without a finish: give them the ledger's usage (F101),
+            # and so do rows a newer start or refusal marked lost, which no later
+            # attempt may have reached (F134).
             await conn.execute(
                 text(
                     _ledger_usage_sql(
-                        "a.outcome = 'started' "
+                        "a.outcome IN ('started', 'lost') "
                         "AND (CAST(:turn AS INTEGER) IS NULL OR a.turn = :turn) "
                         "AND (CAST(:through_attempt AS INTEGER) IS NULL "
                         "OR a.attempt <= :through_attempt)"

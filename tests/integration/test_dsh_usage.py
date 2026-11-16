@@ -364,3 +364,23 @@ async def test_complete_task_charges_what_the_ledger_left_unobserved(
     assert await attempt_row(engine, turn.task_id, 1) == (
         "failed", "task_completed", None, None, False
     )  # fmt: skip
+
+
+async def test_lost_rows_hold_the_ledger_usage_when_the_task_completes(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """D7, R12 (review F134): attempt 1 dies with a request in flight, attempt 2 is
+    refused (which marks attempt 1 lost), and no real attempt follows. When the task
+    completes, attempt 1's row reads unknown, not the 0 it was created with."""
+    ledger = UsageLedgerRepository(engine)
+    runner = StubRunner(ledger, RunnerFailure("DshUsageUnknown", True), 0, 0)
+    _, turn = await setup(engine, tmp_path, runner)
+    attempts = AttemptRepository(engine)
+    await attempts.start(turn.task_id, 1, 1, "dead-worker")
+    await ledger.dispatch(turn.task_id, 1, 1, "req-0001", "main")
+    await attempts.record_refusal(turn.task_id, 1, 2, "refusing-worker", "dsh_unserviceable")
+    assert (await attempt_row(engine, turn.task_id, 1))[0] == "lost"
+    await attempts.close_unfinished(turn.task_id, None, "task_completed")
+    assert await attempt_row(engine, turn.task_id, 1) == (
+        "lost", "lost_or_timed_out", None, None, False
+    )  # fmt: skip
