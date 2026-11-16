@@ -9,6 +9,7 @@ image's, and a runtime UID that differs from both.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import subprocess
@@ -19,15 +20,46 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import yaml
 
 from common.blob_store import MemoryBlobStore
 from harness_activity.dsh.runner import DshRunner
 from harness_activity.events import EventSink
+from registry.loader import REGISTRY_ROOT
+from registry.lock import update
 
 ROOT = Path(__file__).resolve().parents[2]
 # Never the test's own UID: as in Compose, the worker reaches the runtime's files
 # only through the shared group.
 RUNTIME_UID = 4241 if os.getuid() != 4241 else 4240
+
+
+# Every alive (non-zombie) process in the container that is not root's: the
+# launcher and `docker exec` are root, the DSH runtime and commands never are.
+ATTEMPT_PROCESSES = """
+import os
+for pid in filter(str.isdigit, os.listdir("/proc")):
+    try:
+        if os.stat(f"/proc/{pid}").st_uid:
+            state = open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()[0]
+            if state != "Z":
+                print(pid, open(f"/proc/{pid}/cmdline").read().replace(chr(0), " "))
+    except OSError:
+        pass
+"""
+
+
+def make_dsh_registry(target: Path, **settings: object) -> Path:
+    """A registry copy whose `local-dsh` template has other settings (a short
+    heartbeat or turn timeout, a lower inner-turn limit), with its own lock."""
+    shutil.copytree(REGISTRY_ROOT, target, ignore=shutil.ignore_patterns("*.py", "__pycache__"))
+    template = target / "templates" / "local-dsh.yaml"
+    template.write_text(
+        yaml.safe_dump({**yaml.safe_load(template.read_text()), **settings}, sort_keys=False)
+    )
+    (target / "registry.lock").unlink()
+    assert update(target, check=False) == []
+    return target
 
 
 def docker(*args: str, check: bool = True, timeout: float = 60) -> subprocess.CompletedProcess[str]:
@@ -95,6 +127,34 @@ class DshContainer:
             "find", "/sys/fs/cgroup/attempts", "-mindepth", "1", "-maxdepth", "1", "-type", "d"
         )
         return found.stdout.split()
+
+    def attempt_processes(self) -> list[str]:
+        """The DSH runtime and command processes alive in the container."""
+        found = self.exec("python", "-c", ATTEMPT_PROCESSES)
+        assert found.returncode == 0, found.stderr
+        return found.stdout.splitlines()
+
+    def attempt_trees(self) -> list[str]:
+        return sorted(p.name for p in self.attempts.iterdir() if p.name != ".control.sock")
+
+    def leftovers(self) -> dict[str, list[str]]:
+        """What attempts left behind: cgroups, processes and trees. Empty when clean."""
+        found = {
+            "cgroups": self.attempt_cgroups(),
+            "processes": self.attempt_processes(),
+            "trees": self.attempt_trees(),
+        }
+        return {kind: items for kind, items in found.items() if items}
+
+    async def stays_clean(self, seconds: float, interval: float = 0.5) -> dict[str, list[str]]:
+        """Watch for `seconds` (R8's observation window): the first leftovers seen,
+        or nothing."""
+        until = time.monotonic() + seconds
+        while time.monotonic() < until:
+            if found := await asyncio.to_thread(self.leftovers):
+                return found
+            await asyncio.sleep(interval)
+        return await asyncio.to_thread(self.leftovers)
 
     def stop(self) -> None:
         docker("rm", "-f", self.name, check=False)

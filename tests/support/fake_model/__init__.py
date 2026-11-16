@@ -12,6 +12,12 @@ may add "pause": true, which holds that response until `POST /control/release`.
 A pause is one-shot: once released, or once the same step is requested again,
 it is not applied again.
 
+A step may also add "fault", answered instead of the step: "overloaded" (429),
+"rejected" (400), "unavailable" (503), "malformed" (200 with a body that is not a
+completion) or "disconnect" (the connection closes with no response). A fault is
+one-shot too, so the retried request gets the step, unless the step adds
+"always": true.
+
     from tests.support.fake_model import FakeModel
     with FakeModel(script) as fake: base_url = fake.base_url
 
@@ -22,6 +28,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -29,6 +36,15 @@ from types import TracebackType
 from typing import Any
 
 Step = dict[str, Any]
+FAULT_STATUS = {"overloaded": 429, "rejected": 400, "unavailable": 503}
+
+
+class Fault(Exception):
+    """The scripted step answers with a failure instead of a completion."""
+
+    def __init__(self, kind: str) -> None:
+        super().__init__(kind)
+        self.kind = kind
 
 
 def tool_results(messages: list[dict[str, Any]]) -> int:
@@ -44,6 +60,7 @@ class FakeModelState:
         self.served: list[int] = []
         self.paused_step: int | None = None
         self.pauses_done: set[int] = set()
+        self.faults_done: set[int] = set()
         self.release = threading.Event()
         self.lock = threading.Lock()
 
@@ -59,10 +76,17 @@ class FakeModelState:
                 self.pauses_done.add(index)
                 self.paused_step = index
                 self.release.clear()
+            fault = step.get("fault")
+            if fault and (step.get("always") or index not in self.faults_done):
+                self.faults_done.add(index)
+            else:
+                fault = None
         if pause:
             self.release.wait(timeout=600)
             with self.lock:
                 self.paused_step = None
+        if fault:
+            raise Fault(fault)
         calls = step.get("tools") or ([step] if "tool" in step else [])
         if calls:
             message: dict[str, Any] = {
@@ -104,6 +128,20 @@ def _handler(state: FakeModelState) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(data)
 
+        def _fail(self, kind: str) -> None:
+            if kind == "disconnect":
+                self.close_connection = True
+                self.connection.shutdown(socket.SHUT_RDWR)
+            elif kind == "malformed":
+                data = b"data: not a completion\n\n"
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self._send({"error": {"message": f"scripted fault: {kind}"}}, FAULT_STATUS[kind])
+
         def do_GET(self) -> None:
             if self.path == "/v1/models":
                 self._send({"object": "list", "data": [{"id": "fake", "object": "model"}]})
@@ -125,7 +163,10 @@ def _handler(state: FakeModelState) -> type[BaseHTTPRequestHandler]:
             if self.path == "/v1/chat/completions":
                 # The caller may have gone away while the response was held.
                 with contextlib.suppress(BrokenPipeError, ConnectionResetError):
-                    self._send(state.reply(body))
+                    try:
+                        self._send(state.reply(body))
+                    except Fault as fault:
+                        self._fail(fault.kind)
             elif self.path == "/control/release":
                 state.release.set()
                 self._send({"released": True})
