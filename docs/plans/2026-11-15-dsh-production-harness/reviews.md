@@ -297,3 +297,29 @@ Branch `feat/62-dsh-runner` from 562733a72b880d13576ced63e8b8ad09716094df (stack
 | F110 | Nit | failure | A dirty cleanup after a successful turn keeps the outcome, unlike the in-run path (R8, R10). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
 | F111 | Nit | failure | No timeout on `poll` or the in-run `stop`; a stalled launcher skips the stop margin (R8). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
 | F112 | Nit | failure | Every `CancelledError` (heartbeat failure, timeout) is recorded as `DshCancelled` (R8, R18). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
+
+## 2026-11-16 · design-review · plan · round 4 · changes-requested
+
+Targeted follow-up (docs/reviews/README.md rule 6) on the decision changes from the phase 02 impl review (D4, D9, D11, decision log 2026-11-16), at 98835319f201867887a5555e3651a2aa8eadd1e4. Reviewers: Fresh reader completed; Codebase fit completed; Zoom out completed (fresh subagents; codebase fit and zoom out stopped once on a usage limit and were resumed). Raw reports: docs/reviews/general-dsh-production-harness/raw/design-review-round-4-{fresh-reader,codebase-fit,zoom-out}.md. Structure check: 0 errors, 0 warnings.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F113 | Major | fresh reader | The 2026-11-16 decision changes did not reach the requirements: R13 (charge at the failure when no later attempt runs), R15 (per-attempt `/tmp`, `/run`, `/dev/shm`), R17 (control files, re-check at every attempt); D3's `SYS_ADMIN` grant lives only in the log. | open |
+| F114 | Major | codebase fit | Phase 03 task 2.1 points `default` at DSH with no other profile allowing `local-default`, so `openai_agents` is no longer selectable (ADR-0005 condition 5) and CI checks that assume `default` = `local-default` break. | open |
+| F115 | Major | codebase fit, zoom out | Phase 03 task 1.1 omits the DSH container the benchmark needs and the hard-coded template, profile, harness label and output name in `tests/benchmarks/run.py`; its Verify cannot catch it. | open |
+| F116 | Major | codebase fit | ADR-0005 condition 1 also requires recording DSH's licence notices; no requirement or task does. | open |
+| F117 | Major | zoom out | The rollback drain bound is wrong (max wall time plus up to 6 x turn_timeout) and never says to keep the DSH pair up until no local-dsh task is open. | open |
+| F118 | Major | zoom out | Rollback is more than two field edits: registry lock, worker image rebuild, orchestrator restart. | open |
+| F119 | Major | zoom out | Code rollback is ambiguous (roll back code on the 0004 schema, or roll forward only?) and contradicts the migration docstring; in-flight workflow behaviour on a revert is unstated. | open |
+| F120 | Major | zoom out | Switching `default` to one DSH pair cuts its capacity to about a quarter; the number of DSH pairs needed before the switch is not stated. | open |
+| F121 | Major | fresh reader | Core terms undefined: task, turn, attempt and inner turn; settled and unsettled ledger rows. | open |
+| F122 | Major | fresh reader | The Summary omits the event sink (D8/R16) that serves its stated reason, and the rollback limits. | open |
+| F123 | Major | fresh reader, zoom out | Parts that don't connect: the transport between worker and DSH container, how worker death is detected (R10), why `session_position` 0 is safe (D1), whose row R12 means, and R18 vs D11 (exact match or recorded differences). | open |
+| F124 | Major | fresh reader | D6 (what the flush check does on failure) and D10 (refusal rows) can only be paraphrased at headline level; the substance is in notes.md. | open |
+| F125 | Nit | codebase fit, zoom out | Phase 03 task 1.1's `turn_timeout`/`max_wall_time_cap` edit is a no-op; the values already match. | open |
+| F126 | Nit | codebase fit | notes.md#d3 says `cgroupns: private`; the Compose key is `cgroup: private`. | open |
+| F127 | Nit | codebase fit | Phase 01 task 2.2 cites stale `registry/loader.py` line numbers. | open |
+| F128 | Nit | zoom out | Deferred F103, F106, F111 leave R8 and R6 short of their absolute wording, with no recorded deviation. | open |
+| F129 | Nit | zoom out | Barrier cost grows with turn length times session and workspace size; not under Risks. | open |
+| F130 | Nit | zoom out | A worker that refuses (exit 3) restarts in a loop; R17 and Rollout don't say how an operator notices. | open |
+| F131 | Nit | fresh reader | Readability: requirements holding two rules (R7, R8, R11, R12, R15, R16), repeated facts, a 60-word decision-log line, the commands sentence in the Summary, the SIGSTOP fallback, unmapped requirements in Why, the Phases table status. | open |
