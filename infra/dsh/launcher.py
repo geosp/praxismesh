@@ -248,8 +248,12 @@ class Attempt:
     def members(self) -> list[int]:
         return [int(p) for p in (self.cgroup / "cgroup.procs").read_text().split()]
 
-    def stop(self, grace: float) -> dict:
-        """SIGTERM the runtime; kill the whole cgroup when the grace runs out."""
+    def stop(self, grace: float, keep_tree: bool = False) -> dict:
+        """SIGTERM the runtime; kill the whole cgroup when the grace runs out.
+
+        With `keep_tree` the attempt's processes end but its cgroup and tree stay,
+        so the worker can still checkpoint the workspace; the attempt stays open
+        until a full stop or the connection's end (review F96)."""
         cooperative = True
         if self.runtime is not None and self.runtime.poll() is None:
             # A barrier may hold the attempt frozen, and a frozen runtime cannot run
@@ -260,7 +264,20 @@ class Attempt:
                 self.runtime.wait(timeout=grace)
             except subprocess.TimeoutExpired:
                 cooperative = False
+        if keep_tree:
+            return {"cooperative": cooperative, **kill_members(self.id), "tree_removed": False}
         return {"cooperative": cooperative, **destroy(self.id)}
+
+
+def kill_members(attempt: str) -> dict:
+    """Kill every process of the attempt's cgroup and wait until it is empty."""
+    cg = _cgroup_of(attempt)
+    (cg / "cgroup.freeze").write_text("0")
+    (cg / "cgroup.kill").write_text("1")
+    until = time.monotonic() + 5
+    while (cg / "cgroup.procs").read_text().strip() and time.monotonic() < until:
+        time.sleep(0.01)
+    return {"processes_left": len((cg / "cgroup.procs").read_text().split())}
 
 
 def destroy(attempt: str) -> dict:
@@ -378,8 +395,10 @@ def serve_connection(conn: socket.socket) -> None:
                     code = attempt.runtime.poll() if attempt.runtime else None
                     reply = {"running": code is None and attempt.runtime is not None, "exit": code}
                 elif op == "stop":
-                    reply = attempt.stop(float(request.get("grace", 5)))
-                    attempt = None
+                    keep = bool(request.get("keep_tree", False))
+                    reply = attempt.stop(float(request.get("grace", 5)), keep_tree=keep)
+                    if not keep:
+                        attempt = None
                 else:
                     raise ValueError(f"unknown op {op!r}")
             except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:

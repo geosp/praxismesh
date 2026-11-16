@@ -15,6 +15,7 @@ import tarfile
 import time
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -42,8 +43,14 @@ from harness_activity.dsh.pins import RuntimePinMismatch
 from harness_activity.dsh.runner import DshRunner, LauncherUnhealthy
 from harness_activity.events import MemorySink
 from harness_activity.runner import AttemptContext, RunnerFailure, Superseded, Usage
-from registry.loader import load_registry
-from tests.support.dsh import DshContainer, MemoryLedgerStore, build_image, start_container
+from registry.loader import Registry, load_registry
+from tests.support.dsh import (
+    DshContainer,
+    MemoryLedgerStore,
+    build_image,
+    make_dsh_registry,
+    start_container,
+)
 from tests.support.fake_model import FakeModel
 from tests.support.stack import run_id
 
@@ -79,6 +86,7 @@ class Harness:
     sink: MemorySink
     task_id: str
     heartbeats: list[dict[str, Any]]
+    registry: Registry = dataclasses.field(default_factory=load_registry)
 
     def env(self, attempt: int, details: dict[str, Any] | None) -> ActivityEnvironment:
         env = ActivityEnvironment()
@@ -99,14 +107,17 @@ class Harness:
             turn=1,
             template="local-dsh",
             template_version=1,
-            template_hash=load_registry().templates["local-dsh"].hash,
+            template_hash=self.registry.templates["local-dsh"].hash,
             remaining_tokens=1_000_000,
             remaining_wall_time=timedelta(minutes=10),
             request_id="req-dsh-activity",
         )
 
 
-async def harness(engine: AsyncEngine, container: DshContainer) -> Harness:
+async def harness(
+    engine: AsyncEngine, container: DshContainer, registry: Registry | None = None
+) -> Harness:
+    registry = registry or load_registry()
     blobs, sink = MemoryBlobStore(), MemorySink()
     task_id = f"task-dsh-{run_id()}"
     instructions = await blobs.put(INSTRUCTIONS.encode(), retention="task")
@@ -125,7 +136,7 @@ async def harness(engine: AsyncEngine, container: DshContainer) -> Harness:
     )
     runner = DshRunner(container.control, UsageLedgerRepository(engine), blobs, sink)
     acts = HarnessActivities(
-        load_registry(),
+        registry,
         engine,
         blobs,
         runner,
@@ -133,7 +144,7 @@ async def harness(engine: AsyncEngine, container: DshContainer) -> Harness:
         "test-dsh-worker",
         open_attempt=runner.open_attempt,
     )
-    return Harness(acts, blobs, sink, task_id, [])
+    return Harness(acts, blobs, sink, task_id, [], registry)
 
 
 async def rows(engine: AsyncEngine, sql: str, **params: Any) -> list[Any]:
@@ -568,6 +579,50 @@ async def test_failed_cleanup_after_success_stops_new_attempts(
     with pytest.raises(LauncherUnhealthy):
         await runner.open_attempt(AttemptContext(task, 1, 2, "wf", 1_000, time.monotonic() + 60))
     assert container.attempt_cgroups() == []
+
+
+async def test_symlinked_output_is_not_published(
+    engine: AsyncEngine, container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D4, R15 (review F97): a command links the declared output to the worker's
+    environment. The worker never follows a link out of the workspace, so the task
+    publishes no artifact and none of the worker's environment."""
+    h = await harness(engine, container)
+    link = "sh -c 'ln -s /proc/self/environ order-summary.md && ln -s / root-link && echo linked'"
+    script = [
+        {"tool": "run_command", "args": {"command": link}},
+        {"tool": "read_file", "args": {"path": "root-link/proc/self/environ"}},
+        {"tool": "write_file", "args": {"path": "root-link/tmp/praxis-f97", "content": "x"}},
+        SCRIPT[2],
+    ]
+    with FakeModel(script) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        outcome: TurnOutcome = await h.env(1, None).run(h.acts.run_harness_turn, h.turn())
+        last = fake.state.requests[-1]
+    assert outcome.status == "done" and outcome.outputs == []
+    results = [str(m["content"]) for m in last["messages"] if m.get("role") == "tool"]
+    assert "linked" in results[0]
+    assert results[1].startswith("error") and results[2].startswith("error")
+    assert not Path("/tmp/praxis-f97").exists()
+
+
+async def test_step_limit_stop_keeps_the_workspace_for_the_checkpoint(
+    engine: AsyncEngine, container: DshContainer, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """R5, D6 (review F96): the runtime is stopped at the step limit. Its attempt
+    tree stays until the attempt closes, so the turn's final checkpoint holds the
+    workspace, not an empty archive."""
+    monkeypatch.setattr(dsh_runner, "DRIVER", ["python", "-c", STUBBORN_DRIVER])
+    registry = load_registry(make_dsh_registry(tmp_path / "registry", inner_max_turns=1))
+    h = await harness(engine, container, registry)
+    with FakeModel([SCRIPT[0], SCRIPT[0]]) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        outcome: TurnOutcome = await h.env(1, None).run(h.acts.run_harness_turn, h.turn())
+    assert (outcome.status, outcome.summary) == ("continue", "inner-turn limit reached")
+    latest = await CheckpointRepository(engine).latest(h.task_id)
+    assert latest is not None and latest.attempt == 1
+    assert "input.txt" in names(await h.blobs.get(latest.workspace_ref))
+    assert container.attempt_cgroups() == [] and not (container.attempts / h.task_id).exists()
 
 
 async def _no_op(usage: Usage) -> None:

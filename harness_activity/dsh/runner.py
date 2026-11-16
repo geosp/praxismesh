@@ -479,12 +479,18 @@ class DshRunner:
                     await asyncio.shield(server.close())
                     # A cooperative stop: SIGTERM, then at most the grace (R8). The
                     # launcher kills what is left; needing that is a failure (R9).
-                    grace = (
-                        CLEANUP_GRACE_SECONDS - LIMIT_EXIT_SECONDS
-                        if stop_reason == STEP_LIMIT_STOP
-                        else CLEANUP_GRACE_SECONDS
-                    )
-                    report = await asyncio.shield(attempt.stop(grace))
+                    if stop_reason == STEP_LIMIT_STOP:
+                        # The turn ends as a `continue` and checkpoints this
+                        # workspace: end the processes, keep the tree (F96).
+                        report = await asyncio.shield(
+                            attempt.launcher.request(
+                                "stop",
+                                grace=CLEANUP_GRACE_SECONDS - LIMIT_EXIT_SECONDS,
+                                keep_tree=True,
+                            )
+                        )
+                    else:
+                        report = await asyncio.shield(attempt.stop(CLEANUP_GRACE_SECONDS))
                 else:
                     if result_file.exists():
                         candidate = json.loads(result_file.read_text())
@@ -509,8 +515,13 @@ class DshRunner:
         limit_stop = stop_reason == STEP_LIMIT_STOP
         failure = classify(
             started=started,
+            # After a step-limit stop the tree stays for the checkpoint and goes
+            # when the attempt closes; only its processes must be gone (F96).
             cleanup_ok=report is None
-            or (report.get("processes_left") == 0 and bool(report.get("tree_removed"))),
+            or (
+                report.get("processes_left") == 0
+                and (limit_stop or bool(report.get("tree_removed")))
+            ),
             cooperative_stop=None if report is None else bool(report.get("cooperative")),
             unknown_usage=ledger.settled()["unknown_usage"],
             fault=gateway.fault if gateway is not None else None,
