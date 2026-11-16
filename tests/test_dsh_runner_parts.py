@@ -27,7 +27,7 @@ from harness_activity.dsh.composition import TOOL_PREFIX
 from harness_activity.dsh.executor import Executor
 from harness_activity.dsh.gateway import Gateway, SocketServer, as_stream, to_model
 from harness_activity.dsh.launcher_client import LauncherClient, LauncherError
-from harness_activity.dsh.ledger import UsageLedger
+from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, UsageLedger
 from harness_activity.dsh.runner import share
 from harness_activity.dsh.session import DshSessionStore
 from harness_activity.events import AttemptEvents, MemorySink
@@ -262,6 +262,18 @@ async def test_ungranted_tool_call_is_logged_and_left_unprefixed() -> None:
         "delete_database"
     )
     assert rig.refused == ["delete_database"]
+
+
+@pytest.mark.parametrize("asked", [None, 100, 2048, 9000])
+def test_output_is_capped_at_the_charge_assumption(asked: int | None) -> None:
+    """D9 (review F73): every request the endpoint gets is bounded by the output cap
+    the conservative charge assumes, whatever DSH asked for."""
+    body: dict[str, Any] = {"model": "spark", "messages": []}
+    if asked is not None:
+        body["max_tokens"] = asked
+    sent = to_model(body)
+    assert sent["max_tokens"] == min(asked or DSH_MAX_OUTPUT_TOKENS, DSH_MAX_OUTPUT_TOKENS)
+    assert "max_completion_tokens" not in sent
 
 
 def test_request_and_response_translation() -> None:

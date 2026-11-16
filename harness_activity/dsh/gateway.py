@@ -34,7 +34,7 @@ import httpx
 
 from common.observability.metrics import TOOL_ERRORS
 from harness_activity.dsh.composition import TOOL_PREFIX
-from harness_activity.dsh.ledger import SUPERSEDED, Dispatch, UsageLedger
+from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, SUPERSEDED, Dispatch, UsageLedger
 from harness_activity.dsh.policy import STEP_DENIALS
 from harness_activity.events import AttemptEvents
 from harness_activity.runner import StopRun, Superseded, Usage
@@ -123,10 +123,15 @@ class SocketServer:
 
 
 def to_model(request: dict[str, Any]) -> dict[str, Any]:
-    """The request the endpoint gets: bare tool names, one complete response."""
+    """The request the endpoint gets: bare tool names, one complete response, and
+    at most the output the D9 charge assumes."""
     out = copy.deepcopy(request)
     out["stream"] = False
     out.pop("stream_options", None)
+    # The conservative charge for an unobserved request assumes this cap (D9, F73).
+    asked = out.pop("max_completion_tokens", None) or out.get("max_tokens")
+    capped = asked if isinstance(asked, int) and 0 < asked else DSH_MAX_OUTPUT_TOKENS
+    out["max_tokens"] = min(capped, DSH_MAX_OUTPUT_TOKENS)
 
     def strip(function: Any) -> None:
         if isinstance(function, dict) and str(function.get("name", "")).startswith(TOOL_PREFIX):

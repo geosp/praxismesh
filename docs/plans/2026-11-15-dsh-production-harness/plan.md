@@ -2,8 +2,8 @@
 title: Run production agents on DSH
 status: in-progress
 created: 2026-11-15
-updated: 2026-11-15
-design_review: { status: passed, rounds: 3, last: 2026-11-15 }
+updated: 2026-11-16
+design_review: { status: changes-requested, rounds: 3, last: 2026-11-15 }
 approved: 2026-11-15
 adr_review: pending
 ---
@@ -170,9 +170,9 @@ per-attempt Pods (Kubernetes only); LXC/Incus (second runtime); DinD (privileged
 Details: notes.md#d3
 
 ### D4 · Production tool semantics through the executor
-Tool bodies split out of `FunctionTool` serve both runners; commands run in the
-attempt cgroup as a separate UID; the image installs only the granted `cli_tools`.
-Rejected: DSH native tools and skill loader (their bodies would be unobserved).
+Tool bodies split out of `FunctionTool` serve both runners; commands run in the attempt
+cgroup as a separate UID, confined as notes.md#d4 says. Rejected: DSH native tools and
+skill loader (their bodies would be unobserved).
 
 ### D5 · New template and profile, gated default
 Add `local-dsh` and a `dsh` profile in phase 01; switch `default` only after R19 and
@@ -196,15 +196,17 @@ implementations; roadmap Phase 2 replaces it with its transport. Rejected:
 deferring events (Phase 2 would refit DSH).
 
 ### D9 · Lost mid-generation: charge conservatively and retry
-Unsettled ledger rows from a lost attempt are charged `context_window + max_tokens`
-each, and the turn retries. This replaces the spike's fail-closed denial. Rejected:
-failing the turn (makes worker loss fatal); charging 0 (hides spend). Details: notes.md#d9
+Each unsettled ledger row is charged `context_window` plus the 2048-token output cap, and the turn retries. This replaces the spike's fail-closed denial.
+Rejected: failing the turn (makes worker loss fatal); charging 0 (hides spend). Details: notes.md#d9
 
 ### D10 · A transactional fence
 Start, checkpoint insert and finish each check, under a per-task lock in one transaction,
 that no newer (turn, attempt) exists. Artifact references leave the Activity only after the
 fenced finish; unreferenced blobs can remain. Rejected: a separate pre-check as the guarantee
 (races a new attempt). Details: notes.md#d10
+
+### D11 · Turn usage is cumulative over attempts
+Tokens and inner turns count every attempt of a turn, so R18 adds retried or lost attempts' steps to the spike's counts. Rejected: the last attempt only (hides spend).
 
 ## Assumptions
 
@@ -221,12 +223,8 @@ fenced finish; unreferenced blobs can remain. Rejected: a separate pre-check as 
 
 ## Rollout & rollback
 
-Order: additive migration, orchestrator, DSH image and worker pair, `dsh` profile;
-then, after R19 and owner approval, the `default` profile. No backfill. Rollback
-reverts the `default` profile's `harness` and `allowed_templates`. DSH tasks already
-running finish on DSH, because `openai_agents` cannot resume a DSH checkpoint; the
-drain is bounded by the profile's `max_wall_time`. Code rollback below D7 is not
-supported.
+Order: additive migration, orchestrator, DSH image and worker pair, `dsh` profile; then, after R19 and owner approval, the `default` profile. No backfill.
+Rollback reverts the `default` profile's `harness` and `allowed_templates`. DSH tasks already running finish on DSH, because `openai_agents` cannot resume a DSH checkpoint; the drain is bounded by the profile's `max_wall_time`. Code rollback below D7 is not supported.
 
 ## Open questions
 
@@ -256,3 +254,4 @@ supported.
 
 2026-11-15 · D3 adopted after design review round 2: paired DSH container per worker; ADR-0006 amends ADR-0005 condition 3.
 2026-11-15 · D7, D9, D10 adopted after round 2 (unknown usage, conservative charge, fence). Phase 01 gate: per-attempt cgroup, mount namespace and freeze need `SYS_ADMIN` in the DSH container, held by the launcher only; commands drop all capabilities and get a seccomp filter blocking user namespaces (notes.md#d3). D10, R7 clarified after phase 01 impl review round 2 (lock, refusal rows, artifact refs).
+2026-11-16 · Phase 02 impl review round 1: D9 wording matches the code (2048-token output cap, enforced by the gateway; charged at the failure when no later attempt runs); D11 added (usage and inner turns cumulative over attempts); D4 restated (command boundary is UID, capabilities, seccomp and mount view, including a per-attempt `/tmp`); the R17 runtime pin covers the container's control files and is re-checked at every attempt. A targeted design review is due.

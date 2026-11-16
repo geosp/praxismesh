@@ -60,6 +60,15 @@ Fallback if cgroup freeze is unavailable: SIGSTOP the attempt's process group. I
 limit: a process that leaves the group escapes the freeze, so commands must not be
 able to `setsid` (the separate UID and a seccomp profile enforce it).
 
+## D4
+
+Commands run as UID 4242 with every capability dropped, `no_new_privs`, the seccomp
+filter blocking new user namespaces, and a private mount view that shows only their
+own workspace (as `/work`) and a per-attempt `/tmp` (impl-review F63). The image adds
+no packages beyond the granted `cli_tools` to its pinned base; the base's userland
+stays, and the command check reads only the first word, so the boundary is the UID,
+capabilities, seccomp and mount view, not the binary list (F89).
+
 ## D6
 
 Trigger: every model request after the first one of an attempt.
@@ -97,7 +106,10 @@ The gateway writes a `usage_ledger` row before dispatch and settles it on the
 response. The next attempt of a turn finds unsettled rows from earlier attempts,
 sets `usage_known = false` on their attempt rows, and charges each unsettled
 request the template's `context_window` as input and the DSH composition's per-request
-output cap (2048 tokens, `DSH_MAX_OUTPUT_TOKENS`) as output. The count is derived from the
+output cap (2048 tokens, `DSH_MAX_OUTPUT_TOKENS`) as output. The gateway clamps every
+request's `max_tokens` to that cap, so the charge bounds what a request can have used.
+A turn that ends with no later attempt (cancel, a non-retryable failure, attempts
+exhausted) charges its own unsettled rows (impl-review F59). The count is derived from the
 ledger rows each time, so a later attempt charges the same amount even if the attempt
 that first closed them was lost. This replaces the spike's fail-closed admission denial.
 
