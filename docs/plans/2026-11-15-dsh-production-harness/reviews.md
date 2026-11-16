@@ -381,3 +381,10 @@ Targeted follow-up (docs/reviews/README.md rule 6) on 98835319..e51495c2bce9de2c
 | F163 | Nit | codebase fit | Phase 03 task 1.1's Verify is weak (a one-task run fails the regression rule and writes into `docs/benchmarks/`; result files always differ). | fixed: task 1.1 Verify is a smoke run outside docs/benchmarks/, not judged against the baseline, checking names and label |
 | F164 | Nit | codebase fit | The Phases table shows phase 03 at 0/4; it has 5 tasks. | fixed: Phases table shows 0/5 |
 | F165 | Nit | codebase fit | R13's scenario covers only the retried case; R20 does not say the notices check runs in CI. | fixed: R13 adds the completion-time scenario; R20 and task 1.3 run the check in CI |
+
+## 2026-11-16 · verification · phase 02 · pass
+
+code_sha 86cfec8, docs_sha 7b06ce6; fresh verifier subagents run one at a time. First pass at 62ffc76
+failed (four integration tests needed the developer's `VLLM_BASE_URL`); fixed in d170701 and
+re-verified. Report: docs/reviews/general-dsh-production-harness/verification-phase-02.md; demo:
+docs/demos/general-dsh-production-harness-02.md; raw reports under that review folder.
