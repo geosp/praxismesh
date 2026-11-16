@@ -280,3 +280,39 @@ async def test_stale_attempt_cannot_dispatch(engine: AsyncEngine, tmp_path: Path
             {"t": turn.task_id},
         )
         assert [tuple(r) for r in found] == [(1, "req-0001"), (2, "req-0001")]
+
+
+@pytest.mark.parametrize("closer", ["failed for good", "task completed"])
+async def test_rows_closed_without_a_finish_hold_the_ledger_usage(
+    closer: str, engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """D7, R12 (review F101): a row closed without a finish (the turn failed for
+    good, or the task completed) holds the ledger's usage through it, or NULL when
+    a request up to it was never observed; never the 0 it was created with."""
+    ledger = UsageLedgerRepository(engine)
+    runner = StubRunner(ledger, RunnerFailure("DshUsageUnknown", True), 0, 0)
+    _, turn = await setup(engine, tmp_path, runner)
+    attempts = AttemptRepository(engine)
+    await attempts.start(turn.task_id, 1, 1, "worker-a")
+    await ledger.dispatch(turn.task_id, 1, 1, "req-0001", "main")
+    await ledger.settle(turn.task_id, 1, 1, "req-0001", 100, 10)
+    await attempts.start(turn.task_id, 2, 1, "worker-a")  # a second turn, unobserved
+    await ledger.dispatch(turn.task_id, 2, 1, "req-0001", "main")
+    if closer == "failed for good":
+        await attempts.close_unfinished(turn.task_id, 2, "HarnessInputError", through_attempt=1)
+    else:
+        await attempts.close_unfinished(turn.task_id, None, "task_completed")
+    async with engine.connect() as conn:
+        found = await conn.execute(
+            text(
+                "SELECT turn, tokens_in, tokens_out, usage_known FROM task_attempts "
+                "WHERE task_id = :t ORDER BY turn"
+            ),
+            {"t": turn.task_id},
+        )
+        rows = [tuple(r) for r in found]
+    turn_two = (2, None, None, False)  # its request was never observed
+    if closer == "failed for good":
+        assert rows == [(1, 0, 0, True), turn_two]  # turn 1 is still open, untouched
+    else:
+        assert rows == [(1, 100, 10, True), turn_two]

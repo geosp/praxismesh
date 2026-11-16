@@ -91,10 +91,12 @@ The migration is additive:
 - `checkpoints.session_ref jsonb null, session_digest text null`; `session_position` stays an integer (0 for DSH).
 
 `usage_known` is added to `Progress`, `TurnOutcome`, `ExecutionAttempt` and
-`TaskResult`. An attempt row holds the turn's cumulative usage through that attempt:
-NULL tokens when one of its own requests (or, for a lost attempt, one up to it) was
-never observed; numbers with `usage_known = false` when they include a D9 charge
-(impl-review F69). A turn that fails for good, is cancelled or runs out of attempts
+`TaskResult`. An attempt row holds the turn's cumulative usage through that attempt. A row
+the attempt finished itself has NULL tokens when one of its own requests was never
+observed, and numbers with `usage_known = false` when they include a D9 charge. A
+row closed without a finish (lost, failed for good, closed at task completion) gets
+the ledger's settled usage through it, or NULL when any request up to it was never
+observed (impl-review F69, F101). A turn that fails for good, is cancelled or runs out of attempts
 charges its own unsettled requests, since no later attempt will (F59).
 
 Deploy order: migration, orchestrator, then workers. Rolling code back

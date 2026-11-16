@@ -287,6 +287,18 @@ class AttemptRepository:
         N1). Task-wide completion intentionally leaves it unset.
         """
         async with self.engine.begin() as conn:
+            # The rows close without a finish: give them the ledger's usage (F101).
+            await conn.execute(
+                text(
+                    _ledger_usage_sql(
+                        "a.outcome = 'started' "
+                        "AND (CAST(:turn AS INTEGER) IS NULL OR a.turn = :turn) "
+                        "AND (CAST(:through_attempt AS INTEGER) IS NULL "
+                        "OR a.attempt <= :through_attempt)"
+                    )
+                ),
+                {"t": task_id, "turn": turn, "through_attempt": through_attempt},
+            )
             await conn.execute(
                 text(
                     "UPDATE task_attempts SET outcome = :o, failure_category = :c, "
@@ -327,6 +339,32 @@ class AttemptRepository:
                 {"t": task_id, "turn": turn, "a": attempt},
             )
             return found.first() is not None
+
+
+def _ledger_usage_sql(rows: str) -> str:
+    """Set the usage of the attempt rows `rows` selects (alias `a`, task `:t`) to
+    the ledger's usage of their turn through each attempt: the settled tokens, or
+    NULL with `usage_known` false when a request up to it was never observed. Rows
+    of turns with no ledger rows (openai_agents) and rows already unknown are left
+    alone (D7, review F68, F101)."""
+    through = (
+        "FROM usage_ledger l WHERE l.task_id = :t AND l.turn = a.turn AND l.attempt <= a.attempt"
+    )
+    return f"""
+        UPDATE task_attempts a SET
+            tokens_in = CASE WHEN s.unknown > 0 THEN NULL ELSE s.tokens_in END,
+            tokens_out = CASE WHEN s.unknown > 0 THEN NULL ELSE s.tokens_out END,
+            usage_known = s.unknown = 0
+        FROM (
+            SELECT a.turn, a.attempt,
+                (SELECT coalesce(sum(l.input_tokens), 0) {through}) AS tokens_in,
+                (SELECT coalesce(sum(l.output_tokens), 0) {through}) AS tokens_out,
+                (SELECT count(*) {through} AND l.input_tokens IS NULL) AS unknown
+            FROM task_attempts a WHERE a.task_id = :t AND {rows}
+                AND EXISTS (SELECT 1 {through})
+        ) s
+        WHERE a.task_id = :t AND a.turn = s.turn AND a.attempt = s.attempt AND a.usage_known
+    """
 
 
 class FenceRejected(RuntimeError):
@@ -529,33 +567,7 @@ class UsageLedgerRepository:
             # every attempt row: exact from the ledger, or unknown if any request up
             # to it was never observed; never the 0 it was created with (review F68).
             await conn.execute(
-                text(
-                    """
-                    UPDATE task_attempts a SET
-                        tokens_in = CASE WHEN s.unknown > 0 THEN NULL ELSE s.tokens_in END,
-                        tokens_out = CASE WHEN s.unknown > 0 THEN NULL ELSE s.tokens_out END,
-                        usage_known = s.unknown = 0
-                    FROM (
-                        SELECT x.attempt,
-                            (SELECT coalesce(sum(l.input_tokens), 0) FROM usage_ledger l
-                             WHERE l.task_id = :t AND l.turn = :turn
-                               AND l.attempt <= x.attempt) AS tokens_in,
-                            (SELECT coalesce(sum(l.output_tokens), 0) FROM usage_ledger l
-                             WHERE l.task_id = :t AND l.turn = :turn
-                               AND l.attempt <= x.attempt) AS tokens_out,
-                            (SELECT count(*) FROM usage_ledger l
-                             WHERE l.task_id = :t AND l.turn = :turn
-                               AND l.attempt <= x.attempt AND l.input_tokens IS NULL) AS unknown
-                        FROM task_attempts x
-                        WHERE x.task_id = :t AND x.turn = :turn AND x.attempt < :a
-                    ) s
-                    WHERE a.task_id = :t AND a.turn = :turn AND a.attempt = s.attempt
-                        AND a.outcome = 'lost'
-                        AND a.usage_known
-                        AND EXISTS (SELECT 1 FROM usage_ledger l WHERE l.task_id = :t
-                            AND l.turn = :turn AND l.attempt <= a.attempt)
-                    """
-                ),
+                text(_ledger_usage_sql("a.turn = :turn AND a.attempt < :a AND a.outcome = 'lost'")),
                 params,
             )
             settled = await conn.execute(
