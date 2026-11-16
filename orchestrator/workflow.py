@@ -125,6 +125,9 @@ class TaskWorkflow:
                     start_to_close_timeout=resolved.turn_timeout,
                     heartbeat_timeout=resolved.heartbeat_timeout,
                     schedule_to_close_timeout=resolved.turn_timeout * 6,
+                    # A cancelled turn records its attempt (cancelled, its unknown
+                    # usage) before the task completes and closes open rows (R18).
+                    cancellation_type=workflow.ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
                     retry_policy=RetryPolicy(
                         maximum_attempts=TURN_ATTEMPTS,
                         non_retryable_error_types=NON_RETRYABLE,
