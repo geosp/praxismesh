@@ -61,6 +61,9 @@ Use the `verifier` agent (defined in `.agents/agents/`, generated for each harne
 
 1. **Acceptance and demo** (brief below).
 2. **As-built claims** (brief below). It may reuse services the first brief left running; tell it whether they are up.
+3. **Follow-up, after fixes** (brief below): only when the code is unchanged and corrected documentation must be re-checked. It reads docs and code and runs read-only probes, with no test runs. When code changed, re-run the affected parts of brief 1 instead.
+
+**Checkpoints** (`docs/reviews/README.md` rule 8): each verifier writes its report to `<verification checkout>/.verify/report-<brief>.md`. In gate mode, copy that file unchanged into `docs/reviews/<…>/raw/` with a provenance header (`cp`, not re-typing), and commit it before starting the next verifier. A usage limit then costs only the verifier in flight; resume it rather than starting over.
 
 A verifier that errors or returns nothing has not verified. Retry it once; if it fails again, report that part as "not run". Not run is never "passed".
 
@@ -147,6 +150,9 @@ If something cannot run because a dependency is unavailable (GPU, model, test
 repository, credentials), mark it blocked with the reason. Never mark it
 passed and never replace it with a mock. "No findings" is a valid answer only
 when every item passed with quoted output.
+
+Write your full report to <verification checkout>/.verify/report-acceptance.md,
+and return only its path and your verdict line.
 ```
 
 ### As-built claims
@@ -176,4 +182,29 @@ if the file differs at <code_sha>).
 
 For each contradicted or unverifiable claim give a severity (Blocker / Major /
 Nit), the location in the document, the claim quoted, and the evidence.
+
+Write your full report to <verification checkout>/.verify/report-as-built.md,
+and return only its path and a one-line summary.
+```
+
+### Follow-up after fixes
+
+```text
+This is a narrow targeted follow-up (docs/reviews/README.md rule 6). The frozen
+code is checked out at <verification checkout> (commit <code_sha>). Work only in
+that directory; write only under <verification checkout>/.verify. Services are
+<running | stopped>. Do not run test suites and do not build images; use
+read-only probes only (status commands, queries, `docker compose config`,
+`docker inspect`).
+
+Read the documentation at revision <docs_sha> with
+`git -C <verification checkout> show <docs_sha>:<path>`. Check only these
+statements: <the corrected statements, quoted by their opening words>.
+
+For each, check it against the code (file:line) and, where it describes runtime
+behaviour, against a read-only probe. Classify each as confirmed (with
+evidence), contradicted (what you observed instead), or unverifiable (why),
+with a severity for each contradicted or unverifiable statement. Write your
+report to <verification checkout>/.verify/report-follow-up.md, keep it short,
+and return only its path and a one-line summary.
 ```

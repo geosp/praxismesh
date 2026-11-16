@@ -49,6 +49,8 @@ uv run .agents/sync_agents.py --check
 uv run .github/scripts/check_plans.py
 ```
 
+Before a phase's first review round, run the integration suite once from a clean worktree whose `infra/.env` comes from `infra/.env.example` (an informal `verify-phase`): it catches what only your own environment makes pass. During reviews, run the targeted tests for each fix and one full integration run per review commit.
+
 CI also runs gitleaks (config `.gitleaks.toml`), actionlint, an offline link check and, on PRs, dependency review; the gitleaks and link checks each run a canary. The `ci-ok` rule is `.github/scripts/ci_gate.py`. Python is pinned to the 3.11 floor (`.python-version`) and Node to `.node-version`.
 
 ## Agent tooling layout
