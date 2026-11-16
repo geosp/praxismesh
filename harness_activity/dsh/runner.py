@@ -97,16 +97,40 @@ RETRYABLE_AFTER_FAILED_THAW = frozenset(
 
 def share(root: Path, gid: int) -> None:
     """Give the attempt's group (worker, runtime and command UIDs) the owner's
-    access to what this worker owns under `root`. Read-only files stay read-only."""
-    for path in [root, *root.rglob("*")]:
+    access to what this worker owns under `root`. Read-only files stay read-only.
+
+    Commands can write the tree, so nothing here follows a link: the walk does not
+    enter linked directories, and each entry is changed through a descriptor opened
+    with O_NOFOLLOW relative to its parent (review F97)."""
+
+    def adjust(name: str, directory: int) -> None:
         with contextlib.suppress(OSError):
-            info = path.lstat()
-            if stat.S_ISLNK(info.st_mode) or info.st_uid != os.geteuid():
-                continue
-            if info.st_gid != gid:
-                os.chown(path, -1, gid)
-            mode = stat.S_IMODE(info.st_mode) | (info.st_mode & 0o700) >> 3
-            os.chmod(path, mode | stat.S_ISGID if path.is_dir() else mode)
+            info = os.lstat(name, dir_fd=directory)
+            if info.st_uid != os.geteuid() or not (
+                stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)
+            ):
+                return
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            try:
+                if info.st_gid != gid:
+                    os.fchown(fd, -1, gid)
+                mode = stat.S_IMODE(info.st_mode) | (info.st_mode & 0o700) >> 3
+                os.fchmod(fd, mode | stat.S_ISGID if stat.S_ISDIR(info.st_mode) else mode)
+            finally:
+                os.close(fd)
+
+    if root.is_symlink() or not root.exists():
+        return
+    parent = os.open(root.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        adjust(root.name, parent)
+    finally:
+        os.close(parent)
+    if not root.is_dir():
+        return
+    for _, dirs, files, directory in os.fwalk(root, follow_symlinks=False):
+        for name in [*dirs, *files]:
+            adjust(name, directory)
 
 
 class LauncherUnhealthy(Exception):

@@ -76,6 +76,7 @@ from harness_activity.runner import (
     Usage,
 )
 from harness_activity.session_store import SessionStore, SQLAlchemySessionStore
+from harness_activity.tools import WorkspaceError, read_regular
 from registry.loader import Registry
 
 log = logging.getLogger("praxis.harness")
@@ -522,10 +523,12 @@ class HarnessActivities:
                 raise Superseded(str(e)) from e
             row = await self.tasks.get(turn.task_id)
             for path in (row or {}).get("outputs") or []:
-                target = workdir / path
-                if target.is_file():
-                    ref = await self.blobs.put(target.read_bytes(), retention="audit")
-                    outputs.append(Artifact(path=path, ref=ref))
+                try:  # a regular file in the workspace, never through a link (F97)
+                    data = read_regular(workdir, path)
+                except (WorkspaceError, OSError):
+                    continue
+                ref = await self.blobs.put(data, retention="audit")
+                outputs.append(Artifact(path=path, ref=ref))
         progress = heartbeat.current()
         try:
             await self.attempts.finish(

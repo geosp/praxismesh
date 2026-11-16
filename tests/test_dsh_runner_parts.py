@@ -455,6 +455,44 @@ async def test_session_store_round_trips_the_session_blob(tmp_path: Path) -> Non
     assert list((tmp_path / "b").iterdir()) == []
 
 
+def test_share_never_follows_a_link_out_of_the_tree(tmp_path: Path) -> None:
+    """Review F97: a command may plant links in the tree; share changes only what
+    is inside it."""
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o700)
+    (outside / "secret").write_text("x")
+    (outside / "secret").chmod(0o600)
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "file-link").symlink_to(outside / "secret")
+    (tree / "dir-link").symlink_to(outside, target_is_directory=True)
+    share(tree, os.getgid())
+    assert stat.S_IMODE((outside / "secret").stat().st_mode) == 0o600
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o700
+
+
+def test_file_bodies_never_follow_a_link(tmp_path: Path) -> None:
+    """Review F97: reads and writes refuse any link component, even inside."""
+    from harness_activity import tools
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret").write_text("TOP")
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "dir-link").symlink_to(outside, target_is_directory=True)
+    (ws / "file-link").symlink_to(outside / "secret")
+    assert tools.read_file_body(ws, "dir-link/secret").startswith("error")
+    assert tools.read_file_body(ws, "file-link").startswith("error")
+    assert tools.write_file_body(ws, "dir-link/new", "x").startswith("error")
+    assert tools.write_file_body(ws, "file-link", "x").startswith("error")
+    assert (outside / "secret").read_text() == "TOP" and not (outside / "new").exists()
+    assert tools.write_file_body(ws, "a/b/c.txt", "ok").startswith("wrote")
+    assert tools.read_file_body(ws, "a/b/c.txt") == "ok"
+    with pytest.raises(tools.WorkspaceError):
+        tools.read_regular(ws, "dir-link/secret")
+
+
 def test_share_gives_the_group_the_owners_access(tmp_path: Path) -> None:
     (tmp_path / "dir").mkdir(mode=0o755)
     (tmp_path / "dir/file").write_text("x")
