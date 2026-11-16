@@ -243,6 +243,9 @@ class Attempt:
         """SIGTERM the runtime; kill the whole cgroup when the grace runs out."""
         cooperative = True
         if self.runtime is not None and self.runtime.poll() is None:
+            # A barrier may hold the attempt frozen, and a frozen runtime cannot run
+            # its SIGTERM handler: thaw first, so the grace is the runtime's (F60).
+            self.freeze(False)
             self.runtime.terminate()
             try:
                 self.runtime.wait(timeout=grace)

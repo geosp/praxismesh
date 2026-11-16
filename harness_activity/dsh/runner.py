@@ -81,6 +81,11 @@ POLL_SECONDS = 0.05
 DEFAULT_TURN_SECONDS = 600.0
 UNBOUNDED_TOKENS = 2**40
 DIRS = ("workspace", "home", "ipc", "config", "tmp")
+# What a run stopped because a barrier could not thaw it ends as: the runtime was
+# frozen, so neither its exit nor its usage says anything about it (D6).
+RETRYABLE_AFTER_FAILED_THAW = frozenset(
+    {"DshRuntimeFailure", "DshForcedStop", "DshCheckpointFailure", "DshUsageUnknown"}
+)
 
 
 def share(root: Path, gid: int) -> None:
@@ -326,6 +331,7 @@ class DshRunner:
         started = False
         error_type: str | None = None
         cancelled = False
+        stuck_frozen = False
         try:
             async with AsyncExitStack() as stack:
                 await executor.start(stack)
@@ -392,6 +398,10 @@ class DshRunner:
                 except asyncio.CancelledError:
                     stop_reason, cancelled = "cancelled", True
                 if stop_reason is not None:
+                    stuck_frozen = thaw_failed  # a thaw that failed before this stop
+                    # A barrier still capturing must not run on while the launcher
+                    # removes the tree: end it first (review F86).
+                    await asyncio.shield(server.close())
                     # A cooperative stop: SIGTERM, then at most the grace (R8). The
                     # launcher kills what is left; needing that is a failure (R9).
                     report = await asyncio.shield(attempt.stop())
@@ -428,6 +438,9 @@ class DshRunner:
         )
         if failure is None and stop_reason == "aborted":
             failure = ("DshRuntimeFailure", True)
+        if stuck_frozen and failure is not None and failure[0] in RETRYABLE_AFTER_FAILED_THAW:
+            # D6: a failed barrier is a retryable infrastructure failure (review F60).
+            failure = ("DshCheckpointFailure", True)
         if failure is not None:
             category, retryable = failure
             if category == "Superseded":

@@ -45,6 +45,14 @@ CLIENT = textwrap.dedent(
     open("/attempts/task-2/1/1/workspace/secret", "w").write("other attempt")
     open(f"{tree}/home/session.jsonl", "w").write("session")
     out["open"] = ask(f, op="open", attempt="task-1/1/1")
+    if sys.argv[1] == "frozen-stop":  # a stop while a barrier holds the freeze
+        handler = ("import signal,sys,time; "
+                   "signal.signal(signal.SIGTERM, lambda *a: sys.exit(0)); time.sleep(60)")
+        out["start"] = ask(f, op="start", argv=["python", "-c", handler])
+        import time; time.sleep(0.5)
+        out["freeze"] = ask(f, op="freeze")
+        out["stop"] = ask(f, op="stop", grace=2)
+        print(json.dumps(out)); sys.exit(0)
     out["start"] = ask(f, op="start", argv=["sh", "-c", "sleep 60 & sleep 60"])
     import time; time.sleep(0.5)
     out["members"] = ask(f, op="members")
@@ -140,6 +148,16 @@ def test_attempt_isolation_and_stop(launcher: str) -> None:
     assert "rc=0" not in out["cgroup_escape"]["stdout"]
     assert "rc=0" not in out["mount"]["stdout"]
     assert len(out["members_after"]["members"]) > 3  # the backgrounded sleep stayed in
+    assert out["stop"]["processes_left"] == 0 and out["stop"]["tree_removed"]
+    assert attempt_state(launcher) == ("", False)
+
+
+def test_stop_while_frozen_is_cooperative(launcher: str) -> None:
+    """R8, R9, D6 (review F60): a frozen runtime cannot run its SIGTERM handler, so
+    the launcher thaws it first; a runtime that exits on SIGTERM is a cooperative stop."""
+    out = client(launcher, "frozen-stop")
+    assert out["freeze"] == {"ok": True}
+    assert out["stop"]["cooperative"] is True
     assert out["stop"]["processes_left"] == 0 and out["stop"]["tree_removed"]
     assert attempt_state(launcher) == ("", False)
 

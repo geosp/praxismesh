@@ -32,6 +32,7 @@ from common.persistence.repositories import (
 from common.schemas import TaskStart, TurnInput, TurnOutcome
 from harness_activity.activity import HarnessActivities
 from harness_activity.config import build_config
+from harness_activity.dsh.launcher_client import LauncherClient
 from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS
 from harness_activity.dsh.runner import DshRunner
 from harness_activity.events import MemorySink
@@ -288,6 +289,74 @@ async def test_deadline_stops_a_running_command_within_the_grace(
         "for c in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < $c; echo; done | grep -c '[s]leep 50'",
     )
     assert left.stdout.strip() == "0"  # the command died with the attempt
+
+
+TOOL_THEN_DONE: list[dict[str, Any]] = [SCRIPT[0], SCRIPT[2]]
+
+
+async def run_one(
+    runner: DshRunner, seconds: float, before: Any, task: str
+) -> tuple[RunnerFailure, float]:
+    """One attempt with a deadline `seconds` from now; the failure and how long
+    after the deadline the run ended."""
+    registry = load_registry()
+    config = build_config(registry, registry.templates["local-dsh"], task)
+    deadline = time.monotonic() + seconds
+    scope = await runner.open_attempt(AttemptContext(task, 1, 1, "wf", 1_000_000, deadline))
+    try:
+        with pytest.raises(RunnerFailure) as failure:
+            await runner.run(config, scope.workspace, scope.store.session, "go", before, Usage())
+        return failure.value, time.monotonic() - deadline
+    finally:
+        await scope.close()
+
+
+async def test_deadline_during_the_barrier_is_a_retryable_deadline(
+    container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R8, R9, D6 (review F60): the deadline fires while the barrier holds the
+    attempt frozen and commits. The stop is cooperative, so it is a retryable
+    `DshTurnDeadline`, not a forced stop, and the commit in progress is abandoned."""
+    entered: list[float] = []
+    committed: list[float] = []
+
+    async def slow_commit(usage: Usage) -> None:
+        entered.append(time.monotonic())
+        await asyncio.sleep(60)
+        committed.append(time.monotonic())
+
+    with FakeModel(TOOL_THEN_DONE) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        failure, after = await run_one(
+            container.runner(), 12, slow_commit, f"task-barrier-deadline-{run_id()}"
+        )
+    assert entered and entered[0] < time.monotonic() - after  # the barrier was running
+    assert (failure.category, failure.retryable) == ("DshTurnDeadline", True)
+    assert after < 5 and committed == []
+    assert container.attempt_cgroups() == []
+
+
+async def test_failed_thaw_is_a_retryable_checkpoint_failure(
+    container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D6 (review F60): a barrier whose thaw fails leaves the attempt frozen. It is
+    stopped and classified as a retryable checkpoint failure, not a forced stop."""
+    original = LauncherClient.request
+
+    async def no_thaw(self: LauncherClient, op: str, **fields: Any) -> dict[str, Any]:
+        if op == "thaw":
+            return {"ok": False}
+        return await original(self, op, **fields)
+
+    monkeypatch.setattr(LauncherClient, "request", no_thaw)
+    with FakeModel(TOOL_THEN_DONE) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        failure, after = await run_one(
+            container.runner(), 60, _no_op, f"task-barrier-thaw-{run_id()}"
+        )
+    assert (failure.category, failure.retryable) == ("DshCheckpointFailure", True)
+    assert after < 0  # stopped at once, not at the deadline
+    assert container.attempt_cgroups() == []
 
 
 async def _no_op(usage: Usage) -> None:
