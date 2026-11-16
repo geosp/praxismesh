@@ -88,8 +88,10 @@ below this migration is not supported.
 The gateway writes a `usage_ledger` row before dispatch and settles it on the
 response. The next attempt of a turn finds unsettled rows from earlier attempts,
 sets `usage_known = false` on their attempt rows, and charges each unsettled
-request `context_window + max_tokens` (both from the template). This replaces
-the spike's fail-closed admission denial.
+request the template's `context_window` as input and the DSH composition's per-request
+output cap (2048 tokens, `DSH_MAX_OUTPUT_TOKENS`) as output. The count is derived from the
+ledger rows each time, so a later attempt charges the same amount even if the attempt
+that first closed them was lost. This replaces the spike's fail-closed admission denial.
 
 ## R14
 

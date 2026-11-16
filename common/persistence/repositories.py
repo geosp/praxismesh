@@ -439,6 +439,84 @@ class CheckpointRepository:
         )
 
 
+class UsageLedgerRepository:
+    """Durable model-request rows (DSH migration plan D7, D9). Implements the
+    gateway ledger's `LedgerStore`."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self.engine = engine
+
+    async def dispatch(
+        self, task_id: str, turn: int, attempt: int, request_id: str, purpose: str
+    ) -> None:
+        async with self.engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO usage_ledger (task_id, turn, attempt, request_id, purpose) "
+                    "VALUES (:t, :turn, :a, :r, :p)"
+                ),
+                {"t": task_id, "turn": turn, "a": attempt, "r": request_id, "p": purpose},
+            )
+
+    async def settle(
+        self,
+        task_id: str,
+        turn: int,
+        attempt: int,
+        request_id: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> None:
+        async with self.engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE usage_ledger SET input_tokens = :i, output_tokens = :o, "
+                    "settled_at = CURRENT_TIMESTAMP WHERE task_id = :t AND turn = :turn "
+                    "AND attempt = :a AND request_id = :r AND settled_at IS NULL"
+                ),
+                {
+                    "t": task_id,
+                    "turn": turn,
+                    "a": attempt,
+                    "r": request_id,
+                    "i": input_tokens,
+                    "o": output_tokens,
+                },
+            )
+
+    async def close_unknown(self, task_id: str, turn: int, attempt: int) -> int:
+        """Close the requests earlier attempts of this turn dispatched but never
+        settled, mark those attempts' usage unknown (NULL tokens, never 0), and
+        return how many unknown requests the turn has so far.
+
+        The count is derived from the rows each time, so every later attempt charges
+        the same amount even if the attempt that first closed them was lost (D9)."""
+        params = {"t": task_id, "turn": turn, "a": attempt}
+        earlier = "task_id = :t AND turn = :turn AND attempt < :a"
+        async with self.engine.begin() as conn:
+            await conn.execute(_TASK_LOCK, {"t": task_id})
+            await conn.execute(
+                text(
+                    f"UPDATE usage_ledger SET settled_at = CURRENT_TIMESTAMP "
+                    f"WHERE {earlier} AND settled_at IS NULL"
+                ),
+                params,
+            )
+            await conn.execute(
+                text(
+                    f"UPDATE task_attempts SET usage_known = false, tokens_in = NULL, "
+                    f"tokens_out = NULL WHERE {earlier} AND attempt IN (SELECT attempt FROM "
+                    f"usage_ledger WHERE {earlier} AND input_tokens IS NULL)"
+                ),
+                params,
+            )
+            found = await conn.execute(
+                text(f"SELECT count(*) FROM usage_ledger WHERE {earlier} AND input_tokens IS NULL"),
+                params,
+            )
+            return int(found.scalar_one())
+
+
 class RecordingBlobStore:
     """A `BlobStore` that also records every stored blob in `blob_objects`, with the
     strongest retention class requested so far (RFC: retention from the first write)."""

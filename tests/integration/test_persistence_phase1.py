@@ -372,3 +372,35 @@ async def test_unknown_usage_is_stored_as_null_never_zero(engine: AsyncEngine) -
             )
         ).one()
     assert tuple(row) == (None, None, False)
+
+
+async def test_lost_requests_are_closed_and_counted_for_every_later_attempt(
+    engine: AsyncEngine,
+) -> None:
+    """D9, R12: unsettled requests of a lost attempt stay counted, and its row
+    reads unknown, not zero."""
+    from common.persistence.repositories import UsageLedgerRepository
+
+    start = task_start()
+    await record(engine, start)
+    attempts, ledger = AttemptRepository(engine), UsageLedgerRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    await ledger.dispatch(start.task_id, 1, 1, "req-0001", "main")
+    await ledger.settle(start.task_id, 1, 1, "req-0001", 7, 3)
+    await ledger.dispatch(start.task_id, 1, 1, "req-0002", "main")  # worker dies here
+    await attempts.start(start.task_id, 1, 2, "worker-b")
+    assert await ledger.close_unknown(start.task_id, 1, 2) == 1
+    await attempts.start(start.task_id, 1, 3, "worker-c")  # attempt 2 was lost too
+    assert await ledger.close_unknown(start.task_id, 1, 3) == 1  # same charge, not zero
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT tokens_in, tokens_out, usage_known FROM task_attempts "
+                    "WHERE task_id = :t AND attempt = 1"
+                ),
+                {"t": start.task_id},
+            )
+        ).one()
+    assert tuple(row) == (None, None, False)
+    assert await ledger.close_unknown(start.task_id, 2, 1) == 0  # a new turn starts clean
