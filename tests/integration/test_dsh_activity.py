@@ -24,7 +24,10 @@ from temporalio.testing import ActivityEnvironment
 
 from common.blob_store import MemoryBlobStore
 from common.persistence.repositories import (
+    AttemptRepository,
+    Checkpoint,
     CheckpointRepository,
+    FenceRejected,
     TaskRepository,
     UsageLedgerRepository,
     make_engine,
@@ -38,7 +41,7 @@ from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, UsageLedger
 from harness_activity.dsh.pins import RuntimePinMismatch
 from harness_activity.dsh.runner import DshRunner
 from harness_activity.events import MemorySink
-from harness_activity.runner import AttemptContext, RunnerFailure, Usage
+from harness_activity.runner import AttemptContext, RunnerFailure, Superseded, Usage
 from registry.loader import load_registry
 from tests.support.dsh import DshContainer, MemoryLedgerStore, build_image, start_container
 from tests.support.fake_model import FakeModel
@@ -257,6 +260,79 @@ async def test_dsh_resumes_and_charges_a_lost_request(
         (1, "cancelled", "DshCancelled", None, False),
         (2, "done", None, outcome.tokens_in, False),
     ]
+
+
+@pytest.mark.parametrize("stage", ["checkpoint", "publish", "finish"])
+async def test_stale_attempt_that_finished_is_fenced(
+    stage: str, engine: AsyncEngine, container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R6, R7, D10 (review F66): attempt 1 finishes its run, but attempt 2 starts
+    just before attempt 1 writes its finish checkpoint, publishes its artifacts, or
+    finishes its row. The fence refuses that write, the early exit is out of the
+    way, and attempt 1 returns no `TurnOutcome`."""
+    h = await harness(engine, container)
+    attempts = AttemptRepository(engine)
+    rejected: list[str] = []
+    insert, assert_current, finish = (
+        CheckpointRepository.insert_fenced,
+        AttemptRepository.assert_current,
+        AttemptRepository.finish,
+    )
+
+    async def newer_start() -> None:
+        await attempts.start(h.task_id, 1, 2, "newer-worker")
+
+    async def spy_insert(self: CheckpointRepository, cp: Checkpoint) -> None:
+        if cp.finish is not None and stage == "checkpoint":
+            await newer_start()
+        try:
+            await insert(self, cp)
+        except FenceRejected:
+            rejected.append("checkpoint")
+            raise
+        if cp.finish is not None and stage in ("publish", "finish"):
+            await newer_start()
+
+    async def spy_current(self: AttemptRepository, *args: Any) -> None:
+        if stage == "finish":
+            return None  # a newer attempt started between this check and the finish
+        try:
+            await assert_current(self, *args)
+        except FenceRejected:
+            rejected.append("publish")
+            raise
+
+    async def spy_finish(self: AttemptRepository, *args: Any, **kw: Any) -> None:
+        try:
+            await finish(self, *args, **kw)
+        except FenceRejected:
+            rejected.append("finish")
+            raise
+
+    async def never_newer(self: AttemptRepository, *args: Any) -> bool:
+        return False  # only the fence may stop the stale attempt
+
+    monkeypatch.setattr(CheckpointRepository, "insert_fenced", spy_insert)
+    monkeypatch.setattr(AttemptRepository, "assert_current", spy_current)
+    monkeypatch.setattr(AttemptRepository, "finish", spy_finish)
+    monkeypatch.setattr(AttemptRepository, "newer_attempt_exists", never_newer)
+    with FakeModel(SCRIPT) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        with pytest.raises(Superseded):
+            await h.env(1, None).run(h.acts.run_harness_turn, h.turn())
+    assert rejected == [stage]
+    finished = await rows(
+        engine,
+        "SELECT count(*) FROM checkpoints WHERE task_id = :t AND attempt = 1 "
+        "AND finish IS NOT NULL",
+        t=h.task_id,
+    )
+    assert finished[0][0] == (0 if stage == "checkpoint" else 1)
+    outcomes = await rows(
+        engine, "SELECT attempt, outcome FROM task_attempts WHERE task_id = :t ORDER BY 1",
+        t=h.task_id,
+    )  # fmt: skip
+    assert [tuple(r) for r in outcomes] == [(1, "lost"), (2, "started")]
 
 
 async def test_deadline_stops_a_running_command_within_the_grace(
