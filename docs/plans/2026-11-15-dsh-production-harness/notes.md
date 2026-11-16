@@ -25,7 +25,9 @@ expected behaviour for each ported case.
 | Docker-in-Docker | privileged container | privileged |
 
 Compose settings the pair needs: `cgroupns: private`, `cap_add: [SYS_ADMIN]` (for the
-launcher only), `no-new-privileges`, a tmpfs-backed attempt volume,
+launcher only), `no-new-privileges`, `apparmor:unconfined` (so AppArmor on Ubuntu hosts
+does not block the launcher's cgroupfs remount and private mount namespace; commands drop
+all capabilities and get the seccomp filter), a tmpfs-backed attempt volume,
 `network_mode: none` and a read-only root for the DSH container.
 
 ### Probe result (phase 01 task 0.1, 2026-11-15)
@@ -42,6 +44,10 @@ round 1 with tree-level checks:
 | Per-attempt mount namespace (`unshare -m`) | no | yes |
 | Command with all caps dropped: cannot escape cgroup, cannot mount, no effective caps | - | yes |
 | Command cannot create a user namespace | - | **no** |
+
+Phase 02 task 1.1 (2026-11-15): in the DSH image (`infra/dsh/Dockerfile`), with the
+launcher's seccomp filter applied to commands, all 13 probe checks pass, including
+`command_userns_blocked`.
 
 Docker rejects `--sysctl user.max_user_namespaces=0`. Conditions for phase 02:
 - the launcher alone holds `SYS_ADMIN`;
@@ -84,8 +90,10 @@ below this migration is not supported.
 The gateway writes a `usage_ledger` row before dispatch and settles it on the
 response. The next attempt of a turn finds unsettled rows from earlier attempts,
 sets `usage_known = false` on their attempt rows, and charges each unsettled
-request `context_window + max_tokens` (both from the template). This replaces
-the spike's fail-closed admission denial.
+request the template's `context_window` as input and the DSH composition's per-request
+output cap (2048 tokens, `DSH_MAX_OUTPUT_TOKENS`) as output. The count is derived from the
+ledger rows each time, so a later attempt charges the same amount even if the attempt
+that first closed them was lost. This replaces the spike's fail-closed admission denial.
 
 ## R14
 

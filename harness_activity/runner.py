@@ -34,6 +34,7 @@ from opentelemetry.trace import Span, Tracer
 from common.observability.metrics import TOOL_CALLS, TOOL_ERRORS
 from harness_activity import skills
 from harness_activity.config import HarnessConfig
+from harness_activity.session_store import SessionStore
 from harness_activity.tools import FINISH_TOOL, TurnState, build_tools
 
 log = logging.getLogger("praxis.harness")
@@ -66,6 +67,44 @@ class Superseded(Exception):
     The runner lets it propagate: a superseded attempt writes nothing more."""
 
 
+class RunnerFailure(Exception):
+    """An attempt that did not run to a valid end, already classified by its runner
+    (DSH migration plan D2). The Activity records the attempt as failed with
+    `category` and lets Temporal retry it when `retryable`. `cancelled` marks an
+    attempt stopped because the Activity was cancelled."""
+
+    def __init__(self, category: str, retryable: bool, *, cancelled: bool = False) -> None:
+        super().__init__(category)
+        self.category, self.retryable, self.cancelled = category, retryable, cancelled
+
+
+@dataclass(frozen=True)
+class AttemptContext:
+    """What a runner that keeps an attempt outside the worker process needs to know
+    about it (DSH migration plan D1, D3)."""
+
+    task_id: str
+    turn: int
+    attempt: int
+    workflow_id: str
+    remaining_tokens: int  # what this attempt may still spend
+    deadline: float  # time.monotonic() by which the run must have been stopped
+
+
+class AttemptScope(Protocol):
+    """One attempt's workspace and session store, when the runner provides them
+    instead of the worker's scratch directory. Closed after the attempt's last
+    write, whatever its outcome."""
+
+    @property
+    def workspace(self) -> Path: ...
+
+    @property
+    def store(self) -> SessionStore: ...
+
+    async def close(self) -> None: ...
+
+
 # Called at the start of every inner turn, before the model call (RFC: the
 # checkpoint hook point). It may raise `StopRun`.
 BeforeModelCall = Callable[[Usage], Awaitable[None]]
@@ -85,7 +124,7 @@ class HarnessRunner(Protocol):
         ...
 
 
-def _looks_failed(result: str) -> bool:
+def looks_failed(result: str) -> bool:
     """Tool errors the SDK or our tools return as text."""
     head = result.lstrip()[:80].lower()
     return head.startswith(("an error occurred", "error", "refused"))
@@ -145,10 +184,10 @@ class _Hooks(RunHooks[Any]):
         )
 
     async def on_tool_end(self, context: Any, agent: Any, tool: Tool, result: object) -> None:
-        failed = tool.name != FINISH_TOOL and _looks_failed(str(result))
+        failed = tool.name != FINISH_TOOL and looks_failed(str(result))
         if failed:
             self.state.failed_in_step.append(tool.name)
-        if failed or _looks_failed(str(result)):
+        if failed or looks_failed(str(result)):
             TOOL_ERRORS.labels(template=self.template, tool=tool.name).inc()
         span = self.tool_spans.pop(tool.name, None)
         if span is not None:

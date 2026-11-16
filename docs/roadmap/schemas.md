@@ -27,6 +27,13 @@ Define Pydantic schemas in `common/schemas.py` (or organized modules re-exported
 
 Create migrations (e.g., Alembic) for conversations/responses, plans/revisions, task executions/attempts, agent inbox/outbox, event index, budgets, blob metadata, GitHub deliveries, webhook inbox/outbox, repo schedules, approvals, versioned workflow templates/runs, stage execution/review evidence, repository provisioning, and audit. Migrations land with the phase that first needs them: baseline in Phase 0, checkpoint/attempt tables in Phase 1, inbox/event tables in Phase 2, the bulk in Phase 3A, delivery tables in Phase 5, and workflow-template/stage tables in Phase 6B. Use tenant/repository access checks and indexes for primary query patterns. External I/O occurs only through Activities/services. Do not use database records as hidden mutable Workflow replay state.
 
+As built for the DSH migration (migration 0004, plan D1, D7, D9): attempt token
+counts are nullable, with `usage_known` false when usage could not be observed
+(stored as NULL, never 0); `usage_ledger` records each model request before
+dispatch and its settled usage; checkpoints may carry a session blob
+(`session_ref`, `session_digest`). `TurnOutcome`, `TaskResult` and
+`ExecutionAttempt` carry `usage_known` (default true).
+
 ### `BlobStore` contract
 
 Provide a narrow async Python interface with `put`, `get/stream`, `delete`, `stat`, optional presigned/access-controlled URL operation, and typed error handling. The default adapter targets **SeaweedFS via S3-compatible API**. Ceph RGW uses the S3 adapter with configuration changes; GCS uses a dedicated adapter when enabled. Verify backend semantics for multipart uploads, versioning, conditional writes, signed URLs and integrity instead of assuming perfect interchangeability.

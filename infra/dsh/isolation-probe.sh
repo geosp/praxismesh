@@ -4,6 +4,7 @@
 # Prints one JSON line per check. Run it as recorded in notes.md#d3:
 #   docker run --rm --network none --read-only --tmpfs /tmp --tmpfs /mnt \
 #     --cgroupns=private --cap-add=SYS_ADMIN --security-opt no-new-privileges \
+#     --security-opt apparmor=unconfined \
 #     -v "$PWD/infra/dsh/isolation-probe.sh:/probe.sh:ro" <pinned python image> sh /probe.sh
 set -u
 report() { printf '{"check":"%s","ok":%s,"detail":"%s"}\n' "$1" "$2" "$3"; }
@@ -65,6 +66,19 @@ else report mount_namespace false "no mount namespace"; fi
 
 # Commands must not inherit the launcher's capabilities.
 drop="setpriv --reuid=4242 --regid=4242 --clear-groups --inh-caps=-all --bounding-set=-all --no-new-privs"
+# Inside the DSH image, commands also get the launcher's seccomp filter, as they do
+# in production (infra/dsh/launcher.py).
+if [ -f /opt/dsh/launcher.py ]; then
+  cat > /tmp/seccomp-exec.py <<'PY'
+import os, sys
+sys.path.insert(0, "/opt/dsh")
+import launcher
+launcher.install_seccomp()
+os.execvp(sys.argv[1], sys.argv[1:])
+PY
+  drop="python3 /tmp/seccomp-exec.py $drop"
+  $drop true && report command_wrapper_runs true "seccomp wrapper" || report command_wrapper_runs false "wrapper failed"
+fi
 if [ -d "$root/launcher" ]; then
   $drop sh -c "echo \$\$ > $root/cgroup.procs" 2>/dev/null && report command_cgroup_escape_blocked false "moved itself" || report command_cgroup_escape_blocked true ""
 fi

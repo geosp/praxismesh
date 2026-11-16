@@ -33,6 +33,7 @@ class HarnessConfig:
     cli_tools: list[str]
     skills_bundle: Path | None
     mcp: list[McpConfig] = field(default_factory=list)
+    context_window: int | None = None  # charges unknown usage (DSH plan D9)
 
 
 def build_config(registry: Registry, loaded: LoadedTemplate, task_id: str) -> HarnessConfig:
@@ -76,4 +77,5 @@ def build_config(registry: Registry, loaded: LoadedTemplate, task_id: str) -> Ha
         cli_tools=list(template.cli_tools),
         skills_bundle=bundle,
         mcp=servers,
+        context_window=template.context_window,
     )

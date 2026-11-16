@@ -330,3 +330,77 @@ async def test_fenced_finish_rejects_a_newer_turn(engine: AsyncEngine) -> None:
             )
         ).scalar_one()
     assert outcome == "started"
+
+
+async def test_checkpoint_round_trips_a_session_blob(engine: AsyncEngine) -> None:
+    """D1: a DSH checkpoint carries its session blob ref and digest (task 2.1)."""
+    start = task_start()
+    await record(engine, start)
+    attempts, checkpoints = AttemptRepository(engine), CheckpointRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    cp = checkpoint_for(start.task_id, 1, 1)
+    session = blob_ref(7)
+    await checkpoints.insert_fenced(
+        Checkpoint(
+            cp.checkpoint_id, cp.task_id, 1, 1, 0, cp.session_id, 0, cp.workspace_ref, None,
+            session_ref=session, session_digest="sha256:" + "f" * 64,
+        )
+    )  # fmt: skip
+    latest = await checkpoints.latest(start.task_id)
+    assert latest is not None and latest.session_ref == session
+    assert latest.session_digest == "sha256:" + "f" * 64 and latest.session_position == 0
+
+
+async def test_unknown_usage_is_stored_as_null_never_zero(engine: AsyncEngine) -> None:
+    """D7, R12: an attempt whose usage was not observed keeps NULL tokens."""
+    start = task_start()
+    await record(engine, start)
+    attempts = AttemptRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    await attempts.finish(
+        start.task_id, 1, 1, outcome="failed", tokens_in=None, tokens_out=None, tool_calls=0,
+        fenced=True, usage_known=False,
+    )  # fmt: skip
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT tokens_in, tokens_out, usage_known FROM task_attempts "
+                    "WHERE task_id = :t"
+                ),
+                {"t": start.task_id},
+            )
+        ).one()
+    assert tuple(row) == (None, None, False)
+
+
+async def test_lost_requests_are_closed_and_counted_for_every_later_attempt(
+    engine: AsyncEngine,
+) -> None:
+    """D9, R12: unsettled requests of a lost attempt stay counted, and its row
+    reads unknown, not zero."""
+    from common.persistence.repositories import UsageLedgerRepository
+
+    start = task_start()
+    await record(engine, start)
+    attempts, ledger = AttemptRepository(engine), UsageLedgerRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    await ledger.dispatch(start.task_id, 1, 1, "req-0001", "main")
+    await ledger.settle(start.task_id, 1, 1, "req-0001", 7, 3)
+    await ledger.dispatch(start.task_id, 1, 1, "req-0002", "main")  # worker dies here
+    await attempts.start(start.task_id, 1, 2, "worker-b")
+    assert await ledger.close_unknown(start.task_id, 1, 2) == (1, 7, 3, 1)
+    await attempts.start(start.task_id, 1, 3, "worker-c")  # attempt 2 was lost too
+    assert await ledger.close_unknown(start.task_id, 1, 3) == (1, 7, 3, 1)  # same charge, not zero
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT tokens_in, tokens_out, usage_known FROM task_attempts "
+                    "WHERE task_id = :t AND attempt = 1"
+                ),
+                {"t": start.task_id},
+            )
+        ).one()
+    assert tuple(row) == (None, None, False)
+    assert await ledger.close_unknown(start.task_id, 2, 1) == (0, 0, 0, 0)  # new turn starts clean

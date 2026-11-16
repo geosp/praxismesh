@@ -12,6 +12,12 @@
 
 Heartbeats cover all of it, from the attempt row to the outcome, and carry the
 live, cumulative usage of the turn (lost attempts included).
+
+A runner that keeps its attempts outside the worker process (DSH) supplies the
+attempt's workspace and session store through `open_attempt`; the Activity
+closes that scope after its last write. For such a runner the Activity also
+charges the model requests earlier attempts dispatched but never saw answered
+(DSH migration plan D9), and records a failure the runner classified.
 """
 
 from __future__ import annotations
@@ -25,7 +31,7 @@ import shutil
 import socket
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -52,11 +58,22 @@ from common.persistence.repositories import (
     CheckpointRepository,
     FenceRejected,
     TaskRepository,
+    UsageLedgerRepository,
 )
 from common.schemas import Artifact, BlobRef, TurnInput, TurnOutcome
 from harness_activity import workspace as ws
 from harness_activity.config import build_config
-from harness_activity.runner import HarnessRunner, RunResult, StopRun, Superseded, Usage
+from harness_activity.dsh.ledger import unknown_charge
+from harness_activity.runner import (
+    AttemptContext,
+    AttemptScope,
+    HarnessRunner,
+    RunnerFailure,
+    RunResult,
+    StopRun,
+    Superseded,
+    Usage,
+)
 from harness_activity.session_store import SessionStore, SQLAlchemySessionStore
 from registry.loader import Registry
 
@@ -66,6 +83,9 @@ DEFAULT_HEARTBEAT_TIMEOUT = timedelta(seconds=30)
 # Real attempts per turn (worker lost, timeout, storage unavailable). Template
 # version refusals do not count; the Workflow's schedule_to_close bounds those.
 MAX_REAL_ATTEMPTS = 5
+# A runner with a deadline must have stopped its attempt this long before the
+# Activity's own timeout: the 5 s stop grace (R8) and the writes that follow.
+STOP_MARGIN_SECONDS = 20.0
 
 
 class AttemptsExhausted(NonRetryableError):
@@ -90,6 +110,11 @@ class Progress:
     # The real attempt that sent this heartbeat, so a turn ended by
     # schedule_to_close still reports its attempts (follow-up M1).
     attempts: int = 0
+    # Requests whose usage was never observed and whose conservative charge is
+    # already in the totals above (DSH migration plan D9); the totals are then
+    # not exact, so `usage_known` is false (D7).
+    unknown_requests: int = 0
+    usage_known: bool = True
 
     @classmethod
     def from_details(cls, details: Any) -> Progress:
@@ -159,6 +184,7 @@ class HarnessActivities:
         scratch: Path,
         identity: str,
         session_store: Callable[[str, AsyncEngine], SessionStore] = SQLAlchemySessionStore,
+        open_attempt: Callable[[AttemptContext], Awaitable[AttemptScope]] | None = None,
     ) -> None:
         self.registry = registry
         self.engine = engine
@@ -167,6 +193,8 @@ class HarnessActivities:
         self.scratch = scratch
         self.identity = identity
         self.session_store = session_store
+        self.open_attempt = open_attempt
+        self.ledger = UsageLedgerRepository(engine)
         self.tasks = TaskRepository(engine)
         self.attempts = AttemptRepository(engine)
         self.checkpoints = CheckpointRepository(engine)
@@ -207,6 +235,9 @@ class HarnessActivities:
                 result = await self._attempt(turn, attempt, real_attempt, heartbeat)
                 outcome = result.status
                 return result
+            except RunnerFailure as e:
+                await self._runner_failed(turn, attempt, real_attempt, heartbeat, e)
+                raise  # unreachable: _runner_failed always raises
             except NonRetryableError as e:
                 # The turn has failed for good: close its open attempt rows and tell
                 # the Workflow what the turn used, lost attempts included (gate F1, F2).
@@ -229,22 +260,112 @@ class HarnessActivities:
                     time.monotonic() - began
                 )
 
+    async def _runner_failed(
+        self,
+        turn: TurnInput,
+        attempt: int,
+        real_attempt: int,
+        heartbeat: _Heartbeat,
+        failure: RunnerFailure,
+    ) -> None:
+        """Record an attempt its runner classified as failed, then raise for Temporal:
+        retryable or not as classified, or the cancellation that stopped it."""
+        used = heartbeat.current()
+        cancelled = failure.cancelled and failure.category == "DshCancelled"
+        with contextlib.suppress(FenceRejected):  # a stale attempt writes nothing (R6)
+            await self.attempts.finish(
+                turn.task_id,
+                turn.turn,
+                attempt,
+                outcome="cancelled" if cancelled else "failed",  # a forced stop failed (R9)
+                tokens_in=used.tokens_in,
+                tokens_out=used.tokens_out,
+                tool_calls=used.tool_calls,
+                failure_category=failure.category,
+                fenced=True,
+                usage_known=used.usage_known,
+            )
+        log.warning(
+            "harness attempt failed",
+            extra={"fields": {"category": failure.category, "retryable": failure.retryable}},
+        )
+        if failure.cancelled:
+            raise asyncio.CancelledError() from failure
+        if not failure.retryable:
+            await self.attempts.close_unfinished(
+                turn.task_id,
+                turn.turn,
+                failure.category,
+                outcome="failed",
+                through_attempt=attempt,
+            )
+        details = {**asdict(used), "attempts": min(real_attempt, MAX_REAL_ATTEMPTS)}
+        raise ApplicationError(
+            failure.category, details, type=failure.category, non_retryable=not failure.retryable
+        ) from failure
+
+    async def _open(self, turn: TurnInput, attempt: int, heartbeat: _Heartbeat) -> AttemptScope:
+        """Charge what earlier attempts of this turn left unobserved (D9), then let
+        the runner open the attempt."""
+        assert self.open_attempt is not None
+        info = activity.info()
+        template = self.registry.templates[turn.template].template
+        base = heartbeat.base
+        unknown, settled_in, settled_out, settled_count = await self.ledger.close_unknown(
+            turn.task_id, turn.turn, attempt
+        )
+        charge_in, charge_out = unknown_charge(unknown, template.context_window or 0)
+        if unknown or settled_in or settled_out or settled_count:
+            # R11, D9: usage comes from the gateway ledger, so a request settled
+            # between the last heartbeat and a worker crash is never lost.
+            heartbeat.base = dataclasses.replace(
+                base,
+                tokens_in=max(base.tokens_in, settled_in + charge_in),
+                tokens_out=max(base.tokens_out, settled_out + charge_out),
+                inner_turns=max(base.inner_turns, settled_count + unknown),
+                unknown_requests=max(unknown, base.unknown_requests),
+                usage_known=base.usage_known and unknown == 0,
+            )
+        used = heartbeat.current()
+        timeout = info.start_to_close_timeout or turn.remaining_wall_time
+        seconds = min(timeout, turn.remaining_wall_time).total_seconds()
+        return await self.open_attempt(
+            AttemptContext(
+                task_id=turn.task_id,
+                turn=turn.turn,
+                attempt=attempt,
+                workflow_id=info.workflow_id or "",
+                remaining_tokens=turn.remaining_tokens - used.tokens_in - used.tokens_out,
+                deadline=time.monotonic() + max(1.0, seconds - STOP_MARGIN_SECONDS),
+            )
+        )
+
     async def _attempt(
         self, turn: TurnInput, attempt: int, real_attempt: int, heartbeat: _Heartbeat
     ) -> TurnOutcome:
         workdir = self.scratch / turn.task_id / f"{turn.turn}-{attempt}-{uuid.uuid4().hex[:8]}"
+        scope: AttemptScope | None = None
         try:
             async with heartbeat.running():
                 try:
                     await self.attempts.start(turn.task_id, turn.turn, attempt, self.identity)
                 except FenceRejected as e:  # started late: a newer attempt owns the turn
                     raise Superseded(str(e)) from e
-                return await self._run(turn, attempt, real_attempt, heartbeat, workdir)
+                if self.open_attempt is not None:
+                    scope = await self._open(turn, attempt, heartbeat)
+                    workdir = scope.workspace
+                return await self._run(
+                    turn, attempt, real_attempt, heartbeat, workdir, scope.store if scope else None
+                )
         except (BlobCorrupt, BlobNotFound) as e:
             raise HarnessInputError(f"checkpoint or input unreadable: {e}") from e
         except BadRequestError as e:
             raise HarnessInputError(f"the model server rejected the request: {e}") from e
         finally:
+            if scope is not None:
+                # Ends the attempt's processes and removes its tree, whatever happened.
+                with contextlib.suppress(Exception):
+                    await asyncio.shield(scope.close())
             shutil.rmtree(workdir, ignore_errors=True)
 
     async def _run(
@@ -254,11 +375,12 @@ class HarnessActivities:
         real_attempt: int,
         heartbeat: _Heartbeat,
         workdir: Path,
+        attempt_store: SessionStore | None = None,
     ) -> TurnOutcome:
         loaded = self.registry.templates[turn.template]
         template_ref = loaded.template.ref
         config = build_config(self.registry, loaded, turn.task_id)
-        store = self.session_store(turn.task_id, self.engine)
+        store = attempt_store or self.session_store(turn.task_id, self.engine)
         session = store.session
         seq = 0
 
@@ -289,9 +411,6 @@ class HarnessActivities:
             data = await asyncio.to_thread(ws.pack, workdir)
             ref = await self.blobs.put(data, content_type="application/gzip", retention="task")
             snapshot = await store.capture()
-            if snapshot.session_ref is not None:
-                # Checkpoint rows gain session refs in the DSH migration's phase 02.
-                raise NotImplementedError("session blobs need the phase 02 checkpoint columns")
             position = snapshot.position
             cp_id = f"{turn.task_id}:{turn.turn}:{attempt}:{seq}"
             try:
@@ -306,6 +425,8 @@ class HarnessActivities:
                         position,
                         ref,
                         finish,
+                        session_ref=snapshot.session_ref,
+                        session_digest=snapshot.session_digest,
                     )
                 )
             except FenceRejected as e:
@@ -394,6 +515,7 @@ class HarnessActivities:
                 tool_calls=progress.tool_calls,
                 failure_category="model_behavior" if result.error else None,
                 fenced=True,
+                usage_known=progress.usage_known,
             )
         except FenceRejected as e:
             raise Superseded(str(e)) from e
@@ -413,4 +535,5 @@ class HarnessActivities:
             questions=result.questions or [],
             outputs=outputs,
             error=result.error,
+            usage_known=progress.usage_known,
         )

@@ -87,6 +87,7 @@ class TaskWorkflow:
         )
         deadline = workflow.now() + resolved.max_wall_time
         turns = attempts = tokens_in = tokens_out = inner_turns = 0
+        usage_known = True
         status = "failed"
         summary, reason = "", None
         questions: list[str] = []
@@ -141,6 +142,7 @@ class TaskWorkflow:
             inner_turns += outcome.inner_turns
             tokens_in += outcome.tokens_in
             tokens_out += outcome.tokens_out
+            usage_known = usage_known and outcome.usage_known
             if outcome.status in ("done", "needs_input"):
                 status = "succeeded" if outcome.status == "done" else "needs_input"
                 summary, questions, artifacts = outcome.summary, outcome.questions, outcome.outputs
@@ -160,6 +162,7 @@ class TaskWorkflow:
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
                 inner_turns=inner_turns,
+                usage_known=usage_known,
             ),
             result_type=TaskResult,
             start_to_close_timeout=SHORT,

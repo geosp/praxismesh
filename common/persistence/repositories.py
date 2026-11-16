@@ -125,6 +125,9 @@ class Checkpoint:
     session_position: int
     workspace_ref: BlobRef
     finish: dict[str, Any] | None
+    # A DSH session blob (DSH migration plan D1); None for openai_agents.
+    session_ref: BlobRef | None = None
+    session_digest: str | None = None
 
 
 class AttemptRepository:
@@ -173,11 +176,12 @@ class AttemptRepository:
         attempt: int,
         *,
         outcome: str,
-        tokens_in: int,
-        tokens_out: int,
+        tokens_in: int | None,
+        tokens_out: int | None,
         tool_calls: int,
         failure_category: str | None = None,
         fenced: bool = False,
+        usage_known: bool = True,
     ) -> None:
         """Record an attempt's outcome. With `fenced`, refuse (FenceRejected) when a
         newer attempt exists, in the same transaction as the update (D10)."""
@@ -189,7 +193,7 @@ class AttemptRepository:
                     """
                     UPDATE task_attempts SET outcome = :o, failure_category = :f,
                         tokens_in = :ti, tokens_out = :to, tool_calls = :tc,
-                        ended_at = CURRENT_TIMESTAMP
+                        usage_known = :uk, ended_at = CURRENT_TIMESTAMP
                     WHERE task_id = :t AND turn = :turn AND attempt = :a
                         AND outcome = 'started'
                     """
@@ -204,6 +208,7 @@ class AttemptRepository:
                     "ti": tokens_in,
                     "to": tokens_out,
                     "tc": tool_calls,
+                    "uk": usage_known and tokens_in is not None and tokens_out is not None,
                 },
             )
             if fenced and done.rowcount == 0:
@@ -345,8 +350,10 @@ class CheckpointRepository:
                 text(
                     """
                     INSERT INTO checkpoints (checkpoint_id, task_id, turn, attempt, seq,
-                        session_id, session_position, workspace_ref, finish, retention_class)
-                    SELECT :id, :t, :turn, :a, :seq, :sid, :pos, :ws, :finish, 'task'
+                        session_id, session_position, workspace_ref, finish, session_ref,
+                        session_digest, retention_class)
+                    SELECT :id, :t, :turn, :a, :seq, :sid, :pos, :ws, :finish, :sref, :sdig,
+                        'task'
                     WHERE """
                     + _NO_NEWER_ATTEMPT
                 ),
@@ -360,6 +367,8 @@ class CheckpointRepository:
                     "pos": cp.session_position,
                     "ws": _ref_json(cp.workspace_ref),
                     "finish": json.dumps(cp.finish) if cp.finish is not None else None,
+                    "sref": _ref_json(cp.session_ref) if cp.session_ref is not None else None,
+                    "sdig": cp.session_digest,
                 },
             )
             if done.rowcount != 1:
@@ -423,7 +432,107 @@ class CheckpointRepository:
             session_position=row["session_position"],
             workspace_ref=BlobRef.model_validate(row["workspace_ref"]),
             finish=row["finish"],
+            session_ref=(
+                BlobRef.model_validate(row["session_ref"]) if row["session_ref"] else None
+            ),
+            session_digest=row["session_digest"],
         )
+
+
+class UsageLedgerRepository:
+    """Durable model-request rows (DSH migration plan D7, D9). Implements the
+    gateway ledger's `LedgerStore`."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self.engine = engine
+
+    async def dispatch(
+        self, task_id: str, turn: int, attempt: int, request_id: str, purpose: str
+    ) -> None:
+        async with self.engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO usage_ledger (task_id, turn, attempt, request_id, purpose) "
+                    "VALUES (:t, :turn, :a, :r, :p)"
+                ),
+                {"t": task_id, "turn": turn, "a": attempt, "r": request_id, "p": purpose},
+            )
+
+    async def settle(
+        self,
+        task_id: str,
+        turn: int,
+        attempt: int,
+        request_id: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> None:
+        async with self.engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE usage_ledger SET input_tokens = :i, output_tokens = :o, "
+                    "settled_at = CURRENT_TIMESTAMP WHERE task_id = :t AND turn = :turn "
+                    "AND attempt = :a AND request_id = :r AND settled_at IS NULL"
+                ),
+                {
+                    "t": task_id,
+                    "turn": turn,
+                    "a": attempt,
+                    "r": request_id,
+                    "i": input_tokens,
+                    "o": output_tokens,
+                },
+            )
+
+    async def close_unknown(
+        self, task_id: str, turn: int, attempt: int
+    ) -> tuple[int, int, int, int]:
+        """Close the requests earlier attempts of this turn dispatched but never
+        settled, mark those attempts' usage unknown (NULL tokens, never 0), and
+        return `(unknown_requests, settled_tokens_in, settled_tokens_out,
+        settled_requests)` for earlier attempts of this turn.
+
+        The totals are derived from the ledger rows each time, so every later
+        attempt reconstructs the exact settled usage plus conservative unknown
+        charge even when a worker was killed between heartbeats (D9, R11)."""
+        params = {"t": task_id, "turn": turn, "a": attempt}
+        earlier = "task_id = :t AND turn = :turn AND attempt < :a"
+        async with self.engine.begin() as conn:
+            await conn.execute(_TASK_LOCK, {"t": task_id})
+            await conn.execute(
+                text(
+                    f"UPDATE usage_ledger SET settled_at = CURRENT_TIMESTAMP "
+                    f"WHERE {earlier} AND settled_at IS NULL"
+                ),
+                params,
+            )
+            await conn.execute(
+                text(
+                    f"UPDATE task_attempts SET usage_known = false, tokens_in = NULL, "
+                    f"tokens_out = NULL WHERE {earlier} AND attempt IN (SELECT attempt FROM "
+                    f"usage_ledger WHERE {earlier} AND input_tokens IS NULL)"
+                ),
+                params,
+            )
+            settled = await conn.execute(
+                text(
+                    f"SELECT coalesce(sum(input_tokens), 0), coalesce(sum(output_tokens), 0), "
+                    f"count(*) FILTER (WHERE input_tokens IS NOT NULL) "
+                    f"FROM usage_ledger WHERE {earlier}"
+                ),
+                params,
+            )
+            settled_in, settled_out, settled_count = settled.one()
+            found = await conn.execute(
+                text(f"SELECT count(*) FROM usage_ledger WHERE {earlier} AND input_tokens IS NULL"),
+                params,
+            )
+            return (
+                int(found.scalar_one()),
+                int(settled_in),
+                int(settled_out),
+                int(settled_count),
+            )
 
 
 class RecordingBlobStore:
