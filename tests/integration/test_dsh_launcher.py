@@ -45,6 +45,17 @@ CLIENT = textwrap.dedent(
     open("/attempts/task-2/1/1/workspace/secret", "w").write("other attempt")
     open(f"{tree}/home/session.jsonl", "w").write("session")
     out["open"] = ask(f, op="open", attempt="task-1/1/1")
+    if sys.argv[1] == "tmp":  # what one attempt leaves in /tmp, the next must not see
+        out["write"] = ask(f, op="exec", command="echo leaked > /tmp/marker; echo rc=$?",
+                           timeout=10)
+        out["stop"] = ask(f, op="stop", grace=2)
+        for name in ("home", "workspace", "ipc"):
+            os.makedirs(f"/attempts/task-3/1/1/{name}", exist_ok=True)
+        out["open2"] = ask(f, op="open", attempt="task-3/1/1")
+        read = "cat /tmp/marker 2>/dev/null; echo rc=$?; ls -A /tmp"
+        out["read"] = ask(f, op="exec", command=read, timeout=10)
+        out["stop2"] = ask(f, op="stop", grace=2)
+        print(json.dumps(out)); sys.exit(0)
     if sys.argv[1] == "frozen-stop":  # a stop while a barrier holds the freeze
         handler = ("import signal,sys,time; "
                    "signal.signal(signal.SIGTERM, lambda *a: sys.exit(0)); time.sleep(60)")
@@ -159,6 +170,16 @@ def test_stop_while_frozen_is_cooperative(launcher: str) -> None:
     assert out["freeze"] == {"ok": True}
     assert out["stop"]["cooperative"] is True
     assert out["stop"]["processes_left"] == 0 and out["stop"]["tree_removed"]
+    assert attempt_state(launcher) == ("", False)
+
+
+def test_commands_get_their_own_tmp(launcher: str) -> None:
+    """R15 (review F63): a command's /tmp belongs to its attempt; what a command of
+    one attempt writes there is gone for the next attempt, of any task."""
+    out = client(launcher, "tmp")
+    assert "rc=0" in out["write"]["stdout"]
+    assert out["read"]["stdout"].split() == ["rc=1"]  # no marker, and /tmp is empty
+    assert docker("exec", launcher, "ls", "-A", "/tmp").stdout.strip() == ""
     assert attempt_state(launcher) == ("", False)
 
 

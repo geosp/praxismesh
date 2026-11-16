@@ -50,6 +50,8 @@ COMMAND_UID = int(os.environ.get("DSH_COMMAND_UID", "4242"))
 SHARED_GID = int(os.environ.get("DSH_SHARED_GID", "4243"))
 WORKER_UID = int(os.environ.get("DSH_WORKER_UID", "10001"))
 COMMAND_OUTPUT_CAP = 8000
+# Inside the attempt tree, the /tmp of the attempt's commands; removed with the tree.
+COMMAND_TMP = "command-tmp"
 
 libc = ctypes.CDLL(None, use_errno=True)
 CLONE_NEWNS = 0x00020000
@@ -149,6 +151,9 @@ def _isolate(attempt: str, view: str) -> None:
     source = tree / ("workspace" if view == "/work" else "")
     os.makedirs(view, exist_ok=True)
     _mount(str(source), view, None, MS_BIND | MS_REC)
+    # /tmp is the attempt's own too: the container's is shared by every attempt
+    # (review F63). Commands get a directory the runtime's packages are not in.
+    _mount(str(tree / (COMMAND_TMP if view == "/work" else "tmp")), "/tmp", None, MS_BIND)
     # Hide every attempt tree and the control socket behind an empty tmpfs.
     _mount("none", str(ATTEMPTS), "tmpfs", MS_NOSUID | MS_NODEV, "size=1m,mode=0755")
     os.chdir(view)
@@ -185,6 +190,10 @@ class Attempt:
         self.cgroup = _cgroup_of(attempt)
         self.runtime: subprocess.Popen | None = None
         self.cgroup.mkdir(parents=True, exist_ok=False)
+        tree = ATTEMPTS / attempt
+        os.makedirs(tree / "tmp", exist_ok=True)
+        (tree / COMMAND_TMP).mkdir(mode=0o700, exist_ok=True)
+        os.chown(tree / COMMAND_TMP, COMMAND_UID, SHARED_GID)
 
     def start(self, argv: list[str], env: dict[str, str]) -> int:
         tree = ATTEMPTS / self.id
