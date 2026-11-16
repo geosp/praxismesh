@@ -109,6 +109,7 @@ def activities(
             tokens_in=p.tokens_in,
             tokens_out=p.tokens_out,
             inner_turns=p.inner_turns,
+            usage_known=p.usage_known,
         )
 
     return [resolve_capabilities, record_task, run_harness_turn, complete_task]
@@ -239,15 +240,15 @@ def test_failed_turn_usage_from_either_error() -> None:
         type=TimeoutType.HEARTBEAT,
         last_heartbeat_details=[{"tokens_in": 50, "tokens_out": 5, "inner_turns": 2}],
     )
-    assert failed_turn_usage(timed_out) == (50, 5, 2, 1)
+    assert failed_turn_usage(timed_out) == (50, 5, 2, 1, True)
     raised = ApplicationError(
         "lost 5 times",
         {"tokens_in": 70, "tokens_out": 7, "inner_turns": 3, "attempts": 5},
         type="AttemptsExhausted",
         non_retryable=True,
     )
-    assert failed_turn_usage(raised) == (70, 7, 3, 5)
-    assert failed_turn_usage(RuntimeError("other")) == (0, 0, 0, 1)
+    assert failed_turn_usage(raised) == (70, 7, 3, 5, True)
+    assert failed_turn_usage(RuntimeError("other")) == (0, 0, 0, 1, True)
 
 
 async def test_attempts_exhausted_counts_usage_and_attempts() -> None:
@@ -264,6 +265,29 @@ async def test_attempts_exhausted_counts_usage_and_attempts() -> None:
     assert result.failure_reason == "harness turn 1 failed: AttemptsExhausted"
     assert (result.tokens_in, result.tokens_out, result.attempts) == (300, 30, 5)
     assert result.inner_turns == 4
+
+
+async def test_failed_turn_keeps_unknown_usage() -> None:
+    """D7, R12 (review F58): a turn that fails for good after a conservative charge
+    reports `usage_known = false`, from the error details or the last heartbeat."""
+
+    def behavior(t: TurnInput, attempt: int) -> TurnOutcome:
+        raise ApplicationError(
+            "DshForcedStop",
+            {"tokens_in": 32868, "tokens_out": 2058, "attempts": 2, "usage_known": False},
+            type="DshForcedStop",
+            non_retryable=True,
+        )
+
+    result, _ = await run_task(behavior)
+    assert result.failure_reason == "harness turn 1 failed: DshForcedStop"
+    assert (result.tokens_in, result.usage_known) == (32868, False)
+    timed_out = TimeoutError(
+        "heartbeat timeout",
+        type=TimeoutType.HEARTBEAT,
+        last_heartbeat_details=[{"tokens_in": 1, "usage_known": False}],
+    )
+    assert failed_turn_usage(timed_out)[4] is False
 
 
 async def test_wall_time_budget_exhausted() -> None:
