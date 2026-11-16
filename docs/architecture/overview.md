@@ -83,7 +83,7 @@ Observed idle memory for the four long-running services (`docker stats`, sum of 
 - **Checkpoints:** before every model call (seq 0 holds the instructions), and a final one carrying the `finish_task` report. Each holds a deterministic workspace snapshot (content-addressed, so an unchanged workspace adds no blob) and the session's item count. Observed positions for a two-step task: 1, 3, 5.
 - **Heartbeats:** from the attempt row to the outcome, every `heartbeat_timeout / 3`, carrying the turn's live, cumulative usage (lost attempts included) and the latest checkpoint ID.
 - **Recovery:** a lost worker's attempt times out after `heartbeat_timeout` (30 s; 5 s in the recovery tests), and the next attempt runs on any worker of the template queue. Observed on the Sparks: a killed `worker-b` container's task finished on `worker-a`, with each order recorded once and the conversation continued (4 session items at the stop, 40 at the end).
-- **Fencing:** an attempt checks for a newer attempt before every model call and stops without writing anything; Temporal also cancels a resumed attempt whose heartbeat timed out.
+- **Fencing:** an attempt checks for a newer attempt before every model call and stops without writing anything; Temporal also cancels a resumed attempt whose heartbeat timed out. Since DSH migration phase 01 the writes themselves are fenced; see that section.
 - **Budgets:** the in-turn token check counts lost attempts' heartbeated usage, so a turn overruns by at most one model call.
 - **Attempts:** at most 5 real attempts per turn, checked by the Activity; template-version refusals are not counted. A turn that fails for good (attempts exhausted, a capability or input error) closes its open attempt rows and reports its usage and real attempts in the error's details, which the `TaskResult` counts; `complete_task` closes rows still open (for example after `schedule_to_close`). Temporal's own attempts are unlimited within `schedule_to_close` (6 x `turn_timeout`).
 - **Idempotency:** `record_order`'s key is the task ID, the tool and the canonical arguments; the `tasks` table rejects a reused task ID after Temporal's retention.
@@ -118,3 +118,23 @@ Observed idle memory for the four long-running services (`docker stats`, sum of 
 - `needs_input` is terminal; answering questions arrives in Phase 2.
 - Metrics counters reset when a worker restarts.
 - The Claude Agent SDK runner is not implemented.
+
+## DSH migration phase 01: harness seam and registry
+
+Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-production-harness/plan.md), phase 01. Production still runs only `openai_agents`; no DSH runner exists yet.
+
+### Components
+
+| Component | Where | As built |
+|---|---|---|
+| Session store | `harness_activity/session_store.py` | `SessionStore` protocol: `session`, `load(checkpoint | None)` (truncate to the checkpoint's position, or clear), `capture()` returning a `SessionSnapshot` (position, optional session blob ref). `SQLAlchemySessionStore` wraps `SQLAlchemySession`; `run_harness_turn` uses only the store. A snapshot with a session ref raises until the DSH migration's phase 02 adds checkpoint columns. |
+| Fence | `common/persistence/repositories.py` | `start`, the fenced checkpoint insert, the fenced finish and `assert_current` each take `pg_advisory_xact_lock(hashtext(task_id))`, then check in the same transaction that no newer (turn, attempt) row exists. A stale write raises `FenceRejected`; the Activity raises `Superseded`, writing nothing. A template-version refusal takes the same lock and inserts an `outcome = 'refused'` row (no newer-attempt check), so it fences older attempts. Artifact blobs are uploaded after `assert_current` and referenced only through the fenced finish. |
+| Registry | `registry/loader.py`, `registry/templates/local-dsh.yaml`, `registry/profiles/dsh.yaml` | `dsh` is a `Harness` value. Profile and template harness must match at load. `dsh` templates need `concurrency_per_pod: 1` and `context_window`. `local-dsh@1` is locked. Workers refuse non-`openai_agents` templates, so no worker serves `tpl.local-dsh` until phase 02: a `dsh` task's turn waits and then fails at `schedule_to_close` (6 x `turn_timeout`, 1 h). |
+| Events | `common/schemas/events.py`, `harness_activity/events.py` | `AgentEvent` schema; `EventSink` with `NoOpSink` and `MemorySink`; `AttemptEvents` numbers one attempt's events and delivers them in `seq` order under a lock. No runner emits events yet. |
+| Isolation probe | `infra/dsh/isolation-probe.sh` | Manual probe (run command in its header); results in the plan's notes.md#d3. Per-attempt cgroup freeze/kill and mount namespaces need `SYS_ADMIN`; the user-namespace check still fails. |
+
+### Tests
+
+- Unit: `uv run pytest` (registry, events, the conformance suite through a session store fixture).
+- Integration (Postgres, stack up): `uv run --env-file infra/.env pytest -m integration tests/integration/test_persistence_phase1.py tests/integration/test_harness_activity.py` (fence concurrency, refusal rows, Activity-level fencing, store contract).
+

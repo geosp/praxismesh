@@ -25,13 +25,12 @@ import shutil
 import socket
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from agents.extensions.memory.sqlalchemy_session import SQLAlchemySession
 from openai import BadRequestError
 from sqlalchemy.ext.asyncio import AsyncEngine
 from temporalio import activity
@@ -51,12 +50,14 @@ from common.persistence.repositories import (
     AttemptRepository,
     Checkpoint,
     CheckpointRepository,
+    FenceRejected,
     TaskRepository,
 )
 from common.schemas import Artifact, BlobRef, TurnInput, TurnOutcome
 from harness_activity import workspace as ws
 from harness_activity.config import build_config
 from harness_activity.runner import HarnessRunner, RunResult, StopRun, Superseded, Usage
+from harness_activity.session_store import SessionStore, SQLAlchemySessionStore
 from registry.loader import Registry
 
 log = logging.getLogger("praxis.harness")
@@ -157,6 +158,7 @@ class HarnessActivities:
         runner: HarnessRunner,
         scratch: Path,
         identity: str,
+        session_store: Callable[[str, AsyncEngine], SessionStore] = SQLAlchemySessionStore,
     ) -> None:
         self.registry = registry
         self.engine = engine
@@ -164,6 +166,7 @@ class HarnessActivities:
         self.runner = runner
         self.scratch = scratch
         self.identity = identity
+        self.session_store = session_store
         self.tasks = TaskRepository(engine)
         self.attempts = AttemptRepository(engine)
         self.checkpoints = CheckpointRepository(engine)
@@ -178,6 +181,8 @@ class HarnessActivities:
             # refusal count from this heartbeat (review F7).
             prior.refusals += 1
             activity.heartbeat(asdict(prior))
+            # Not a real attempt, but newer than the ones before it (D10, review F27).
+            await self.attempts.record_refusal(turn.task_id, turn.turn, info.attempt, self.identity)
             raise TemplateVersionUnavailable(
                 f"this worker runs {loaded.template.ref if loaded else 'no'} "
                 f"{turn.template}, not version {turn.template_version} of the task"
@@ -230,7 +235,10 @@ class HarnessActivities:
         workdir = self.scratch / turn.task_id / f"{turn.turn}-{attempt}-{uuid.uuid4().hex[:8]}"
         try:
             async with heartbeat.running():
-                await self.attempts.start(turn.task_id, turn.turn, attempt, self.identity)
+                try:
+                    await self.attempts.start(turn.task_id, turn.turn, attempt, self.identity)
+                except FenceRejected as e:  # started late: a newer attempt owns the turn
+                    raise Superseded(str(e)) from e
                 return await self._run(turn, attempt, real_attempt, heartbeat, workdir)
         except (BlobCorrupt, BlobNotFound) as e:
             raise HarnessInputError(f"checkpoint or input unreadable: {e}") from e
@@ -250,21 +258,15 @@ class HarnessActivities:
         loaded = self.registry.templates[turn.template]
         template_ref = loaded.template.ref
         config = build_config(self.registry, loaded, turn.task_id)
-        session = SQLAlchemySession(turn.task_id, engine=self.engine)
+        store = self.session_store(turn.task_id, self.engine)
+        session = store.session
         seq = 0
 
         latest = await self.checkpoints.latest(turn.task_id)
         if latest is not None:
             data = await self.blobs.get(latest.workspace_ref)
             await asyncio.to_thread(ws.unpack, data, workdir)
-            items = await session.get_items()
-            if len(items) < latest.session_position:
-                log.warning(
-                    "session shorter than its checkpoint",
-                    extra={"fields": {"items": len(items), "position": latest.session_position}},
-                )
-            for _ in range(len(items) - latest.session_position):
-                await session.pop_item()
+            await store.load(latest)
             heartbeat.checkpoint_id = latest.checkpoint_id
             if latest.finish is not None:  # lost after finish_task: go straight to finish
                 result = RunResult(
@@ -278,7 +280,7 @@ class HarnessActivities:
                 )
             input_text = CONTINUE_MESSAGE
         else:
-            await session.clear_session()
+            await store.load(None)
             input_text = await self._fresh_start(turn.task_id, workdir)
 
         async def checkpoint(finish: dict[str, Any] | None = None) -> None:
@@ -286,27 +288,35 @@ class HarnessActivities:
             started = time.monotonic()
             data = await asyncio.to_thread(ws.pack, workdir)
             ref = await self.blobs.put(data, content_type="application/gzip", retention="task")
-            position = len(await session.get_items())
+            snapshot = await store.capture()
+            if snapshot.session_ref is not None:
+                # Checkpoint rows gain session refs in the DSH migration's phase 02.
+                raise NotImplementedError("session blobs need the phase 02 checkpoint columns")
+            position = snapshot.position
             cp_id = f"{turn.task_id}:{turn.turn}:{attempt}:{seq}"
-            await self.checkpoints.insert(
-                Checkpoint(
-                    cp_id,
-                    turn.task_id,
-                    turn.turn,
-                    attempt,
-                    seq,
-                    turn.task_id,
-                    position,
-                    ref,
-                    finish,
+            try:
+                await self.checkpoints.insert_fenced(
+                    Checkpoint(
+                        cp_id,
+                        turn.task_id,
+                        turn.turn,
+                        attempt,
+                        seq,
+                        turn.task_id,
+                        position,
+                        ref,
+                        finish,
+                    )
                 )
-            )
+            except FenceRejected as e:
+                raise Superseded(str(e)) from e
             seq += 1
             heartbeat.checkpoint_id = cp_id
             CHECKPOINT_BYTES.observe(len(data))
             CHECKPOINT_SECONDS.observe(time.monotonic() - started)
 
         async def before_model_call(usage: Usage) -> None:
+            # Cheap early exit; the fenced checkpoint insert is the authoritative check.
             if await self.attempts.newer_attempt_exists(turn.task_id, turn.turn, attempt):
                 raise Superseded("a newer attempt of this turn is running")
             await checkpoint()
@@ -362,6 +372,10 @@ class HarnessActivities:
     ) -> TurnOutcome:
         outputs: list[Artifact] = []
         if result.status == "done":
+            try:  # a stale attempt publishes no artifact (D10, R7)
+                await self.attempts.assert_current(turn.task_id, turn.turn, attempt)
+            except FenceRejected as e:
+                raise Superseded(str(e)) from e
             row = await self.tasks.get(turn.task_id)
             for path in (row or {}).get("outputs") or []:
                 target = workdir / path
@@ -369,16 +383,20 @@ class HarnessActivities:
                     ref = await self.blobs.put(target.read_bytes(), retention="audit")
                     outputs.append(Artifact(path=path, ref=ref))
         progress = heartbeat.current()
-        await self.attempts.finish(
-            turn.task_id,
-            turn.turn,
-            attempt,
-            outcome=result.status,
-            tokens_in=progress.tokens_in,
-            tokens_out=progress.tokens_out,
-            tool_calls=progress.tool_calls,
-            failure_category="model_behavior" if result.error else None,
-        )
+        try:
+            await self.attempts.finish(
+                turn.task_id,
+                turn.turn,
+                attempt,
+                outcome=result.status,
+                tokens_in=progress.tokens_in,
+                tokens_out=progress.tokens_out,
+                tool_calls=progress.tool_calls,
+                failure_category="model_behavior" if result.error else None,
+                fenced=True,
+            )
+        except FenceRejected as e:
+            raise Superseded(str(e)) from e
         log.info(
             "harness turn finished",
             extra={"fields": {"status": result.status, "template": template_ref}},

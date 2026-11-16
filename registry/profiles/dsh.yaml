@@ -1,0 +1,10 @@
+# The DSH agent profile (DSH migration plan D5). The default profile stays on
+# openai_agents until that plan's phase 03 switch. Profiles carry identity and
+# task limits only; every capability comes from the template.
+name: dsh
+tier: local
+harness: dsh
+allowed_templates: [local-dsh]
+max_turns: 6
+max_tokens: 1000000
+max_wall_time: PT30M

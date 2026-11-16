@@ -24,9 +24,10 @@ from common.schemas import AgentProfile, McpServer, WorkerTemplate
 # recovery tests use a generated copy with a short heartbeat timeout).
 REGISTRY_ROOT = Path(os.environ.get("PRAXIS_REGISTRY") or Path(__file__).resolve().parent)
 LOCK_FILE = "registry.lock"
-# Harnesses with a runner in this phase (Phase 1: openai_agents only; the Claude
-# Agent SDK runner is deferred, decision log 2026-11-11).
-SUPPORTED_HARNESSES = frozenset({"openai_agents"})
+# Harnesses with a runner (Phase 1: openai_agents; the Claude Agent SDK runner is
+# deferred, decision log 2026-11-11; dsh per ADR-0005, its runner lands in the DSH
+# migration plan's phase 02).
+SUPPORTED_HARNESSES = frozenset({"openai_agents", "dsh"})
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -130,6 +131,13 @@ def load_registry(root: Path = REGISTRY_ROOT, *, check_lock: bool = True) -> Reg
                 f"{path}: harness {template.harness!r} has no runner in this phase "
                 f"(supported: {', '.join(sorted(SUPPORTED_HARNESSES))})"
             )
+        if template.harness == "dsh" and (
+            template.concurrency_per_pod != 1 or template.context_window is None
+        ):
+            # ADR-0006: one attempt per DSH container; D9 charges by context window.
+            raise RegistryError(
+                f"{path}: dsh templates need concurrency_per_pod: 1 and a context_window"
+            )
         prompt = root / template.system_prompt
         if not prompt.is_file():
             raise RegistryError(f"{path}: system prompt {template.system_prompt!r} not found")
@@ -161,4 +169,12 @@ def load_registry(root: Path = REGISTRY_ROOT, *, check_lock: bool = True) -> Reg
         for name in profile.allowed_templates:
             if name not in templates:
                 raise RegistryError(f"profile {profile.name!r}: unknown template {name!r}")
+    for profile in profiles.values():
+        for name in profile.allowed_templates or []:
+            found = templates.get(name)
+            if found is not None and found.template.harness != profile.harness:
+                raise RegistryError(
+                    f"profile {profile.name!r} harness {profile.harness!r} does not match "
+                    f"template {found.template.ref!r} harness {found.template.harness!r}"
+                )
     return Registry(root, profiles, templates, mcp, skills)

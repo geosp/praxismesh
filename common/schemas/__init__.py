@@ -3,6 +3,7 @@
 from common.schemas.base import Harness, RetentionClass, Strict
 from common.schemas.blob import BlobRef
 from common.schemas.capability import AgentProfile, McpServer, WorkerTemplate
+from common.schemas.events import AgentEvent
 from common.schemas.task import (
     Artifact,
     CompleteTaskInput,
@@ -17,6 +18,7 @@ from common.schemas.task import (
 )
 
 __all__ = [
+    "AgentEvent",
     "AgentProfile",
     "Artifact",
     "BlobRef",

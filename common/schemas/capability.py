@@ -63,6 +63,9 @@ class WorkerTemplate(Strict):
     max_wall_time_cap: timedelta
     secret_refs: list[str] = []
     concurrency_per_pod: int = Field(default=1, ge=1)
+    # Model context window in tokens; charges unknown usage for harnesses that
+    # need it (plan 2026-11-15-dsh-production-harness, D9).
+    context_window: int | None = Field(default=None, ge=1)
     # Stored, unused until Phase 7 (plan §5 resource and scaling fields).
     resources: dict[str, str] = {}
     scaling: dict[str, int] = {}

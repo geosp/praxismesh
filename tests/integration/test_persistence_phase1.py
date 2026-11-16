@@ -18,6 +18,7 @@ from common.persistence.repositories import (
     AttemptRepository,
     Checkpoint,
     CheckpointRepository,
+    FenceRejected,
     RecordingBlobStore,
     TaskRepository,
     make_engine,
@@ -178,3 +179,154 @@ async def test_sdk_session_uses_migrated_tables(engine: AsyncEngine) -> None:
         }
     assert classes == {"task"}
     await session.clear_session()
+
+
+def checkpoint_for(task_id: str, turn: int, attempt: int) -> Checkpoint:
+    return Checkpoint(
+        f"{task_id}:{turn}:{attempt}:0", task_id, turn, attempt, 0, task_id, 0, blob_ref(), None
+    )
+
+
+async def test_stale_attempt_cannot_checkpoint_or_finish(engine: AsyncEngine) -> None:
+    """D10: the newer-attempt check and the write are one statement."""
+    start = task_start()
+    await record(engine, start)
+    attempts, checkpoints = AttemptRepository(engine), CheckpointRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    await checkpoints.insert_fenced(checkpoint_for(start.task_id, 1, 1))  # current: allowed
+    await attempts.start(start.task_id, 1, 2, "worker-b")
+    with pytest.raises(FenceRejected):
+        await checkpoints.insert_fenced(checkpoint_for(start.task_id, 1, 1))
+    with pytest.raises(FenceRejected):
+        await attempts.finish(
+            start.task_id,
+            1,
+            1,
+            outcome="done",
+            tokens_in=1,
+            tokens_out=1,
+            tool_calls=0,
+            fenced=True,
+        )
+    assert await checkpoints.count(start.task_id) == 1
+    await attempts.finish(
+        start.task_id, 1, 2, outcome="done", tokens_in=1, tokens_out=1, tool_calls=0, fenced=True
+    )
+
+
+async def test_older_turn_is_fenced_by_a_newer_turn(engine: AsyncEngine) -> None:
+    start = task_start()
+    await record(engine, start)
+    attempts, checkpoints = AttemptRepository(engine), CheckpointRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    await attempts.start(start.task_id, 2, 1, "worker-a")
+    with pytest.raises(FenceRejected):
+        await checkpoints.insert_fenced(checkpoint_for(start.task_id, 1, 1))
+
+
+async def test_fenced_insert_waits_for_a_concurrent_start(engine: AsyncEngine) -> None:
+    """D10 under concurrency: a newer attempt's uncommitted start must still fence
+    the stale attempt's checkpoint (review F1)."""
+    import asyncio
+
+    start = task_start()
+    await record(engine, start)
+    attempts, checkpoints = AttemptRepository(engine), CheckpointRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    async with engine.begin() as conn:  # attempt 2's start, still in flight
+        await conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:t))"), {"t": start.task_id})
+        await conn.execute(
+            text(
+                "INSERT INTO task_attempts (task_id, turn, attempt, worker_identity, outcome, "
+                "retention_class) VALUES (:t, 1, 2, 'worker-b', 'started', 'audit')"
+            ),
+            {"t": start.task_id},
+        )
+        stale = asyncio.create_task(checkpoints.insert_fenced(checkpoint_for(start.task_id, 1, 1)))
+        await asyncio.sleep(0.3)
+        assert not stale.done()  # the stale insert waits for the task lock
+    with pytest.raises(FenceRejected):
+        await stale
+
+
+async def test_start_waits_for_the_task_lock(engine: AsyncEngine) -> None:
+    """The real `start` takes the per-task lock (review F26)."""
+    import asyncio
+
+    start = task_start()
+    await record(engine, start)
+    attempts = AttemptRepository(engine)
+    async with engine.begin() as conn:
+        await conn.execute(text("SELECT pg_advisory_xact_lock(hashtext(:t))"), {"t": start.task_id})
+        starting = asyncio.create_task(attempts.start(start.task_id, 1, 1, "worker-a"))
+        await asyncio.sleep(0.3)
+        assert not starting.done()
+    await starting
+
+
+async def test_refusal_fences_older_attempts(engine: AsyncEngine) -> None:
+    """A refused Temporal attempt is still newer than the attempts before it (F27)."""
+    start = task_start()
+    await record(engine, start)
+    attempts, checkpoints = AttemptRepository(engine), CheckpointRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    await attempts.record_refusal(start.task_id, 1, 2, "worker-b")
+    with pytest.raises(FenceRejected):
+        await checkpoints.insert_fenced(checkpoint_for(start.task_id, 1, 1))
+    with pytest.raises(FenceRejected):
+        await attempts.finish(
+            start.task_id,
+            1,
+            1,
+            outcome="done",
+            tokens_in=1,
+            tokens_out=1,
+            tool_calls=0,
+            fenced=True,
+        )
+    await attempts.start(start.task_id, 1, 3, "worker-c")  # the next real attempt runs
+
+
+async def test_late_stale_start_is_refused(engine: AsyncEngine) -> None:
+    """A stale attempt that only reaches `start` after a newer one writes no row (F28)."""
+    start = task_start()
+    await record(engine, start)
+    attempts = AttemptRepository(engine)
+    await attempts.start(start.task_id, 1, 2, "worker-b")
+    with pytest.raises(FenceRejected):
+        await attempts.start(start.task_id, 1, 1, "worker-a")
+    async with engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                text("SELECT attempt FROM task_attempts WHERE task_id = :t"), {"t": start.task_id}
+            )
+        ).all()
+    assert [r[0] for r in rows] == [2]
+
+
+async def test_fenced_finish_rejects_a_newer_turn(engine: AsyncEngine) -> None:
+    """The fence clause inside the finish UPDATE does the work for a newer turn (F29)."""
+    start = task_start()
+    await record(engine, start)
+    attempts = AttemptRepository(engine)
+    await attempts.start(start.task_id, 1, 1, "worker-a")
+    await attempts.start(start.task_id, 2, 1, "worker-a")
+    with pytest.raises(FenceRejected):
+        await attempts.finish(
+            start.task_id,
+            1,
+            1,
+            outcome="done",
+            tokens_in=1,
+            tokens_out=1,
+            tool_calls=0,
+            fenced=True,
+        )
+    async with engine.connect() as conn:
+        outcome = (
+            await conn.execute(
+                text("SELECT outcome FROM task_attempts WHERE task_id = :t AND turn = 1"),
+                {"t": start.task_id},
+            )
+        ).scalar_one()
+    assert outcome == "started"
