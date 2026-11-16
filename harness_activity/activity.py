@@ -63,6 +63,7 @@ from common.persistence.repositories import (
 from common.schemas import Artifact, BlobRef, TurnInput, TurnOutcome
 from harness_activity import workspace as ws
 from harness_activity.config import build_config
+from harness_activity.dsh.composition import DEFAULT_CONTEXT_WINDOW
 from harness_activity.dsh.ledger import unknown_charge
 from harness_activity.runner import (
     AttemptContext,
@@ -249,6 +250,9 @@ class HarnessActivities:
                     outcome="lost" if exhausted else "failed",
                     through_attempt=attempt,
                 )
+                if self.open_attempt is not None:
+                    # No later attempt will charge what this turn left unobserved (F59).
+                    await self._charge(turn, attempt + 1, heartbeat)
                 used = heartbeat.current()
                 details = {**asdict(used), "attempts": min(real_attempt, MAX_REAL_ATTEMPTS)}
                 log.error("harness turn failed for good", extra={"fields": {"error": str(e)}})
@@ -269,7 +273,16 @@ class HarnessActivities:
         failure: RunnerFailure,
     ) -> None:
         """Record an attempt its runner classified as failed, then raise for Temporal:
-        retryable or not as classified, or the cancellation that stopped it."""
+        retryable or not as classified, or the cancellation that stopped it.
+
+        Requests this attempt dispatched but never saw answered are charged now (D9,
+        review F59): a cancel or a non-retryable failure has no later attempt to do
+        it, and the turn's usage is then not known. The attempt's own row stores
+        NULL tokens for them, never 0 (R12)."""
+        own_unknown = 0
+        if self.open_attempt is not None:
+            await self._charge(turn, attempt + 1, heartbeat)
+            own_unknown = await self.ledger.unknown_requests(turn.task_id, turn.turn, attempt)
         used = heartbeat.current()
         cancelled = failure.cancelled and failure.category == "DshCancelled"
         with contextlib.suppress(FenceRejected):  # a stale attempt writes nothing (R6)
@@ -278,8 +291,8 @@ class HarnessActivities:
                 turn.turn,
                 attempt,
                 outcome="cancelled" if cancelled else "failed",  # a forced stop failed (R9)
-                tokens_in=used.tokens_in,
-                tokens_out=used.tokens_out,
+                tokens_in=None if own_unknown else used.tokens_in,
+                tokens_out=None if own_unknown else used.tokens_out,
                 tool_calls=used.tool_calls,
                 failure_category=failure.category,
                 fenced=True,
@@ -304,28 +317,38 @@ class HarnessActivities:
             failure.category, details, type=failure.category, non_retryable=not failure.retryable
         ) from failure
 
+    async def _charge(self, turn: TurnInput, below: int, heartbeat: _Heartbeat) -> None:
+        """Make the heartbeat's usage at least what the gateway ledger holds for the
+        attempts of this turn below `below`: settled usage, plus the D9 charge for
+        every request whose usage was never observed, which makes it not known.
+
+        R11, D9: usage comes from the ledger, so a request settled between the last
+        heartbeat and a worker crash is never lost. The ledger is derived afresh each
+        time, so charging it again never counts a request twice."""
+        unknown, settled_in, settled_out, settled_count = await self.ledger.close_unknown(
+            turn.task_id, turn.turn, below
+        )
+        if not (unknown or settled_in or settled_out or settled_count):
+            return
+        template = self.registry.templates[turn.template].template
+        window = template.context_window or DEFAULT_CONTEXT_WINDOW
+        charge_in, charge_out = unknown_charge(unknown, window)
+        base, live = heartbeat.base, heartbeat.usage
+        heartbeat.base = dataclasses.replace(
+            base,
+            tokens_in=max(base.tokens_in, settled_in + charge_in - live.tokens_in),
+            tokens_out=max(base.tokens_out, settled_out + charge_out - live.tokens_out),
+            inner_turns=max(base.inner_turns, settled_count + unknown - live.inner_turns),
+            unknown_requests=max(unknown, base.unknown_requests),
+            usage_known=base.usage_known and unknown == 0,
+        )
+
     async def _open(self, turn: TurnInput, attempt: int, heartbeat: _Heartbeat) -> AttemptScope:
         """Charge what earlier attempts of this turn left unobserved (D9), then let
         the runner open the attempt."""
         assert self.open_attempt is not None
         info = activity.info()
-        template = self.registry.templates[turn.template].template
-        base = heartbeat.base
-        unknown, settled_in, settled_out, settled_count = await self.ledger.close_unknown(
-            turn.task_id, turn.turn, attempt
-        )
-        charge_in, charge_out = unknown_charge(unknown, template.context_window or 0)
-        if unknown or settled_in or settled_out or settled_count:
-            # R11, D9: usage comes from the gateway ledger, so a request settled
-            # between the last heartbeat and a worker crash is never lost.
-            heartbeat.base = dataclasses.replace(
-                base,
-                tokens_in=max(base.tokens_in, settled_in + charge_in),
-                tokens_out=max(base.tokens_out, settled_out + charge_out),
-                inner_turns=max(base.inner_turns, settled_count + unknown),
-                unknown_requests=max(unknown, base.unknown_requests),
-                usage_known=base.usage_known and unknown == 0,
-            )
+        await self._charge(turn, attempt, heartbeat)
         used = heartbeat.current()
         timeout = info.start_to_close_timeout or turn.remaining_wall_time
         seconds = min(timeout, turn.remaining_wall_time).total_seconds()

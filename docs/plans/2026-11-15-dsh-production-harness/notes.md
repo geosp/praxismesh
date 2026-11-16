@@ -82,7 +82,13 @@ The migration is additive:
 - `checkpoints.session_ref jsonb null, session_digest text null`; `session_position` stays an integer (0 for DSH).
 
 `usage_known` is added to `Progress`, `TurnOutcome`, `ExecutionAttempt` and
-`TaskResult`. Deploy order: migration, orchestrator, then workers. Rolling code back
+`TaskResult`. An attempt row holds the turn's cumulative usage through that attempt:
+NULL tokens when one of its own requests (or, for a lost attempt, one up to it) was
+never observed; numbers with `usage_known = false` when they include a D9 charge
+(impl-review F69). A turn that fails for good, is cancelled or runs out of attempts
+charges its own unsettled requests, since no later attempt will (F59).
+
+Deploy order: migration, orchestrator, then workers. Rolling code back
 below this migration is not supported.
 
 ## D9
