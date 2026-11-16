@@ -50,13 +50,15 @@ CLIENT = textwrap.dedent(
         import time; time.sleep(30)
         sys.exit(0)
     if sys.argv[1] == "tmp":  # what one attempt leaves in /tmp, the next must not see
-        out["write"] = ask(f, op="exec", command="echo leaked > /tmp/marker; echo rc=$?",
-                           timeout=10)
+        write = ("for d in /tmp /run /dev/shm; do echo leaked > $d/marker && echo ok; done; "
+                 "echo rc=$?")
+        out["write"] = ask(f, op="exec", command=write, timeout=10)
         out["stop"] = ask(f, op="stop", grace=2)
         for name in ("home", "workspace", "ipc"):
             os.makedirs(f"/attempts/task-3/1/1/{name}", exist_ok=True)
         out["open2"] = ask(f, op="open", attempt="task-3/1/1")
-        read = "cat /tmp/marker 2>/dev/null; echo rc=$?; ls -A /tmp"
+        read = ("cat /tmp/marker /run/marker /dev/shm/marker 2>/dev/null; echo rc=$?; "
+                "ls -A /tmp /run /dev/shm")
         out["read"] = ask(f, op="exec", command=read, timeout=10)
         out["stop2"] = ask(f, op="stop", grace=2)
         print(json.dumps(out)); sys.exit(0)
@@ -178,12 +180,16 @@ def test_stop_while_frozen_is_cooperative(launcher: str) -> None:
 
 
 def test_commands_get_their_own_tmp(launcher: str) -> None:
-    """R15 (review F63): a command's /tmp belongs to its attempt; what a command of
-    one attempt writes there is gone for the next attempt, of any task."""
+    """R15 (review F63, F102): a command's /tmp, /run and /dev/shm belong to its
+    attempt; what a command of one attempt writes there is gone for the next
+    attempt, of any task, and never reaches the container's own."""
     out = client(launcher, "tmp")
-    assert "rc=0" in out["write"]["stdout"]
-    assert out["read"]["stdout"].split() == ["rc=1"]  # no marker, and /tmp is empty
-    assert docker("exec", launcher, "ls", "-A", "/tmp").stdout.strip() == ""
+    assert out["write"]["stdout"].split().count("ok") == 3  # every place was writable
+    seen = out["read"]["stdout"]
+    assert "leaked" not in seen and "marker" not in seen and "rc=1" in seen
+    for shared in ("/tmp", "/run", "/dev/shm"):
+        listing = docker("exec", launcher, "ls", "-A", shared).stdout.split()
+        assert "marker" not in listing, shared
     assert attempt_state(launcher) == ("", False)
 
 

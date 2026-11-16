@@ -147,6 +147,11 @@ def _isolate(attempt: str, view: str) -> None:
     os.umask(0o007)
     _check(libc.unshare(CLONE_NEWNS), "unshare mount namespace")
     _mount(None, "/", None, MS_REC | MS_PRIVATE)
+    # The container's other writable places are shared by every attempt: each
+    # attempt process gets empty ones of its own (review F102). /run first, since
+    # the runtime's view of its tree is mounted inside it.
+    for shared in ("/run", "/dev/shm"):
+        _mount("none", shared, "tmpfs", MS_NOSUID | MS_NODEV, "size=16m,mode=1777")
     tree = ATTEMPTS / attempt
     source = tree / ("workspace" if view == "/work" else "")
     os.makedirs(view, exist_ok=True)
