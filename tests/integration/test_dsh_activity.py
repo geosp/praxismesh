@@ -32,8 +32,9 @@ from common.persistence.repositories import (
 from common.schemas import TaskStart, TurnInput, TurnOutcome
 from harness_activity.activity import HarnessActivities
 from harness_activity.config import build_config
+from harness_activity.dsh import runner as dsh_runner
 from harness_activity.dsh.launcher_client import LauncherClient
-from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS
+from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, UsageLedger
 from harness_activity.dsh.pins import RuntimePinMismatch
 from harness_activity.dsh.runner import DshRunner
 from harness_activity.events import MemorySink
@@ -376,6 +377,68 @@ async def test_attempt_on_an_unpinned_runtime_is_refused(container: DshContainer
         AttemptContext(task, 1, 1, "wf", 1_000, time.monotonic() + 60)
     )
     await scope.close()
+
+
+# A runtime that keeps running after the gateway denies its request: it sends two
+# model requests with the granted catalog, then waits, exiting only on SIGTERM.
+STUBBORN_DRIVER = """
+import json, os, signal, socket, sys, time
+signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+tree = "/run/attempt"
+tools = json.load(open(tree + "/config/tools.json"))
+model = json.load(open(tree + "/config/input.json"))["model"]
+def post(n):
+    body = json.dumps({"model": model, "messages": [{"role": "user", "content": str(n)}],
+        "tools": [{"type": "function", "function": {"name": "mcp__praxis__" + t["name"]}}
+                  for t in tools]}).encode()
+    s = socket.socket(socket.AF_UNIX); s.connect(tree + "/ipc/gateway.sock")
+    s.sendall(b"POST /v1/chat/completions HTTP/1.1\\r\\nAuthorization: Bearer "
+              + os.environ["PRAXIS_MODEL_KEY"].encode()
+              + b"\\r\\nContent-Length: " + str(len(body)).encode() + b"\\r\\n\\r\\n" + body)
+    while s.recv(65536): pass
+post(1); post(2)
+time.sleep(60)
+"""
+
+
+async def test_step_limit_stops_a_runtime_that_does_not_exit(
+    container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R8 (review F64): the step limit denies the second request; a runtime that
+    keeps running anyway is stopped within the 5 s grace, and the turn ends as a
+    `continue` at the inner-turn limit, not at the deadline."""
+    monkeypatch.setattr(dsh_runner, "DRIVER", ["python", "-c", STUBBORN_DRIVER])
+    registry = load_registry()
+    task = f"task-step-limit-{run_id()}"
+    config = dataclasses.replace(
+        build_config(registry, registry.templates["local-dsh"], task), inner_max_turns=1
+    )
+    runner = container.runner()
+    denied: list[float] = []
+    original = UsageLedger.admit
+
+    async def admit(self: UsageLedger, purpose: str, step: int, deny: str | None = None) -> Any:
+        record = await original(self, purpose, step, deny)
+        if record.denial:
+            denied.append(time.monotonic())
+        return record
+
+    monkeypatch.setattr(UsageLedger, "admit", admit)
+    with FakeModel([SCRIPT[0], SCRIPT[0]]) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        scope = await runner.open_attempt(
+            AttemptContext(task, 1, 1, "wf", 1_000_000, time.monotonic() + 60)
+        )
+        try:
+            result = await runner.run(
+                config, scope.workspace, scope.store.session, "go", _no_op, Usage()
+            )
+            ended = time.monotonic()
+        finally:
+            await scope.close()
+    assert (result.status, result.summary) == ("continue", "inner-turn limit reached")
+    assert denied and ended - denied[0] < 5.0
+    assert container.attempt_cgroups() == []
 
 
 async def _no_op(usage: Usage) -> None:

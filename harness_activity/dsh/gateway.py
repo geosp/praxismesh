@@ -25,6 +25,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,7 @@ import httpx
 from common.observability.metrics import TOOL_ERRORS
 from harness_activity.dsh.composition import TOOL_PREFIX
 from harness_activity.dsh.ledger import SUPERSEDED, Dispatch, UsageLedger
+from harness_activity.dsh.policy import STEP_DENIALS
 from harness_activity.events import AttemptEvents
 from harness_activity.runner import StopRun, Superseded, Usage
 
@@ -202,6 +204,9 @@ class Gateway:
         self.stop_summary: str | None = None
         # Set when the attempt must be stopped now instead of ending by itself.
         self.abort = asyncio.Event()
+        # When a request was first denied at the step limit or token budget: the
+        # runtime must exit within the grace from then on (R8, review F64).
+        self.limited_at: float | None = None
 
     def routes(self) -> dict[tuple[str, str], Route]:
         return {
@@ -241,6 +246,8 @@ class Gateway:
             self.error_type = "Superseded"
             self.abort.set()
         if not record.dispatched:
+            if record.denial in STEP_DENIALS and self.limited_at is None:
+                self.limited_at = time.monotonic()
             return error_reply(429, f"request not admitted: {record.denial}")
         self.dispatched += 1
         self.usage.inner_turns = self.ledger.settled()["logical_steps"]

@@ -83,6 +83,10 @@ POLL_SECONDS = 0.05
 DEFAULT_TURN_SECONDS = 600.0
 UNBOUNDED_TOKENS = 2**40
 DIRS = ("workspace", "home", "ipc", "config", "tmp")
+# After a step-limit or token-budget denial the runtime may exit by itself this
+# long; then it is stopped with the rest of the 5 s grace (R8, review F64).
+LIMIT_EXIT_SECONDS = 2.0
+STEP_LIMIT_STOP = "step limit"
 # What a run stopped because a barrier could not thaw it ends as: the runtime was
 # frozen, so neither its exit nor its usage says anything about it (D6).
 RETRYABLE_AFTER_FAILED_THAW = frozenset(
@@ -403,10 +407,17 @@ class DshRunner:
                         if not poll["running"]:
                             returncode = poll["exit"]
                             break
+                        now = time.monotonic()
                         if gateway.abort.is_set() or thaw_failed:
                             stop_reason = "aborted"
-                        elif time.monotonic() >= context.deadline:
+                        elif now >= context.deadline:
                             stop_reason = "turn deadline exceeded"
+                        elif (
+                            gateway.limited_at is not None
+                            and now >= gateway.limited_at + LIMIT_EXIT_SECONDS
+                        ):
+                            # The runtime was told no and did not exit by itself.
+                            stop_reason = STEP_LIMIT_STOP
                         if stop_reason is not None:
                             break
                         await asyncio.sleep(POLL_SECONDS)
@@ -419,7 +430,12 @@ class DshRunner:
                     await asyncio.shield(server.close())
                     # A cooperative stop: SIGTERM, then at most the grace (R8). The
                     # launcher kills what is left; needing that is a failure (R9).
-                    report = await asyncio.shield(attempt.stop())
+                    grace = (
+                        CLEANUP_GRACE_SECONDS - LIMIT_EXIT_SECONDS
+                        if stop_reason == STEP_LIMIT_STOP
+                        else CLEANUP_GRACE_SECONDS
+                    )
+                    report = await asyncio.shield(attempt.stop(grace))
                 else:
                     if result_file.exists():
                         candidate = json.loads(result_file.read_text())
@@ -436,6 +452,9 @@ class DshRunner:
             )
         if gateway is not None and gateway.error_type is not None:
             error_type = gateway.error_type
+        # A runtime stopped after a step-limit denial ended where an exit by itself
+        # would have: a `continue` at the limit, if the stop was cooperative (F64).
+        limit_stop = stop_reason == STEP_LIMIT_STOP
         failure = classify(
             started=started,
             cleanup_ok=report is None
@@ -444,9 +463,9 @@ class DshRunner:
             unknown_usage=ledger.settled()["unknown_usage"],
             fault=gateway.fault if gateway is not None else None,
             error_type=error_type,
-            stop_reason=None if stop_reason == "aborted" else stop_reason,
-            returncode=returncode,
-            candidate=candidate,
+            stop_reason=None if stop_reason in ("aborted", STEP_LIMIT_STOP) else stop_reason,
+            returncode=0 if limit_stop else returncode,
+            candidate={} if limit_stop else candidate,
             finished=executor.finished,
             denials=ledger.denials(),
             blocked=gateway is not None and gateway.blocked,
