@@ -304,25 +304,25 @@ Targeted follow-up (docs/reviews/README.md rule 6) on the decision changes from 
 
 | ID | Sev | Lens | Finding | Resolution |
 | --- | --- | --- | --- | --- |
-| F113 | Major | fresh reader | The 2026-11-16 decision changes did not reach the requirements: R13 (charge at the failure when no later attempt runs), R15 (per-attempt `/tmp`, `/run`, `/dev/shm`), R17 (control files, re-check at every attempt); D3's `SYS_ADMIN` grant lives only in the log. | open |
-| F114 | Major | codebase fit | Phase 03 task 2.1 points `default` at DSH with no other profile allowing `local-default`, so `openai_agents` is no longer selectable (ADR-0005 condition 5) and CI checks that assume `default` = `local-default` break. | open |
-| F115 | Major | codebase fit, zoom out | Phase 03 task 1.1 omits the DSH container the benchmark needs and the hard-coded template, profile, harness label and output name in `tests/benchmarks/run.py`; its Verify cannot catch it. | open |
-| F116 | Major | codebase fit | ADR-0005 condition 1 also requires recording DSH's licence notices; no requirement or task does. | open |
-| F117 | Major | zoom out | The rollback drain bound is wrong (max wall time plus up to 6 x turn_timeout) and never says to keep the DSH pair up until no local-dsh task is open. | open |
-| F118 | Major | zoom out | Rollback is more than two field edits: registry lock, worker image rebuild, orchestrator restart. | open |
-| F119 | Major | zoom out | Code rollback is ambiguous (roll back code on the 0004 schema, or roll forward only?) and contradicts the migration docstring; in-flight workflow behaviour on a revert is unstated. | open |
-| F120 | Major | zoom out | Switching `default` to one DSH pair cuts its capacity to about a quarter; the number of DSH pairs needed before the switch is not stated. | open |
-| F121 | Major | fresh reader | Core terms undefined: task, turn, attempt and inner turn; settled and unsettled ledger rows. | open |
-| F122 | Major | fresh reader | The Summary omits the event sink (D8/R16) that serves its stated reason, and the rollback limits. | open |
-| F123 | Major | fresh reader, zoom out | Parts that don't connect: the transport between worker and DSH container, how worker death is detected (R10), why `session_position` 0 is safe (D1), whose row R12 means, and R18 vs D11 (exact match or recorded differences). | open |
-| F124 | Major | fresh reader | D6 (what the flush check does on failure) and D10 (refusal rows) can only be paraphrased at headline level; the substance is in notes.md. | open |
-| F125 | Nit | codebase fit, zoom out | Phase 03 task 1.1's `turn_timeout`/`max_wall_time_cap` edit is a no-op; the values already match. | open |
-| F126 | Nit | codebase fit | notes.md#d3 says `cgroupns: private`; the Compose key is `cgroup: private`. | open |
-| F127 | Nit | codebase fit | Phase 01 task 2.2 cites stale `registry/loader.py` line numbers. | open |
-| F128 | Nit | zoom out | Deferred F103, F106, F111 leave R8 and R6 short of their absolute wording, with no recorded deviation. | open |
-| F129 | Nit | zoom out | Barrier cost grows with turn length times session and workspace size; not under Risks. | open |
-| F130 | Nit | zoom out | A worker that refuses (exit 3) restarts in a loop; R17 and Rollout don't say how an operator notices. | open |
-| F131 | Nit | fresh reader | Readability: requirements holding two rules (R7, R8, R11, R12, R15, R16), repeated facts, a 60-word decision-log line, the commands sentence in the Summary, the SIGSTOP fallback, unmapped requirements in Why, the Phases table status. | open |
+| F113 | Major | fresh reader | The 2026-11-16 decision changes did not reach the requirements: R13 (charge at the failure when no later attempt runs), R15 (per-attempt `/tmp`, `/run`, `/dev/shm`), R17 (control files, re-check at every attempt); D3's `SYS_ADMIN` grant lives only in the log. | fixed: R13 (charge at turn or task end), R15 (private /tmp, /run, /dev/shm, IPC), R17 (control files, before each attempt, refuse and stop polling), D3 (SYS_ADMIN for the launcher only) |
+| F114 | Major | codebase fit | Phase 03 task 2.1 points `default` at DSH with no other profile allowing `local-default`, so `openai_agents` is no longer selectable (ADR-0005 condition 5) and CI checks that assume `default` = `local-default` break. | fixed: phase 03 task 2.1 adds an `openai` profile and repoints the tests and Make targets before the switch |
+| F115 | Major | codebase fit, zoom out | Phase 03 task 1.1 omits the DSH container the benchmark needs and the hard-coded template, profile, harness label and output name in `tests/benchmarks/run.py`; its Verify cannot catch it. | fixed: phase 03 task 1.1 rewritten (template from the profile, results and label by profile, paired DSH container; Verify runs one real task per profile) |
+| F116 | Major | codebase fit | ADR-0005 condition 1 also requires recording DSH's licence notices; no requirement or task does. | fixed: R20 and phase 03 task 1.3 (licence notices under docs/licences/dsh/ with a check) |
+| F117 | Major | zoom out | The rollback drain bound is wrong (max wall time plus up to 6 x turn_timeout) and never says to keep the DSH pair up until no local-dsh task is open. | fixed: Rollout and notes.md#rollout state the drain bound (wall time plus 6 x turn_timeout) and keep the DSH pairs up; task 2.2 Verify includes an in-flight DSH task |
+| F118 | Major | zoom out | Rollback is more than two field edits: registry lock, worker image rebuild, orchestrator restart. | fixed: Rollout lists edit, registry lock, image rebuild, orchestrator restart |
+| F119 | Major | zoom out | Code rollback is ambiguous (roll back code on the 0004 schema, or roll forward only?) and contradicts the migration docstring; in-flight workflow behaviour on a revert is unstated. | fixed: code rolls forward only (Rollout, notes.md#rollout) |
+| F120 | Major | zoom out | Switching `default` to one DSH pair cuts its capacity to about a quarter; the number of DSH pairs needed before the switch is not stated. | fixed: two DSH pairs before the switch (notes.md#rollout, task 2.1) |
+| F121 | Major | fresh reader | Core terms undefined: task, turn, attempt and inner turn; settled and unsettled ledger rows. | fixed: Terms define task, turn, attempt, inner turn, settled and unsettled |
+| F122 | Major | fresh reader | The Summary omits the event sink (D8/R16) that serves its stated reason, and the rollback limits. | fixed: Summary names the event sink, the openai profile and the rollback limits |
+| F123 | Major | fresh reader, zoom out | Parts that don't connect: the transport between worker and DSH container, how worker death is detected (R10), why `session_position` 0 is safe (D1), whose row R12 means, and R18 vs D11 (exact match or recorded differences). | fixed: Terms (Unix sockets on the shared volume), R10 (control connection), D1 (blob replaces the home), R12 (the lost attempt's row), R18 (up to the D9 and D11 differences) |
+| F124 | Major | fresh reader | D6 (what the flush check does on failure) and D10 (refusal rows) can only be paraphrased at headline level; the substance is in notes.md. | fixed: D6 (a missing ID fails the barrier), D10 (ledger dispatch and refusal rows) |
+| F125 | Nit | codebase fit, zoom out | Phase 03 task 1.1's `turn_timeout`/`max_wall_time_cap` edit is a no-op; the values already match. | fixed: the no-op template edit is dropped from task 1.1 |
+| F126 | Nit | codebase fit | notes.md#d3 says `cgroupns: private`; the Compose key is `cgroup: private`. | fixed: notes.md#d3 says `cgroup: private` |
+| F127 | Nit | codebase fit | Phase 01 task 2.2 cites stale `registry/loader.py` line numbers. | fixed: phase 01 task 2.2 names Registry.resolve instead of line numbers |
+| F128 | Nit | zoom out | Deferred F103, F106, F111 leave R8 and R6 short of their absolute wording, with no recorded deviation. | fixed: notes.md#rollout records F103, F106, F111 as known deviations |
+| F129 | Nit | zoom out | Barrier cost grows with turn length times session and workspace size; not under Risks. | fixed: Risks line for barrier cost |
+| F130 | Nit | zoom out | A worker that refuses (exit 3) restarts in a loop; R17 and Rollout don't say how an operator notices. | fixed: notes.md#rollout says how a refusing worker shows (log line, exit 3 restarts) |
+| F131 | Nit | fresh reader | Readability: requirements holding two rules (R7, R8, R11, R12, R15, R16), repeated facts, a 60-word decision-log line, the commands sentence in the Summary, the SIGSTOP fallback, unmapped requirements in Why, the Phases table status. | accepted: the Summary's commands sentence and the decision log were rewritten; multi-rule requirements and repeated facts stay as approved |
 
 ## 2026-11-16 · impl-review · phase 02 · round 3 · changes-requested
 
@@ -332,20 +332,20 @@ Targeted follow-up (docs/reviews/README.md rule 6) on the decision changes from 
 
 | ID | Sev | Lens | Finding | Resolution |
 | --- | --- | --- | --- | --- |
-| F132 | Major | contract, scope | Commands of every attempt and task share one IPC namespace; SysV shared memory and message queues outlive an attempt and are readable by a later task (R15, D4; reopens F102). | open |
-| F133 | Major | contract, failure | A pre-flight that cannot reach the launcher (stopped or restarting container) raises `LauncherError`, not a refusal: no refused row, the attempt counts, the worker keeps polling, and the turn ends `AttemptsExhausted` (R17, R10; reopens F99). | open |
-| F134 | Major | failure, scope | Rows marked `lost` by `start` or `record_refusal` get the ledger's usage only if a later real attempt opens; `close_unfinished` touches `started` rows only, so a lost row can keep 0 (R12, D7; reopens F101). | open |
-| F135 | Nit | scope | Two rules for a row's usage: `_ledger_usage_sql` NULLs on any unknown up to the attempt, `_runner_failed` only on its own (D7). | open |
-| F136 | Nit | scope, failure | `complete_task` reconciles tokens but not inner turns (D11). | open |
-| F137 | Nit | all three | `complete_task` looks the template up by name in the current registry: `KeyError` if it is gone, and the current version's `context_window` rather than the task's (R11, D9). | open |
-| F138 | Nit | scope | An `Unserviceable` raised in `open_attempt` after `attempts.start` still uses an attempt and does not stop polling (narrow window after the pre-flight). | open |
-| F139 | Nit | all three | Worker shutdown: the task is not referenced, the wiring and the cross-attempt heartbeat hand-off are untested, and a refusing worker restart-loops until an operator acts. | open |
-| F140 | Nit | all three | `list_files` still checks then walks by name (names only could leak); the F97 resolution text overstates it. | open |
-| F141 | Nit | contract | `read_file`/`write_file` now refuse in-workspace symlinks for `openai_agents` too, a behaviour change without a recorded decision (task 2.3). | open |
-| F142 | Nit | scope | The F98 reconciliation is tested on one turn only, and the cumulative ledger SQL on one attempt per turn. | open |
-| F143 | Nit | failure | An exception inside `destroy()` skips the dirty record, so the container can be served again (R10). | open |
-| F144 | Nit | failure | A worker-side stop timeout is a non-retryable `DshCleanupFailure` even if the launcher cleans up later (R9). | open |
-| F145 | Nit | failure | The final checkpoint after a step-limit stop skips the D6 tool-call check (the capture is at rest). | open |
-| F146 | Nit | failure | A cancel during the step-limit stop leaves the row for `complete_task` instead of `cancelled` (R18). | open |
-| F147 | Nit | failure | The refusal heartbeat is sent before `record_refusal`; a failed write leaves a counted refusal with no row. | open |
-| F148 | Nit | failure | Review metadata disagreed (impl passed, design changes-requested, Phases table); resolved by recording design review round 4. | open |
+| F132 | Major | contract, scope | Commands of every attempt and task share one IPC namespace; SysV shared memory and message queues outlive an attempt and are readable by a later task (R15, D4; reopens F102). | fixed: unshare(CLONE_NEWNS | CLONE_NEWIPC); test_commands_get_their_own_tmp checks SysV shm and queues (failed before) |
+| F133 | Major | contract, failure | A pre-flight that cannot reach the launcher (stopped or restarting container) raises `LauncherError`, not a refusal: no refused row, the attempt counts, the worker keeps polling, and the turn ends `AttemptsExhausted` (R17, R10; reopens F99). | fixed: DshRunner.check times out and raises LauncherUnreachable (Unserviceable); test_unreachable_launcher_is_a_refusal_every_time over seven attempts (failed before) |
+| F134 | Major | failure, scope | Rows marked `lost` by `start` or `record_refusal` get the ledger's usage only if a later real attempt opens; `close_unfinished` touches `started` rows only, so a lost row can keep 0 (R12, D7; reopens F101). | fixed: close_unfinished applies the ledger usage to lost rows too; test_lost_rows_hold_the_ledger_usage_when_the_task_completes (failed before) |
+| F135 | Nit | scope | Two rules for a row's usage: `_ledger_usage_sql` NULLs on any unknown up to the attempt, `_runner_failed` only on its own (D7). | accepted: a finished-and-failed row and a row closed without a finish follow the two rules notes.md#d7 states |
+| F136 | Nit | scope, failure | `complete_task` reconciles tokens but not inner turns (D11). | fixed: complete_task takes inner turns from the ledger request count; F98 test asserts it |
+| F137 | Nit | all three | `complete_task` looks the template up by name in the current registry: `KeyError` if it is gone, and the current version's `context_window` rather than the task's (R11, D9). | fixed: complete_task uses the task's template version or the default window; test_complete_task_survives_a_template_the_orchestrator_no_longer_has |
+| F138 | Nit | scope | An `Unserviceable` raised in `open_attempt` after `attempts.start` still uses an attempt and does not stop polling (narrow window after the pre-flight). | accepted: narrow window after the pre-flight; the next turn's pre-flight refuses |
+| F139 | Nit | all three | Worker shutdown: the task is not referenced, the wiring and the cross-attempt heartbeat hand-off are untested, and a refusing worker restart-loops until an operator acts. | accepted: the shutdown wiring and cross-attempt hand-off need a Temporal worker test; notes.md#rollout documents the restart loop |
+| F140 | Nit | all three | `list_files` still checks then walks by name (names only could leak); the F97 resolution text overstates it. | fixed: list_files walks with fwalk from a no-follow descriptor; test_list_files_never_follows_a_link |
+| F141 | Nit | contract | `read_file`/`write_file` now refuse in-workspace symlinks for `openai_agents` too, a behaviour change without a recorded decision (task 2.3). | accepted: recorded in notes.md#rollout (file tools refuse every link) |
+| F142 | Nit | scope | The F98 reconciliation is tested on one turn only, and the cumulative ledger SQL on one attempt per turn. | accepted: the reconciliation takes a max per task and the SQL is per attempt; broader tests deferred |
+| F143 | Nit | failure | An exception inside `destroy()` skips the dirty record, so the container can be served again (R10). | fixed: destroy marks the attempt dirty when cleanup raises; test_launcher_destroy_error_marks_the_attempt_dirty (failed before) |
+| F144 | Nit | failure | A worker-side stop timeout is a non-retryable `DshCleanupFailure` even if the launcher cleans up later (R9). | accepted: conservative per R9 |
+| F145 | Nit | failure | The final checkpoint after a step-limit stop skips the D6 tool-call check (the capture is at rest). | accepted: the capture is at rest after the processes were killed |
+| F146 | Nit | failure | A cancel during the step-limit stop leaves the row for `complete_task` instead of `cancelled` (R18). | accepted: narrow window; F98 and F134 keep the usage right |
+| F147 | Nit | failure | The refusal heartbeat is sent before `record_refusal`; a failed write leaves a counted refusal with no row. | fixed: record_refusal before the refusal heartbeat |
+| F148 | Nit | failure | Review metadata disagreed (impl passed, design changes-requested, Phases table); resolved by recording design review round 4. | fixed: design review round 4 recorded |

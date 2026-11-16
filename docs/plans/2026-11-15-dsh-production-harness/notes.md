@@ -24,7 +24,7 @@ expected behaviour for each ported case.
 | LXC/Incus per attempt | Incus API | second host runtime; still needs start rights |
 | Docker-in-Docker | privileged container | privileged |
 
-Compose settings the pair needs: `cgroupns: private`, `cap_add: [SYS_ADMIN]` (for the
+Compose settings the pair needs: `cgroup: private`, `cap_add: [SYS_ADMIN]` (for the
 launcher only), `no-new-privileges`, `apparmor:unconfined` (so AppArmor on Ubuntu hosts
 does not block the launcher's cgroupfs remount and private mount namespace; commands drop
 all capabilities and get the seccomp filter), a tmpfs-backed attempt volume,
@@ -137,3 +137,26 @@ gateway provider and the MCP client (impl-review F77).
 - Artifact references exist only in the `TurnOutcome` that `_finish` returns after the fenced
   finish succeeds. A stale attempt may still upload audit artifact blobs that nothing
   references: `assert_current` before upload is an early exit, not a guarantee.
+
+## Rollout
+
+- **Capacity.** `default` has two `openai_agents` worker slots today (`worker-a`, `worker-b`). DSH
+  templates run one attempt per worker pair and ~1.9x slower, so `default` switches only with two
+  DSH pairs (`dsh-a`/`worker-dsh-a`, `dsh-b`/`worker-dsh-b`), each with its own attempt volume.
+- **Switch and revert.** Edit `registry/profiles/default.yaml`, run `make registry-lock`, rebuild the
+  worker image (the registry ships in it) and restart the orchestrator. Profiles resolve once per
+  task, so tasks already running keep their template.
+- **Drain.** The workflow checks its deadline only before a turn, so a DSH task can run for its
+  wall time plus one last turn's `schedule_to_close` (6 x `turn_timeout`): 30 min + 60 min for
+  `local-dsh` today. Keep the DSH pairs up until no task resolved to `local-dsh` is open.
+- **Code.** Phases 01 and 02 change the `openai_agents` path too (seam, fence, workflow
+  cancellation). They roll forward only: fix forward rather than revert, and never run code
+  older than migration 0004 against its data. `openai` remains the profile for `openai_agents`.
+- **A refusing DSH worker** (pin mismatch, dirty or unreachable container) logs "worker cannot
+  serve its queue", exits 3 and is restarted by Compose; it keeps refusing until its DSH
+  container is fixed and restarted. Watch for exit 3 restarts.
+- **Known deviations, deferred** (impl-review F103, F106, F111): an `unresolved usage` denial
+  starts no exit timer, a stale attempt's charge writes usage columns unfenced, and launcher
+  replies to `poll` have no timeout. R8 and R6 hold otherwise.
+- **Tool paths** (F141): file tools refuse every symbolic link, also links inside the workspace,
+  for both runners.
