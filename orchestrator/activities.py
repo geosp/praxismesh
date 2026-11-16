@@ -44,17 +44,24 @@ class OrchestratorActivities:
         with no Activity code running (a dead worker, schedule_to_close, a cancel),
         so the Workflow's totals may miss requests settled after the last heartbeat
         and the D9 charge for those never observed (review F98)."""
-        settled_in, settled_out, unknown = await self.ledger.task_totals(payload.task_id)
-        if not (settled_in or settled_out or unknown):
+        settled_in, settled_out, unknown, requests = await self.ledger.task_totals(payload.task_id)
+        if not requests:
             return payload  # no ledger rows: openai_agents counts in the Activity
-        template = self.registry.templates[payload.resolved.template].template
-        charge_in, charge_out = unknown_charge(
-            unknown, template.context_window or DEFAULT_CONTEXT_WINDOW
+        # The task's own template version; if this orchestrator no longer has it,
+        # the default window (F137).
+        loaded = self.registry.templates.get(payload.resolved.template)
+        window = (
+            loaded.template.context_window
+            if loaded is not None and loaded.hash == payload.resolved.template_hash
+            else None
         )
+        charge_in, charge_out = unknown_charge(unknown, window or DEFAULT_CONTEXT_WINDOW)
         return payload.model_copy(
             update={
                 "tokens_in": max(payload.tokens_in, settled_in + charge_in),
                 "tokens_out": max(payload.tokens_out, settled_out + charge_out),
+                # D11: every model request of every attempt is an inner turn (F136).
+                "inner_turns": max(payload.inner_turns, requests),
                 "usage_known": payload.usage_known and unknown == 0,
             }
         )

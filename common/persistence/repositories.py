@@ -592,20 +592,20 @@ class UsageLedgerRepository:
                 int(settled_count),
             )
 
-    async def task_totals(self, task_id: str) -> tuple[int, int, int]:
-        """The whole task's settled input and output tokens, and its requests whose
-        usage was never observed (R11, review F98)."""
+    async def task_totals(self, task_id: str) -> tuple[int, int, int, int]:
+        """The whole task's settled input and output tokens, its requests whose usage
+        was never observed, and all its requests (R11, D11, review F98, F136)."""
         async with self.engine.connect() as conn:
             found = await conn.execute(
                 text(
                     "SELECT coalesce(sum(input_tokens), 0), coalesce(sum(output_tokens), 0), "
-                    "count(*) FILTER (WHERE input_tokens IS NULL) "
+                    "count(*) FILTER (WHERE input_tokens IS NULL), count(*) "
                     "FROM usage_ledger WHERE task_id = :t"
                 ),
                 {"t": task_id},
             )
-            tokens_in, tokens_out, unknown = found.one()
-        return int(tokens_in), int(tokens_out), int(unknown)
+            tokens_in, tokens_out, unknown, requests = found.one()
+        return int(tokens_in), int(tokens_out), int(unknown), int(requests)
 
     async def unknown_requests(self, task_id: str, turn: int, attempt: int) -> int:
         """Requests this attempt dispatched whose usage was never observed."""

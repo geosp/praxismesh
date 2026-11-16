@@ -493,6 +493,48 @@ def test_file_bodies_never_follow_a_link(tmp_path: Path) -> None:
         tools.read_regular(ws, "dir-link/secret")
 
 
+def test_list_files_never_follows_a_link(tmp_path: Path) -> None:
+    """Review F140: listing a linked directory, or a tree holding one, shows
+    nothing outside the workspace."""
+    from harness_activity import tools
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "worker-secret").write_text("x")
+    ws = tmp_path / "ws"
+    (ws / "sub").mkdir(parents=True)
+    (ws / "sub/kept.txt").write_text("ok")
+    (ws / "dir-link").symlink_to(outside, target_is_directory=True)
+    (ws / "sub/inner-link").symlink_to(outside, target_is_directory=True)
+    assert str(tools.list_files_body(ws, "dir-link")).startswith("error")
+    assert tools.list_files_body(ws, ".") == ["sub/kept.txt"]
+    assert tools.list_files_body(ws, "sub") == ["sub/kept.txt"]
+
+
+def test_launcher_destroy_error_marks_the_attempt_dirty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R10 (review F143): a cleanup that raises still reports the attempt dirty."""
+    import importlib.util
+    import sys
+
+    path = Path(__file__).resolve().parents[1] / "infra/dsh/launcher.py"
+    monkeypatch.syspath_prepend(str(path.parent))
+    spec = importlib.util.spec_from_file_location("dsh_launcher_under_test", path)
+    assert spec is not None and spec.loader is not None
+    launcher = importlib.util.module_from_spec(spec)
+    sys.modules.pop("dsh_launcher_under_test", None)
+    spec.loader.exec_module(launcher)
+    cgroup = tmp_path / "cg"
+    (cgroup / "cgroup.kill").mkdir(parents=True)  # writing it raises an OSError
+    (cgroup / "cgroup.freeze").write_text("0")
+    monkeypatch.setattr(launcher, "_cgroup_of", lambda attempt: cgroup)
+    monkeypatch.setattr(launcher, "ATTEMPTS", tmp_path / "attempts")
+    report = launcher.destroy("task-x/1/1")
+    assert report["processes_left"] is None and report["tree_removed"] is False
+    assert {"task-x/1/1"} == launcher.DIRTY
+
+
 def test_share_gives_the_group_the_owners_access(tmp_path: Path) -> None:
     (tmp_path / "dir").mkdir(mode=0o755)
     (tmp_path / "dir/file").write_text("x")

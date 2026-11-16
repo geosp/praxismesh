@@ -289,6 +289,16 @@ def kill_members(attempt: str) -> dict:
 
 
 def destroy(attempt: str) -> dict:
+    """Kill the attempt and remove its cgroup and tree. Anything left, or a
+    cleanup that fails partway, marks the attempt dirty (review F99, F143)."""
+    try:
+        return _destroy(attempt)
+    except OSError as error:
+        DIRTY.add(attempt)
+        return {"processes_left": None, "tree_removed": False, "error": str(error)[:200]}
+
+
+def _destroy(attempt: str) -> dict:
     cg = _cgroup_of(attempt)
     if cg.exists():
         (cg / "cgroup.freeze").write_text("0")

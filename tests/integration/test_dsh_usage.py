@@ -30,6 +30,7 @@ from common.persistence.repositories import (
 )
 from common.schemas import CompleteTaskInput, TaskStart, TurnInput
 from harness_activity.activity import HarnessActivities
+from harness_activity.dsh.composition import DEFAULT_CONTEXT_WINDOW
 from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS
 from harness_activity.runner import AttemptContext, RunnerFailure, RunResult, Usage
 from registry.loader import load_registry
@@ -361,6 +362,7 @@ async def test_complete_task_charges_what_the_ledger_left_unobserved(
     )
     assert (result.tokens_in, result.tokens_out) == (100 + WINDOW, 10 + DSH_MAX_OUTPUT_TOKENS)
     assert result.usage_known is False
+    assert result.inner_turns == 2  # D11 (F136): both requests, from the ledger
     assert await attempt_row(engine, turn.task_id, 1) == (
         "failed", "task_completed", None, None, False
     )  # fmt: skip
@@ -384,3 +386,38 @@ async def test_lost_rows_hold_the_ledger_usage_when_the_task_completes(
     assert await attempt_row(engine, turn.task_id, 1) == (
         "lost", "lost_or_timed_out", None, None, False
     )  # fmt: skip
+
+
+async def test_complete_task_survives_a_template_the_orchestrator_no_longer_has(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """R11, D9 (review F137): the task's template version is gone from the
+    orchestrator's registry. complete_task still completes, charging the default
+    context window, instead of failing on the lookup."""
+    from orchestrator.activities import OrchestratorActivities
+
+    ledger = UsageLedgerRepository(engine)
+    runner = StubRunner(ledger, RunnerFailure("DshUsageUnknown", True), 0, 0)
+    acts, turn = await setup(engine, tmp_path, runner)
+    await AttemptRepository(engine).start(turn.task_id, 1, 1, "dead-worker")
+    await ledger.dispatch(turn.task_id, 1, 1, "req-0001", "main")
+    orchestrator = OrchestratorActivities(acts.registry, TaskRepository(engine))
+    resolved = await ActivityEnvironment().run(
+        orchestrator.resolve_capabilities,
+        TaskStart(
+            task_id=turn.task_id,
+            request_id="req-1",
+            profile="dsh",
+            template="local-dsh",
+            instructions_ref=await acts.blobs.put(b"x", retention="task"),
+        ),
+    )
+    gone = resolved.model_copy(update={"template_hash": "sha256:" + "f" * 64})
+    result = await ActivityEnvironment().run(
+        orchestrator.complete_task,
+        CompleteTaskInput(
+            task_id=turn.task_id, status="failed", failure_reason="x", resolved=gone, turns=1,
+            attempts=1, tokens_in=0, tokens_out=0, inner_turns=0,
+        ),
+    )  # fmt: skip
+    assert result.tokens_in == DEFAULT_CONTEXT_WINDOW and result.usage_known is False

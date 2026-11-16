@@ -182,19 +182,26 @@ def write_file_body(workspace: Path, path: str, content: str) -> str:
 
 def list_files_body(workspace: Path, path: str = ".") -> list[str] | str:
     try:
-        base = inside(workspace, path)
-        if base != workspace.resolve().joinpath(*_parts(workspace, path)):
-            raise WorkspaceError(f"path outside the workspace: {path}")
-    except WorkspaceError as e:
+        parts = _parts(workspace, path)
+        top = (
+            open_inside(workspace, path, os.O_RDONLY | os.O_DIRECTORY)
+            if parts
+            else os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+        )
+    except (WorkspaceError, OSError) as e:
         return f"error: {e}"
-    root = workspace.resolve()
+    # Walk by descriptor, never following a link, so nothing swapped in after the
+    # open takes the listing outside the workspace (review F140).
     found = []
-    for directory, _, files in os.walk(base, followlinks=False):
-        for name in files:
-            full = Path(directory) / name
-            if full.is_file() and not full.is_symlink():
-                found.append(str(full.relative_to(root)))
-    return sorted(found)
+    try:
+        for directory, _, files, fd in os.fwalk(".", dir_fd=top, follow_symlinks=False):
+            for name in files:
+                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if stat.S_ISREG(info.st_mode):
+                    found.append(str(PurePosixPath(*parts, directory, name)))
+    finally:
+        os.close(top)
+    return sorted(os.path.normpath(p) for p in found)
 
 
 def finish_task_body(
