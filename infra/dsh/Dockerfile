@@ -21,7 +21,7 @@ RUN rm /etc/apt/sources.list.d/debian.sources \
 COPY requirements.txt /opt/dsh/requirements.txt
 RUN pip install --no-cache-dir --no-deps --require-hashes --target /opt/dsh/site \
     -r /opt/dsh/requirements.txt
-COPY pins.py launcher.py /opt/dsh/
+COPY pins.py launcher.py driver.py mcp_bridge.py /opt/dsh/
 RUN python /opt/dsh/pins.py build /opt/dsh/requirements.txt
 
 ENV PYTHONPATH=/opt/dsh/site PYTHONDONTWRITEBYTECODE=1
