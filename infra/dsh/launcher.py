@@ -55,6 +55,7 @@ COMMAND_TMP = "command-tmp"
 
 libc = ctypes.CDLL(None, use_errno=True)
 CLONE_NEWNS = 0x00020000
+CLONE_NEWIPC = 0x08000000
 CLONE_NEWUSER = 0x10000000
 MS_RDONLY, MS_NOSUID, MS_NODEV, MS_BIND, MS_REC, MS_PRIVATE = 1, 2, 4, 4096, 16384, 1 << 18
 PR_SET_NO_NEW_PRIVS, PR_SET_SECCOMP, SECCOMP_MODE_FILTER = 38, 22, 2
@@ -145,7 +146,9 @@ def _isolate(attempt: str, view: str) -> None:
     mount namespace that shows only this attempt (`view` is where it appears)."""
     (_cgroup_of(attempt) / "cgroup.procs").write_text("0")
     os.umask(0o007)
-    _check(libc.unshare(CLONE_NEWNS), "unshare mount namespace")
+    # A mount namespace of its own, and an IPC namespace of its own: SysV shared
+    # memory and message queues outlive their process (review F132).
+    _check(libc.unshare(CLONE_NEWNS | CLONE_NEWIPC), "unshare mount and IPC namespaces")
     _mount(None, "/", None, MS_REC | MS_PRIVATE)
     # The container's other writable places are shared by every attempt: each
     # attempt process gets empty ones of its own (review F102). /run first, since

@@ -60,6 +60,8 @@ CLIENT = textwrap.dedent(
         write = ("for d in /tmp /run /dev/shm; do echo leaked > $d/marker && echo ok; done; "
                  "echo rc=$?")
         out["write"] = ask(f, op="exec", command=write, timeout=10)
+        ipc = "ipcmk -M 4096 && ipcmk -Q && echo ipc-ok"
+        out["ipc_write"] = ask(f, op="exec", command=ipc, timeout=10)
         out["stop"] = ask(f, op="stop", grace=2)
         for name in ("home", "workspace", "ipc"):
             os.makedirs(f"/attempts/task-3/1/1/{name}", exist_ok=True)
@@ -67,6 +69,7 @@ CLIENT = textwrap.dedent(
         read = ("cat /tmp/marker /run/marker /dev/shm/marker 2>/dev/null; echo rc=$?; "
                 "ls -A /tmp /run /dev/shm")
         out["read"] = ask(f, op="exec", command=read, timeout=10)
+        out["ipc_read"] = ask(f, op="exec", command="ipcs -m -q", timeout=10)
         out["stop2"] = ask(f, op="stop", grace=2)
         print(json.dumps(out)); sys.exit(0)
     if sys.argv[1] == "frozen-stop":  # a stop while a barrier holds the freeze
@@ -194,6 +197,10 @@ def test_commands_get_their_own_tmp(launcher: str) -> None:
     assert out["write"]["stdout"].split().count("ok") == 3  # every place was writable
     seen = out["read"]["stdout"]
     assert "leaked" not in seen and "marker" not in seen and "rc=1" in seen
+    # Review F132: SysV shared memory and queues outlive their process; a later
+    # attempt must not see them.
+    assert "ipc-ok" in out["ipc_write"]["stdout"]
+    assert "0x" not in out["ipc_read"]["stdout"], out["ipc_read"]["stdout"]
     for shared in ("/tmp", "/run", "/dev/shm"):
         listing = docker("exec", launcher, "ls", "-A", shared).stdout.split()
         assert "marker" not in listing, shared
