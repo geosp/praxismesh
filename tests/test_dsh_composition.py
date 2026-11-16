@@ -48,9 +48,20 @@ def test_no_dsh_skill_plugin_is_inserted() -> None:
     assert composition.SKILL_TOOL_PLUGIN not in plugins
 
 
+def test_exactly_the_provider_and_tool_plugins_are_inserted() -> None:
+    """R14 (review F77): skill discovery (`includeDefaultRoots`) is a setting of the
+    `dsh-skill-filesystem` plugin, which is never inserted; the patch inserts the
+    gateway provider and the MCP client and nothing else, so no plugin can add a
+    discovery root."""
+    assert [p["name"] for p in INSERTED] == [
+        "@deepseek-ai/dsh-llm-pi-ai",
+        "@deepseek-ai/dsh-mcp-client",
+    ]
+
+
 def test_no_skill_discovery_roots() -> None:
-    """`includeDefaultRoots: false`: with no skill-filesystem plugin there is no
-    discovery root at all, and nothing in the patch turns one on."""
+    """With no skill-filesystem plugin there is no discovery root at all, and
+    nothing in the patch turns one on."""
     text = composition.render("spark", 32768, 8080)
     assert "includeDefaultRoots: true" not in text and "customSkillDirs" not in text
     assert "dsh-skill-filesystem" not in text

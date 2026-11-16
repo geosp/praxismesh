@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import itertools
 import json
 import os
 import shutil
@@ -420,12 +421,14 @@ async def test_command_isolation_blocks_session_other_attempts_and_reaps_backgro
     other = container.attempts / "other-task/1/1/workspace"
     other.mkdir(parents=True)
     (other / "secret.txt").write_text("other-attempt-secret")
+    # Each probe prints a label, so the test sees that it ran and what it saw.
     probe_cmd = (
         "sh -c '"
-        "cat /attempts/*/1/1/home/sessions/* 2>&1 || true; "
-        "cat /run/attempt/home/sessions/* 2>&1 || true; "
-        "ls -A /attempts 2>&1; "
-        "(sleep 55 >/dev/null 2>&1 &); "
+        "echo other:; cat /attempts/other-task/1/1/workspace/secret.txt 2>/dev/null; "
+        "echo attempts:; ls -A /attempts 2>/dev/null; "
+        "echo session:; cat /attempts/*/1/1/home/sessions/* /run/attempt/home/sessions/* "
+        "../home/sessions/* 2>/dev/null; "
+        "echo end:; (sleep 55 >/dev/null 2>&1 &); "
         "echo isolated-ok"
         "'"
     )
@@ -447,8 +450,14 @@ async def test_command_isolation_blocks_session_other_attempts_and_reaps_backgro
     assert result.status == "succeeded" and await attempt_rows(task_id) == [(1, 1, "done", None)]
     tool_outputs = [m["content"] for m in second_req["messages"] if m.get("role") == "tool"]
     assert len(tool_outputs) == 1 and "isolated-ok" in tool_outputs[0]
-    assert "other-attempt-secret" not in tool_outputs[0]
-    assert "session.v4" not in tool_outputs[0]
+    # Review F90: every probe ran and saw nothing; the session file holds the
+    # task's instructions, so reading it would show them.
+    seen = tool_outputs[0]
+    labels = ["other:", "attempts:", "session:", "end:"]
+    assert all(label in seen for label in labels)
+    between = [seen.split(a, 1)[1].split(b, 1)[0].strip() for a, b in itertools.pairwise(labels)]
+    assert between == ["", "", ""]
+    assert "other-attempt-secret" not in seen and "controlled completion fixture" not in seen
     # Neither the backgrounded `sleep 55` nor any attempt process survived.
     assert container.attempt_processes() == []
 

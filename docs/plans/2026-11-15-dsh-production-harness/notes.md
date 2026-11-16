@@ -118,8 +118,10 @@ that first closed them was lost. This replaces the spike's fail-closed admission
 DSH features turned off, by composition id (spike `composition.yaml`):
 `jobs`, `session-title`, `mcp-resources`, `compaction-basic`, `image-offload`,
 `tool-fs`, `tool-working-directory`, `persistent-bash`, `persistent-pwsh`, the
-`dsh-skill*` plugins, `agent-loop.agents: []` (no delegation) and
-`includeDefaultRoots: false` (no discovery).
+`dsh-skill*` plugins, `agent-loop.agents: []` (no delegation), and no discovery:
+`includeDefaultRoots` is a setting of the `dsh-skill-filesystem` plugin (the spike set
+it to false), and production never inserts that plugin, so the patch inserts only the
+gateway provider and the MCP client (impl-review F77).
 
 ## D10
 
