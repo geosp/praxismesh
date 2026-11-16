@@ -311,18 +311,20 @@ class HarnessActivities:
         info = activity.info()
         template = self.registry.templates[turn.template].template
         base = heartbeat.base
-        unknown = await self.ledger.close_unknown(turn.task_id, turn.turn, attempt)
-        if unknown:
-            # The count comes from the ledger every time; charge only what the
-            # heartbeat of an earlier attempt has not carried over already.
-            new = max(0, unknown - base.unknown_requests)
-            tokens_in, tokens_out = unknown_charge(new, template.context_window or 0)
+        unknown, settled_in, settled_out, settled_count = await self.ledger.close_unknown(
+            turn.task_id, turn.turn, attempt
+        )
+        charge_in, charge_out = unknown_charge(unknown, template.context_window or 0)
+        if unknown or settled_in or settled_out or settled_count:
+            # R11, D9: usage comes from the gateway ledger, so a request settled
+            # between the last heartbeat and a worker crash is never lost.
             heartbeat.base = dataclasses.replace(
                 base,
-                tokens_in=base.tokens_in + tokens_in,
-                tokens_out=base.tokens_out + tokens_out,
+                tokens_in=max(base.tokens_in, settled_in + charge_in),
+                tokens_out=max(base.tokens_out, settled_out + charge_out),
+                inner_turns=max(base.inner_turns, settled_count + unknown),
                 unknown_requests=max(unknown, base.unknown_requests),
-                usage_known=False,
+                usage_known=base.usage_known and unknown == 0,
             )
         used = heartbeat.current()
         timeout = info.start_to_close_timeout or turn.remaining_wall_time

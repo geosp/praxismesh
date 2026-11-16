@@ -484,13 +484,17 @@ class UsageLedgerRepository:
                 },
             )
 
-    async def close_unknown(self, task_id: str, turn: int, attempt: int) -> int:
+    async def close_unknown(
+        self, task_id: str, turn: int, attempt: int
+    ) -> tuple[int, int, int, int]:
         """Close the requests earlier attempts of this turn dispatched but never
         settled, mark those attempts' usage unknown (NULL tokens, never 0), and
-        return how many unknown requests the turn has so far.
+        return `(unknown_requests, settled_tokens_in, settled_tokens_out,
+        settled_requests)` for earlier attempts of this turn.
 
-        The count is derived from the rows each time, so every later attempt charges
-        the same amount even if the attempt that first closed them was lost (D9)."""
+        The totals are derived from the ledger rows each time, so every later
+        attempt reconstructs the exact settled usage plus conservative unknown
+        charge even when a worker was killed between heartbeats (D9, R11)."""
         params = {"t": task_id, "turn": turn, "a": attempt}
         earlier = "task_id = :t AND turn = :turn AND attempt < :a"
         async with self.engine.begin() as conn:
@@ -510,11 +514,25 @@ class UsageLedgerRepository:
                 ),
                 params,
             )
+            settled = await conn.execute(
+                text(
+                    f"SELECT coalesce(sum(input_tokens), 0), coalesce(sum(output_tokens), 0), "
+                    f"count(*) FILTER (WHERE input_tokens IS NOT NULL) "
+                    f"FROM usage_ledger WHERE {earlier}"
+                ),
+                params,
+            )
+            settled_in, settled_out, settled_count = settled.one()
             found = await conn.execute(
                 text(f"SELECT count(*) FROM usage_ledger WHERE {earlier} AND input_tokens IS NULL"),
                 params,
             )
-            return int(found.scalar_one())
+            return (
+                int(found.scalar_one()),
+                int(settled_in),
+                int(settled_out),
+                int(settled_count),
+            )
 
 
 class RecordingBlobStore:

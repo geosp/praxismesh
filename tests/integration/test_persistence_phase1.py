@@ -389,9 +389,9 @@ async def test_lost_requests_are_closed_and_counted_for_every_later_attempt(
     await ledger.settle(start.task_id, 1, 1, "req-0001", 7, 3)
     await ledger.dispatch(start.task_id, 1, 1, "req-0002", "main")  # worker dies here
     await attempts.start(start.task_id, 1, 2, "worker-b")
-    assert await ledger.close_unknown(start.task_id, 1, 2) == 1
+    assert await ledger.close_unknown(start.task_id, 1, 2) == (1, 7, 3, 1)
     await attempts.start(start.task_id, 1, 3, "worker-c")  # attempt 2 was lost too
-    assert await ledger.close_unknown(start.task_id, 1, 3) == 1  # same charge, not zero
+    assert await ledger.close_unknown(start.task_id, 1, 3) == (1, 7, 3, 1)  # same charge, not zero
     async with engine.connect() as conn:
         row = (
             await conn.execute(
@@ -403,4 +403,4 @@ async def test_lost_requests_are_closed_and_counted_for_every_later_attempt(
             )
         ).one()
     assert tuple(row) == (None, None, False)
-    assert await ledger.close_unknown(start.task_id, 2, 1) == 0  # a new turn starts clean
+    assert await ledger.close_unknown(start.task_id, 2, 1) == (0, 0, 0, 0)  # new turn starts clean
