@@ -87,6 +87,9 @@ DIRS = ("workspace", "home", "ipc", "config", "tmp")
 # After a step-limit or token-budget denial the runtime may exit by itself this
 # long; then it is stopped with the rest of the 5 s grace (R8, review F64).
 LIMIT_EXIT_SECONDS = 2.0
+# Beyond the grace, how long the launcher may take to kill and remove an attempt
+# (its own kill wait is 5 s) before the stop counts as failed (review F100, F111).
+STOP_REPLY_MARGIN_SECONDS = 10.0
 STEP_LIMIT_STOP = "step limit"
 # What a run stopped because a barrier could not thaw it ends as: the runtime was
 # frozen, so neither its exit nor its usage says anything about it (D6).
@@ -168,11 +171,29 @@ class DshAttempt:
         assert self.session_store is not None
         return self.session_store
 
-    async def stop(self, grace: float = CLEANUP_GRACE_SECONDS) -> dict[str, Any]:
-        """SIGTERM the runtime; after `grace` the launcher kills what is left and
-        removes the tree. Returns the launcher's report."""
-        self.stopped = True
-        return await self.launcher.request("stop", grace=grace)
+    async def stop(
+        self, grace: float = CLEANUP_GRACE_SECONDS, *, keep_tree: bool = False
+    ) -> dict[str, Any]:
+        """SIGTERM the runtime; after `grace` the launcher kills what is left and,
+        unless `keep_tree`, removes the tree. Returns the launcher's report.
+
+        Every stop checks its own report: one that leaves processes (or, for a full
+        stop, the tree) behind, or that the launcher could not carry out, marks the
+        container dirty, whichever path stopped the attempt (review F100)."""
+        if not keep_tree:
+            self.stopped = True
+        try:
+            report = await asyncio.wait_for(
+                self.launcher.request("stop", grace=grace, keep_tree=keep_tree),
+                grace + STOP_REPLY_MARGIN_SECONDS,
+            )
+        except (LauncherError, TimeoutError, OSError) as error:
+            report = {"error": str(error)[:200], "processes_left": None, "tree_removed": False}
+        if report.get("processes_left") != 0 or not (keep_tree or report.get("tree_removed")):
+            log.error("DSH attempt cleanup failed", extra={"fields": report})
+            if self.on_dirty is not None:
+                self.on_dirty(report)
+        return report
 
     async def close(self) -> None:
         if self.closed:
@@ -180,13 +201,7 @@ class DshAttempt:
         self.closed = True
         try:
             if not self.stopped:
-                report = await asyncio.wait_for(self.stop(), CLEANUP_GRACE_SECONDS + 10)
-                if report.get("processes_left") != 0 or not report.get("tree_removed"):
-                    log.error("DSH attempt cleanup failed", extra={"fields": report})
-                    if self.on_dirty is not None:
-                        self.on_dirty(report)
-        except (LauncherError, TimeoutError, OSError) as error:
-            log.warning("DSH attempt stop failed", extra={"fields": {"error": str(error)[:200]}})
+                await self.stop()
         finally:
             await self.launcher.close()  # the launcher destroys whatever is left
             shutil.rmtree(self.tree, ignore_errors=True)
@@ -483,11 +498,7 @@ class DshRunner:
                         # The turn ends as a `continue` and checkpoints this
                         # workspace: end the processes, keep the tree (F96).
                         report = await asyncio.shield(
-                            attempt.launcher.request(
-                                "stop",
-                                grace=CLEANUP_GRACE_SECONDS - LIMIT_EXIT_SECONDS,
-                                keep_tree=True,
-                            )
+                            attempt.stop(CLEANUP_GRACE_SECONDS - LIMIT_EXIT_SECONDS, keep_tree=True)
                         )
                     else:
                         report = await asyncio.shield(attempt.stop(CLEANUP_GRACE_SECONDS))

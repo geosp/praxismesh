@@ -37,7 +37,7 @@ from common.schemas import TaskStart, TurnInput, TurnOutcome
 from harness_activity.activity import HarnessActivities
 from harness_activity.config import build_config
 from harness_activity.dsh import runner as dsh_runner
-from harness_activity.dsh.launcher_client import LauncherClient
+from harness_activity.dsh.launcher_client import LauncherClient, LauncherError
 from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, UsageLedger
 from harness_activity.dsh.pins import RuntimePinMismatch
 from harness_activity.dsh.runner import DshRunner, LauncherUnhealthy
@@ -623,6 +623,36 @@ async def test_step_limit_stop_keeps_the_workspace_for_the_checkpoint(
     assert latest is not None and latest.attempt == 1
     assert "input.txt" in names(await h.blobs.get(latest.workspace_ref))
     assert container.attempt_cgroups() == [] and not (container.attempts / h.task_id).exists()
+
+
+@pytest.mark.parametrize("fault", ["processes left", "stop refused"])
+async def test_dirty_stop_during_a_run_stops_new_attempts(
+    fault: str, container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R10 (review F100): the deadline stop inside a run leaves a process behind, or
+    the launcher refuses the stop. The attempt is a cleanup failure, and the runner
+    refuses new attempts on that container."""
+    original = LauncherClient.request
+
+    async def bad_stop(self: LauncherClient, op: str, **fields: Any) -> dict[str, Any]:
+        reply = await original(self, op, **fields)
+        if op != "stop":
+            return reply
+        if fault == "stop refused":
+            raise LauncherError("stop: OSError")
+        return {**reply, "processes_left": 1}
+
+    runner = container.runner()
+    monkeypatch.setattr(LauncherClient, "request", bad_stop)
+    script = [{"tool": "run_command", "args": {"command": "sh -c 'sleep 50'"}}]
+    with FakeModel(script) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        failure, _ = await run_one(runner, 4, _no_op, f"task-dirty-{run_id()}")
+    assert (failure.category, failure.retryable) == ("DshCleanupFailure", False)
+    with pytest.raises(LauncherUnhealthy):
+        await runner.open_attempt(
+            AttemptContext(f"task-dirty-{run_id()}", 1, 1, "wf", 1_000, time.monotonic() + 60)
+        )
 
 
 async def _no_op(usage: Usage) -> None:
