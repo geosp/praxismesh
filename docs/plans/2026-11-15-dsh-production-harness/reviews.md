@@ -224,3 +224,50 @@ passed (2 rounds), verification and demo passed.
 ## 2026-11-15 · start · phase 02
 
 Branch `feat/62-dsh-runner` from 562733a72b880d13576ced63e8b8ad09716094df (stacked on PR #66).
+
+## 2026-11-16 · impl-review · phase 02 · round 1 · changes-requested
+
+- Diff base: 562733a72b880d13576ced63e8b8ad09716094df; frozen review commit: 43798c76e42d04d205fbb8b9ba3b64916a8f4ab3.
+- Reviewers: Contract completed; Failure and retry completed; Scope and composition completed (fresh `impl-reviewer` subagents, docs/reviews/README.md rule 1). Raw reports: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-02-round-1-{contract,failure,scope}.md. An earlier attempt in another tool ended at its quota before any report was saved; this round replaces it.
+- Mechanical: plan-tool check 0 errors, 0 warnings; no unticked tasks; R5-R18 defined with scenarios.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F58 | Major | all three | Workflow `ActivityError` branch drops `usage_known`; a turn that fails for good after a D9 charge reports `usage_known = true` (R12, D7). | open |
+| F59 | Major | all three | D9 charge and `usage_known = false` only applied when a later attempt opens; cancel, non-retryable stops and `AttemptsExhausted` leave unsettled requests uncharged (R12, R13, D9). | open |
+| F60 | Major | all three | Stop (deadline, cancel, thaw failure) while the barrier holds the freeze sends SIGTERM to a frozen runtime and becomes non-retryable `DshForcedStop` (R8, R9, D6). | open |
+| F61 | Major | scope, failure, contract | Ledger dispatch is unfenced and an attempt's first request has no barrier; a stale attempt's spend after the newer attempt's `close_unknown` escapes the turn total (R11, R13, D10). | open |
+| F62 | Major | scope, failure, contract | R17 pin checked once at worker start; a recreated DSH container is served unchecked (R17). | open |
+| F63 | Major | failure | Commands share the container `/tmp` across attempts and tasks (R15). | open |
+| F64 | Major | contract, scope | Step-limit/budget denial returns 429 only; no 5 s bound enforced or tested after a step limit (R8). | open |
+| F65 | Major | contract, scope | R18 tests hard-code expectations that differ from `dsh-phase02-r2-evidence.json` (inner_turns, usage_known) with no recorded decision; cancel case has no TaskResult check (R18). | open |
+| F66 | Major | contract | Stale-attempt test can pass vacuously (early exit or cancel); R7 "stale attempt that finished" not exercised on DSH (R6, R7). | open |
+| F67 | Major | contract | Failed freeze before the final checkpoint is ignored; a torn workspace can be checkpointed and published (R5, D6). | open |
+| F68 | Nit | all three | Lost attempt with only settled requests keeps `tokens_in = 0, usage_known = true` (R11, R12). | open |
+| F69 | Nit | scope, failure | Attempt rows write non-null tokens with `usage_known = false`, against the schema comment (D7). | open |
+| F70 | Nit | scope, contract | `cooperative` covers only the runtime PID; commands killed by `cgroup.kill` still count as cooperative (R9). | open |
+| F71 | Nit | scope | Success-path cleanup report (`processes_left`, `tree_removed`) is ignored (R8, R10). | open |
+| F72 | Nit | scope, failure | Attempt deadline built from per-turn `remaining_wall_time`; retries can exceed task wall time; step ceiling is per attempt. | open |
+| F73 | Nit | scope, contract | Gateway does not clamp `max_tokens`; D9 assumes 2048 output tokens unchecked (D9). | open |
+| F74 | Nit | scope | Inner turns from the ledger count requests; live count uses logical steps. | open |
+| F75 | Nit | scope | Activity heartbeat-base charge merge tested over two attempts only (D9). | open |
+| F76 | Nit | scope | Tree created before launcher `open` is orphaned on worker death until launcher restart (R10). | open |
+| F77 | Nit | scope, contract | `includeDefaultRoots: false` never set; live poison files only in workspace, not HOME (R14). | open |
+| F78 | Nit | scope | `context_window` default 32768 in composition vs `or 0` in `_open` (unreachable). | open |
+| F79 | Nit | failure | Cancellation outside the poll loop leaves the attempt row `started`. | open |
+| F80 | Nit | failure | Ledger request ids restart for a second `run` in one attempt; PK collision (Activity path unaffected). | open |
+| F81 | Nit | failure | Tool body in a thread can recreate files after `destroy` (R10). | open |
+| F82 | Nit | failure, contract | Tool-call counts since the last heartbeat are lost with the worker (R11). | open |
+| F83 | Nit | failure | `checkpoints.session_ref` is `json`, D7 says `jsonb` (D7). | open |
+| F84 | Nit | failure | A transient barrier failure forces a retry of a run that later finished. | open |
+| F85 | Nit | failure | Failed thaw is reported as barrier failure after the checkpoint committed (D6). | open |
+| F86 | Nit | failure | Unproven race: `destroy` rmtree during barrier pack could commit an empty session (R5). | open |
+| F87 | Nit | contract | Plan D9 and decision log still say `context_window + max_tokens`; code uses the 2048 cap from notes.md#d9 (D9). | open |
+| F88 | Nit | contract | `apparmor:unconfined` added without a decision-log entry (D3). | open |
+| F89 | Nit | contract | DSH image carries the full slim userland, not only granted `cli_tools` (D4). | open |
+| F90 | Nit | contract | Outcomes-level isolation test assertions cannot fail (R15; launcher test covers it). | open |
+| F91 | Nit | contract | Refused tool calls emit no event (gateway) or an unpaired `tool_result` (executor) (R16). | open |
+| F92 | Nit | contract | Pin lock covers the DSH distribution only, not launcher/driver/bridge (R17). | open |
+| F93 | Nit | contract | Conformance `instructions_seen` now joins messages 0 and 1 for every runner, weakening the openai_agents check (task 2.3). | open |
+| F94 | Nit | contract | Reap-at-start test checks trees only, not processes or cgroups (task 1.1). | open |
+| F95 | Nit | contract | Migration downgrade rewrites NULL tokens to 0 (D7). | open |

@@ -6,7 +6,7 @@ branch: feat/62-dsh-runner
 base: 562733a72b880d13576ced63e8b8ad09716094df
 delivers: [R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, R16, R17, R18]
 design_review: { status: passed, rounds: 3, last: 2026-11-15 }
-impl_review: { status: none, rounds: 0, last: null }
+impl_review: { status: changes-requested, rounds: 1, last: 2026-11-16 }
 approved: 2026-11-15
 ---
 
