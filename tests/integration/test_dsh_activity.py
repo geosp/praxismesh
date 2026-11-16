@@ -1,0 +1,294 @@
+"""A DSH turn through `run_harness_turn`, with the real database and a real DSH
+container (DSH migration plan D1, D6, D9, R11, R12, R16; phase 02 task 2.4).
+
+The model is the deterministic fake; the DSH container is built from
+`infra/dsh/Dockerfile` and the test process plays the worker.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import dataclasses
+import io
+import json
+import tarfile
+import time
+from collections.abc import AsyncIterator, Iterator
+from datetime import timedelta
+from typing import Any
+
+import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
+from temporalio.testing import ActivityEnvironment
+
+from common.blob_store import MemoryBlobStore
+from common.persistence.repositories import (
+    CheckpointRepository,
+    TaskRepository,
+    UsageLedgerRepository,
+    make_engine,
+)
+from common.schemas import TaskStart, TurnInput, TurnOutcome
+from harness_activity.activity import HarnessActivities
+from harness_activity.config import build_config
+from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS
+from harness_activity.dsh.runner import DshRunner
+from harness_activity.events import MemorySink
+from harness_activity.runner import AttemptContext, RunnerFailure, Usage
+from registry.loader import load_registry
+from tests.support.dsh import DshContainer, build_image, start_container
+from tests.support.fake_model import FakeModel
+from tests.support.stack import run_id
+
+pytestmark = pytest.mark.integration
+INSTRUCTIONS = "Write the order summary for SKU-1."
+SCRIPT: list[dict[str, Any]] = [
+    {"tool": "lookup_price", "args": {"sku": "SKU-1"}},
+    {"tool": "write_file", "args": {"path": "order-summary.md", "content": "Total: 37.50\n"}},
+    {"tool": "finish_task", "args": {"status": "done", "summary": "Wrote the summary."}},
+]
+
+
+@pytest.fixture(scope="module")
+def container() -> Iterator[DshContainer]:
+    found = start_container(build_image())
+    try:
+        yield found
+    finally:
+        found.stop()
+
+
+@pytest.fixture
+async def engine() -> AsyncIterator[AsyncEngine]:
+    eng = make_engine()
+    yield eng
+    await eng.dispose()
+
+
+@dataclasses.dataclass
+class Harness:
+    acts: HarnessActivities
+    blobs: MemoryBlobStore
+    sink: MemorySink
+    task_id: str
+    heartbeats: list[dict[str, Any]]
+
+    def env(self, attempt: int, details: dict[str, Any] | None) -> ActivityEnvironment:
+        env = ActivityEnvironment()
+        env.info = dataclasses.replace(
+            env.info,
+            attempt=attempt,
+            heartbeat_details=[details] if details is not None else [],
+            heartbeat_timeout=timedelta(seconds=3),
+            start_to_close_timeout=timedelta(minutes=5),
+            workflow_id=self.task_id,
+        )
+        env.on_heartbeat = lambda *d: self.heartbeats.append(d[0])
+        return env
+
+    def turn(self) -> TurnInput:
+        return TurnInput(
+            task_id=self.task_id,
+            turn=1,
+            template="local-dsh",
+            template_version=1,
+            template_hash=load_registry().templates["local-dsh"].hash,
+            remaining_tokens=1_000_000,
+            remaining_wall_time=timedelta(minutes=10),
+            request_id="req-dsh-activity",
+        )
+
+
+async def harness(engine: AsyncEngine, container: DshContainer) -> Harness:
+    blobs, sink = MemoryBlobStore(), MemorySink()
+    task_id = f"task-dsh-{run_id()}"
+    instructions = await blobs.put(INSTRUCTIONS.encode(), retention="task")
+    data = await blobs.put(b"input data", retention="task")
+    start = TaskStart(
+        task_id=task_id,
+        request_id="req-1",
+        profile="dsh",
+        template="local-dsh",
+        instructions_ref=instructions,
+        input_refs={"input.txt": data},
+        outputs=["order-summary.md"],
+    )
+    await TaskRepository(engine).record_task(
+        start, workflow_id=task_id, run_id="run-1", template_version=1, template_hash="x"
+    )
+    runner = DshRunner(container.control, UsageLedgerRepository(engine), blobs, sink)
+    acts = HarnessActivities(
+        load_registry(),
+        engine,
+        blobs,
+        runner,
+        container.attempts,
+        "test-dsh-worker",
+        open_attempt=runner.open_attempt,
+    )
+    return Harness(acts, blobs, sink, task_id, [])
+
+
+async def rows(engine: AsyncEngine, sql: str, **params: Any) -> list[Any]:
+    async with engine.connect() as conn:
+        return list((await conn.execute(text(sql), params)).all())
+
+
+def names(data: bytes) -> list[str]:
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+        return tar.getnames()
+
+
+async def test_dsh_turn_through_the_activity(
+    engine: AsyncEngine, container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = await harness(engine, container)
+    with FakeModel(SCRIPT) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        outcome: TurnOutcome = await h.env(1, None).run(h.acts.run_harness_turn, h.turn())
+        first = fake.state.requests[0]
+    assert outcome.status == "done" and outcome.summary == "Wrote the summary."
+    assert (outcome.tokens_in, outcome.tokens_out) == (300, 30) and outcome.usage_known
+    assert (outcome.tool_calls, outcome.inner_turns) == (3, 3)
+    assert [a.path for a in outcome.outputs] == ["order-summary.md"]
+    assert await h.blobs.get(outcome.outputs[0].ref) == b"Total: 37.50\n"
+    # The model saw the bare tool names and the template's model, as with openai_agents.
+    assert "finish_task" in {t["function"]["name"] for t in first["tools"]}
+    assert INSTRUCTIONS in json.dumps(first["messages"])
+
+    # D6, D1: a barrier checkpoint before the second and third request and a final
+    # one, each with the session as its own blob; the workspace holds no session.
+    latest = await CheckpointRepository(engine).latest(h.task_id)
+    assert latest is not None and latest.seq == 2 and latest.session_position == 0
+    assert latest.finish is not None and latest.finish["status"] == "done"
+    assert latest.session_ref is not None and latest.session_digest is not None
+    session_files = names(await h.blobs.get(latest.session_ref))
+    assert any(name.endswith("session.v4.jsonl") for name in session_files)
+    workspace_files = names(await h.blobs.get(latest.workspace_ref))
+    assert "order-summary.md" in workspace_files and "input.txt" in workspace_files
+    assert not any("session" in name for name in workspace_files)
+
+    # R11: usage is what the gateway ledger settled.
+    ledger = await rows(
+        engine,
+        "SELECT input_tokens, output_tokens, settled_at IS NOT NULL FROM usage_ledger "
+        "WHERE task_id = :t ORDER BY request_id",
+        t=h.task_id,
+    )
+    assert [tuple(r) for r in ledger] == [(100, 10, True)] * 3
+    attempt = await rows(
+        engine,
+        "SELECT outcome, tokens_in, tokens_out, tool_calls, usage_known FROM task_attempts "
+        "WHERE task_id = :t",
+        t=h.task_id,
+    )
+    assert [tuple(r) for r in attempt] == [("done", 300, 30, 3, True)]
+
+    # R16: ordered events with the attempt's identity, and no prompt or tool text.
+    events = h.sink.events
+    assert [e.seq for e in events] == list(range(len(events)))
+    assert {e.attempt_id for e in events} == {f"{h.task_id}:1:1"}
+    assert {e.workflow_id for e in events} == {h.task_id}
+    assert [e.type for e in events] == ["token", "tool_call", "tool_result"] * 3
+    assert [e.payload["tool"] for e in events if e.type == "tool_call"] == [
+        "lookup_price",
+        "write_file",
+        "finish_task",
+    ]
+    dumped = json.dumps([e.payload for e in events])
+    assert "37.50" not in dumped and "order summary" not in dumped.lower()
+
+    # The attempt is gone from the DSH container and the shared volume.
+    assert container.attempt_cgroups() == []
+    assert not (container.attempts / h.task_id).exists()
+
+
+async def test_dsh_resumes_and_charges_a_lost_request(
+    engine: AsyncEngine, container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Attempt 1 is cancelled while its third model request is in flight. Attempt 2
+    restores the session blob and workspace from the barrier checkpoint, charges
+    the unobserved request conservatively (D9) and finishes the turn."""
+    h = await harness(engine, container)
+    script = [SCRIPT[0], SCRIPT[1], {**SCRIPT[2], "pause": True}]
+    with FakeModel(script) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        env = h.env(1, None)
+        first = asyncio.create_task(env.run(h.acts.run_harness_turn, h.turn()))
+        until = time.monotonic() + 60
+        while fake.state.paused_step != 2:
+            assert time.monotonic() < until and not first.done()
+            await asyncio.sleep(0.05)
+        stopped = time.monotonic()
+        env.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        assert time.monotonic() - stopped < 5  # a cooperative stop, within the grace (R8)
+        assert container.attempt_cgroups() == []
+        assert not (container.attempts / h.task_id).exists()
+
+        outcome: TurnOutcome = await h.env(2, h.heartbeats[-1]).run(
+            h.acts.run_harness_turn, h.turn()
+        )
+        resumed = fake.state.requests[-1]
+
+    assert outcome.status == "done" and outcome.attempts == 2
+    # The conversation and the file survived without the old attempt tree (R5).
+    replayed = json.dumps(resumed["messages"])
+    assert "lookup_price" in replayed and "wrote 13 characters" in replayed
+    assert await h.blobs.get(outcome.outputs[0].ref) == b"Total: 37.50\n"
+    # D9, R12, R13: two settled requests, one unknown charged conservatively, then
+    # the resumed request.
+    window = load_registry().templates["local-dsh"].template.context_window
+    assert window is not None and not outcome.usage_known
+    assert outcome.tokens_in == 200 + window + 100
+    assert outcome.tokens_out == 20 + DSH_MAX_OUTPUT_TOKENS + 10
+    attempts = await rows(
+        engine,
+        "SELECT attempt, outcome, failure_category, tokens_in, usage_known FROM task_attempts "
+        "WHERE task_id = :t ORDER BY attempt",
+        t=h.task_id,
+    )
+    assert [tuple(r) for r in attempts] == [
+        (1, "cancelled", "DshCancelled", None, False),
+        (2, "done", None, outcome.tokens_in, False),
+    ]
+
+
+async def test_deadline_stops_a_running_command_within_the_grace(
+    container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R8: the deadline fires while a command runs. The launcher still takes the
+    stop, the runtime exits on SIGTERM, and the command dies with the attempt."""
+    runner = container.runner()
+    script = [{"tool": "run_command", "args": {"command": "sh -c 'sleep 50'"}}]
+    with FakeModel(script) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        registry = load_registry()
+        config = build_config(registry, registry.templates["local-dsh"], "task-deadline-1")
+        deadline = time.monotonic() + 4
+        scope = await runner.open_attempt(
+            AttemptContext(f"task-deadline-{run_id()}", 1, 1, "wf", 1_000_000, deadline)
+        )
+        try:
+            with pytest.raises(RunnerFailure) as failure:
+                await runner.run(
+                    config, scope.workspace, scope.store.session, "go", _no_op, Usage()
+                )
+            stopped_after = time.monotonic() - deadline
+        finally:
+            await scope.close()
+    assert (failure.value.category, failure.value.retryable) == ("DshTurnDeadline", True)
+    assert stopped_after < 5 and len(fake.state.requests) == 1
+    assert container.attempt_cgroups() == []
+    left = container.exec(
+        "sh",
+        "-c",
+        "for c in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < $c; echo; done | grep -c '[s]leep 50'",
+    )
+    assert left.stdout.strip() == "0"  # the command died with the attempt
+
+
+async def _no_op(usage: Usage) -> None:
+    return None

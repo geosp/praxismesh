@@ -1,7 +1,8 @@
 """`HarnessRunner` conformance against the deterministic fake model, with the real
 sample MCP server as a subprocess (spec execution/harness-turn; RFC Testing).
 
-Runs in the unit suite: no stack needed (read-only MCP tools only)."""
+Runs in the unit suite for `openai_agents`: no stack needed (read-only MCP tools
+only). The `dsh` runs are marked `integration`: they start a DSH container."""
 
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import logging
 import os
 import shutil
 import sys
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from harness_activity.config import HarnessConfig, McpConfig, build_config
 from harness_activity.runner import HarnessRunner, OpenAIAgentsRunner, Usage
 from harness_activity.session_store import SessionStore
 from registry.loader import REGISTRY_ROOT, load_registry
+from tests.support.dsh import DshContainer, build_image, start_container
 from tests.support.fake_model import FakeModel
 from tests.support.session_stores import MemorySessionStore, store_contract
 
@@ -32,7 +34,7 @@ def script(*steps: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 # Every runner must pass this suite (plan 2026-11-15-dsh-production-harness, R3).
-# `DshRunner` joins this mapping in that plan's phase 02.
+# `dsh` needs Docker for its DSH container, so its runs are integration tests.
 RUNNERS: dict[str, Callable[[], HarnessRunner]] = {"openai_agents": OpenAIAgentsRunner}
 make_runner: Callable[[], HarnessRunner] = OpenAIAgentsRunner
 # The runner's session comes from a session store, as in run_harness_turn (D1).
@@ -41,9 +43,68 @@ make_runner: Callable[[], HarnessRunner] = OpenAIAgentsRunner
 make_store: Callable[[str], SessionStore] = MemorySessionStore
 
 
-@pytest.fixture(params=sorted(RUNNERS), autouse=True)
-def _runner(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(globals(), "make_runner", RUNNERS[request.param])
+def _subdir(base: Path, name: str) -> Path:
+    path = base / name
+    path.mkdir()
+    return path
+
+
+# A new, empty workspace beside the test's own (`tmp_path`).
+make_workspace: Callable[[Path, str], Path] = _subdir
+# Where a command finds itself: the workspace, or the DSH container's view of it.
+command_cwd: Callable[[Path], str] = str
+
+
+@pytest.fixture(scope="module")
+def dsh_container() -> Iterator[DshContainer]:
+    container = start_container(build_image())
+    try:
+        yield container
+    finally:
+        container.stop()
+
+
+@pytest.fixture(
+    params=[*sorted(RUNNERS), pytest.param("dsh", marks=pytest.mark.integration)], autouse=True
+)
+async def _runner(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[str]:
+    name: str = request.param
+    if name != "dsh":
+        monkeypatch.setitem(globals(), "make_runner", RUNNERS[name])
+        yield name
+        return
+    # One DshRunner per test: it keeps each attempt (and so its workspace) until
+    # the test has read the results.
+    container: DshContainer = request.getfixturevalue("dsh_container")
+    runner = container.runner()
+    monkeypatch.setitem(globals(), "make_runner", lambda: runner)
+    monkeypatch.setitem(globals(), "make_workspace", lambda base, name: container.workspace())
+    monkeypatch.setitem(globals(), "command_cwd", lambda workspace: "/work")
+    try:
+        yield name
+    finally:
+        await runner.close()
+        assert container.attempt_cgroups() == []  # nothing of the attempt is left
+
+
+@pytest.fixture
+def tmp_path(tmp_path: Path, _runner: str, request: pytest.FixtureRequest) -> Path:
+    """The workspace: for `dsh`, a directory in an attempt tree on the volume the
+    DSH container shares."""
+    if _runner != "dsh":
+        return tmp_path
+    container: DshContainer = request.getfixturevalue("dsh_container")
+    return container.workspace()
+
+
+def instructions_seen(first_request: dict[str, Any]) -> str:
+    """The template's instructions as the model got them: the system message for
+    `openai_agents`; for `dsh`, the first user message (DSH keeps its own system
+    message)."""
+    messages = first_request["messages"]
+    return str(messages[0]["content"]) + "\n" + str(messages[1]["content"])
 
 
 async def test_memory_store_contract() -> None:
@@ -112,7 +173,7 @@ async def test_runner_conformance(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         "get_setting",
         "record_order",
     }
-    system = first["messages"][0]["content"]
+    system = instructions_seen(first)
     assert "finish_task" in system and ".skills/order-desk/SKILL.md" in system
     assert "response_format" not in first  # see decision log: no output_type
 
@@ -194,7 +255,7 @@ async def test_command_runs_in_workspace(tmp_path: Path, monkeypatch: pytest.Mon
         tmp_path,
         monkeypatch,
     )
-    assert f"stdout:\n{tmp_path}\n" in tool_results(fake)[0]
+    assert f"stdout:\n{command_cwd(tmp_path)}\n" in tool_results(fake)[0]
 
 
 async def test_command_timeout_is_enforced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -351,8 +412,7 @@ async def test_mcp_tools_allowed_filter(tmp_path: Path, monkeypatch: pytest.Monk
         monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
         _, loaded = registry.resolve("default")
         config = build_config(registry, loaded, "task-filter-0001")
-        workspace = tmp_path / "ws"
-        workspace.mkdir()
+        workspace = make_workspace(tmp_path, "ws")
         await make_runner().run(
             config, workspace, make_store("filter").session, "go", no_op, Usage()
         )
@@ -368,8 +428,7 @@ async def test_file_tools_stay_in_the_workspace(
     (threat model C6; gate F9)."""
     secret = tmp_path / "secret.txt"
     secret.write_text("TOP-SECRET-CONTENT")
-    workspace = tmp_path / "ws"
-    workspace.mkdir()
+    workspace = make_workspace(tmp_path, "ws")
     (workspace / "link.txt").symlink_to(secret)
     outside_dir = tmp_path / "outside"
     outside_dir.mkdir()
