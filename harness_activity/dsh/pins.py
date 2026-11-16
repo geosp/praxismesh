@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from common.errors import CapabilityError
+from harness_activity.runner import Unserviceable
 
 
-class RuntimePinMismatch(Exception):
+class RuntimePinMismatch(Unserviceable):
     """The DSH container this worker is paired with no longer runs the pinned
     runtime (it was recreated from another image). Retryable: the attempt is
     refused here, and a worker paired with the pinned runtime may take it (R17)."""

@@ -45,6 +45,13 @@ CLIENT = textwrap.dedent(
     open("/attempts/task-2/1/1/workspace/secret", "w").write("other attempt")
     open(f"{tree}/home/session.jsonl", "w").write("session")
     out["open"] = ask(f, op="open", attempt="task-1/1/1")
+    if sys.argv[1] == "dirty":  # an attempt whose tree cannot be removed
+        out["start"] = ask(f, op="start", argv=["sleep", "60"])
+        print(json.dumps(out), flush=True)
+        sys.stdin.readline()  # the test pins the tree with a mount, then goes on
+        out["stop"] = ask(f, op="stop", grace=2)
+        out["after"] = ask(f, op="digests")
+        print(json.dumps(out)); sys.exit(0)
     if sys.argv[1] == "hold":  # a live attempt a launcher restart must reap
         out["start"] = ask(f, op="start", argv=["sh", "-c", "sleep 60 & sleep 60"])
         import time; time.sleep(30)
@@ -191,6 +198,26 @@ def test_commands_get_their_own_tmp(launcher: str) -> None:
         listing = docker("exec", launcher, "ls", "-A", shared).stdout.split()
         assert "marker" not in listing, shared
     assert attempt_state(launcher) == ("", False)
+
+
+def test_launcher_remembers_an_attempt_it_could_not_clean(launcher: str) -> None:
+    """R10 (review F99): a destroy that leaves the tree behind is reported by every
+    later `digests` reply, so any worker refuses the container until it restarts."""
+    proc = subprocess.Popen(
+        ["docker", "exec", "-i", "-u", WORKER, launcher, "python", "/opt/dsh/client.py", "dirty"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+    )  # fmt: skip
+    assert proc.stdout is not None and proc.stdin is not None
+    assert "start" in json.loads(proc.stdout.readline())
+    pin = "/attempts/task-1/1/1/workspace/pinned"
+    docker("exec", launcher, "sh", "-c", f"mkdir -p {pin} && mount -t tmpfs none {pin}")
+    proc.stdin.write("\n")
+    proc.stdin.flush()
+    out = json.loads(proc.stdout.readline())
+    proc.wait(timeout=30)
+    assert out["stop"]["tree_removed"] is False
+    assert out["after"]["dirty"] == ["task-1/1/1"]
+    docker("exec", launcher, "umount", pin, check=False)
 
 
 def test_closed_connection_kills_the_attempt(launcher: str) -> None:

@@ -303,7 +303,14 @@ def destroy(attempt: str) -> dict:
     for parent in (tree.parent, tree.parent.parent):
         with contextlib.suppress(OSError):
             parent.rmdir()
+    if left or tree.exists():
+        DIRTY.add(attempt)  # reported until this launcher restarts and reaps (F99)
     return {"processes_left": left, "tree_removed": not tree.exists()}
+
+
+# Attempts this launcher could not clean up. Every `digests` reply lists them, so
+# no worker, restarted or not, serves this container until it restarts.
+DIRTY: set[str] = set()
 
 
 def reap() -> list[str]:
@@ -379,7 +386,7 @@ def serve_connection(conn: socket.socket) -> None:
             op = request.get("op")
             try:
                 if op == "digests":
-                    reply = {"digests": digests()}
+                    reply = {"digests": digests(), "dirty": sorted(DIRTY)}
                 elif op == "open":
                     attempt = Attempt(_attempt_id(request["attempt"]))
                     reply = {"opened": attempt.id}

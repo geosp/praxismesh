@@ -42,7 +42,13 @@ from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, UsageLedger
 from harness_activity.dsh.pins import RuntimePinMismatch
 from harness_activity.dsh.runner import DshRunner, LauncherUnhealthy
 from harness_activity.events import MemorySink
-from harness_activity.runner import AttemptContext, RunnerFailure, Superseded, Usage
+from harness_activity.runner import (
+    AttemptContext,
+    RunnerFailure,
+    Superseded,
+    Usage,
+    WorkerUnserviceable,
+)
 from registry.loader import Registry, load_registry
 from tests.support.dsh import (
     DshContainer,
@@ -653,6 +659,35 @@ async def test_dirty_stop_during_a_run_stops_new_attempts(
         await runner.open_attempt(
             AttemptContext(f"task-dirty-{run_id()}", 1, 1, "wf", 1_000, time.monotonic() + 60)
         )
+
+
+async def test_unserviceable_worker_refuses_without_using_an_attempt(
+    engine: AsyncEngine, container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R17, R10 (review F99): before recording an attempt, the Activity checks its
+    container. A pin mismatch is an uncounted refusal, like a template-version
+    refusal, and tells the worker to stop polling; the next worker's attempt is
+    the turn's first real one."""
+    h = await harness(engine, container)
+    bad = DshRunner(container.control, MemoryLedgerStore(), h.blobs, pinned="sha256:" + "0" * 64)
+    stopped: list[str] = []
+    h.acts.preflight, h.acts.on_unserviceable = bad.check, stopped.append
+    with pytest.raises(WorkerUnserviceable):
+        await h.env(1, None).run(h.acts.run_harness_turn, h.turn())
+    assert stopped and "does not match" in stopped[0]
+    rows_before = await rows(
+        engine, "SELECT attempt, outcome, failure_category FROM task_attempts WHERE task_id = :t",
+        t=h.task_id,
+    )  # fmt: skip
+    assert [tuple(r) for r in rows_before] == [(1, "refused", "dsh_unserviceable")]
+    assert h.heartbeats[-1]["refusals"] == 1
+    h.acts.preflight = h.acts.runner.check  # type: ignore[attr-defined]
+    with FakeModel([SCRIPT[2]]) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        outcome: TurnOutcome = await h.env(2, h.heartbeats[-1]).run(
+            h.acts.run_harness_turn, h.turn()
+        )
+    assert outcome.status == "done" and outcome.attempts == 1
 
 
 async def _no_op(usage: Usage) -> None:

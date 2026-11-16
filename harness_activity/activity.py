@@ -73,7 +73,9 @@ from harness_activity.runner import (
     RunResult,
     StopRun,
     Superseded,
+    Unserviceable,
     Usage,
+    WorkerUnserviceable,
 )
 from harness_activity.session_store import SessionStore, SQLAlchemySessionStore
 from harness_activity.tools import WorkspaceError, read_regular
@@ -187,6 +189,7 @@ class HarnessActivities:
         identity: str,
         session_store: Callable[[str, AsyncEngine], SessionStore] = SQLAlchemySessionStore,
         open_attempt: Callable[[AttemptContext], Awaitable[AttemptScope]] | None = None,
+        preflight: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.registry = registry
         self.engine = engine
@@ -196,6 +199,10 @@ class HarnessActivities:
         self.identity = identity
         self.session_store = session_store
         self.open_attempt = open_attempt
+        # Checked before an attempt is recorded; raises `Unserviceable` (F99).
+        self.preflight = preflight
+        # Told when this worker must stop polling its queue.
+        self.on_unserviceable: Callable[[str], None] | None = None
         self.ledger = UsageLedgerRepository(engine)
         self.tasks = TaskRepository(engine)
         self.attempts = AttemptRepository(engine)
@@ -217,6 +224,21 @@ class HarnessActivities:
                 f"this worker runs {loaded.template.ref if loaded else 'no'} "
                 f"{turn.template}, not version {turn.template_version} of the task"
             )
+        if self.preflight is not None:
+            try:
+                await self.preflight()
+            except Unserviceable as e:
+                # Like a version refusal: not an attempt, and this worker stops
+                # polling, so a worker that can serve takes the turn (R17, F99).
+                prior.refusals += 1
+                activity.heartbeat(asdict(prior))
+                await self.attempts.record_refusal(
+                    turn.task_id, turn.turn, info.attempt, self.identity, "dsh_unserviceable"
+                )
+                log.error("worker cannot serve its queue", extra={"fields": {"error": str(e)}})
+                if self.on_unserviceable is not None:
+                    self.on_unserviceable(str(e))
+                raise WorkerUnserviceable(str(e)) from e
         attempt = info.attempt
         real_attempt = attempt - prior.refusals
         began = time.monotonic()

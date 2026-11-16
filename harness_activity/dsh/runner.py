@@ -58,6 +58,7 @@ from harness_activity.runner import (
     RunnerFailure,
     RunResult,
     Superseded,
+    Unserviceable,
     Usage,
 )
 from harness_activity.tools import CommandResult, CommandRunner
@@ -136,7 +137,7 @@ def share(root: Path, gid: int) -> None:
             adjust(name, directory)
 
 
-class LauncherUnhealthy(Exception):
+class LauncherUnhealthy(Unserviceable):
     """An earlier attempt on this worker's DSH container left processes or files
     behind. Retryable: this worker refuses attempts until it is restarted with a
     clean container, and another worker may take the turn (R10, review F71)."""
@@ -231,15 +232,6 @@ class DshRunner:
         self.relay_port = relay_port
         self.attempts: dict[Path, DshAttempt] = {}
 
-    async def digests(self) -> dict[str, Any]:
-        """The launcher's runtime report, for the pin check before serving (R17)."""
-        launcher = await LauncherClient.connect(self.control)
-        try:
-            report: dict[str, Any] = (await launcher.request("digests"))["digests"]
-            return report
-        finally:
-            await launcher.close()
-
     # -- attempts ------------------------------------------------------------------
 
     async def open_attempt(self, context: AttemptContext, *, fresh: bool = True) -> _Scope:
@@ -251,16 +243,9 @@ class DshRunner:
         gid = self.control.stat().st_gid  # the group the launcher shares with us
         launcher = await LauncherClient.connect(self.control)
         try:
-            if self.pinned is not None:
-                # R17: the paired container may have been recreated since this
-                # worker checked it at start-up (review F62).
-                try:
-                    verify_launcher_report(
-                        (await launcher.request("digests"))["digests"], self.pinned
-                    )
-                except CapabilityError as error:
-                    log.error("DSH runtime pin mismatch; attempt refused: %s", error)
-                    raise RuntimePinMismatch(str(error)) from error
+            # R17, R10: the paired container may have been recreated, or left dirty,
+            # since the last check (review F62, F99).
+            self._verify(await launcher.request("digests"))
             if fresh:
                 shutil.rmtree(tree, ignore_errors=True)
             for path in (tree.parent.parent, tree.parent, tree, *(tree / name for name in DIRS)):
@@ -278,6 +263,29 @@ class DshRunner:
         )
         self.attempts[attempt.workspace] = attempt
         return _Scope(self, attempt)
+
+    async def check(self) -> None:
+        """Raise `Unserviceable` unless the paired container runs the pinned
+        runtime and is clean. The Activity calls it before recording an attempt."""
+        if self.unhealthy is not None:
+            raise LauncherUnhealthy(self.unhealthy)
+        launcher = await LauncherClient.connect(self.control)
+        try:
+            self._verify(await launcher.request("digests"))
+        finally:
+            await launcher.close()
+
+    def _verify(self, reply: dict[str, Any]) -> None:
+        if reply.get("dirty"):
+            self.unhealthy = f"the DSH container left attempts {reply['dirty']} behind"
+            raise LauncherUnhealthy(self.unhealthy)
+        if self.pinned is None:
+            return
+        try:
+            verify_launcher_report(reply["digests"], self.pinned)
+        except CapabilityError as error:
+            log.error("DSH runtime pin mismatch; attempt refused: %s", error)
+            raise RuntimePinMismatch(str(error)) from error
 
     def _dirty(self, report: dict[str, Any]) -> None:
         self.unhealthy = (

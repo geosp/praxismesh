@@ -219,7 +219,14 @@ class AttemptRepository:
                 if newer.first() is not None:
                     raise FenceRejected("a newer attempt owns this task")
 
-    async def record_refusal(self, task_id: str, turn: int, attempt: int, worker: str) -> None:
+    async def record_refusal(
+        self,
+        task_id: str,
+        turn: int,
+        attempt: int,
+        worker: str,
+        category: str = "template_version_unavailable",
+    ) -> None:
         """Record a Temporal attempt that refused the task (wrong template version).
 
         It never runs, but it is newer than the attempts before it, so it must fence
@@ -242,12 +249,11 @@ class AttemptRepository:
                     """
                     INSERT INTO task_attempts (task_id, turn, attempt, worker_identity, outcome,
                         failure_category, ended_at, retention_class)
-                    VALUES (:t, :turn, :a, :w, 'refused', 'template_version_unavailable',
-                        CURRENT_TIMESTAMP, 'audit')
+                    VALUES (:t, :turn, :a, :w, 'refused', :c, CURRENT_TIMESTAMP, 'audit')
                     ON CONFLICT (task_id, turn, attempt) DO NOTHING
                     """
                 ),
-                {"t": task_id, "turn": turn, "a": attempt, "w": worker},
+                {"t": task_id, "turn": turn, "a": attempt, "w": worker, "c": category},
             )
 
     async def assert_current(self, task_id: str, turn: int, attempt: int) -> None:
