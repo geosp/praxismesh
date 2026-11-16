@@ -368,3 +368,16 @@ Targeted follow-up (docs/reviews/README.md rule 6) on the decision changes from 
 | F157 | Nit | contract | Worker start-up messages for an unreachable launcher lost the template ref. | fixed: start-up errors name the template again |
 | F158 | Nit | contract | notes.md#d4 and phase 02 task 1.1 do not mention the IPC namespace, `/run` and `/dev/shm`. | fixed: notes.md#d4 and phase 02 task 1.1 name the IPC namespace, /run and /dev/shm |
 | F159 | Nit | contract | F134 is tested on the task-completion path only. | accepted: the same SQL is tested on the task-completion path |
+
+## 2026-11-16 · design-review · plan · round 5 · changes-requested
+
+Targeted follow-up (docs/reviews/README.md rule 6) on 98835319..e51495c2bce9de2cfb1fada3505d518090f49626; one fresh `design-reviewer` subagent (codebase fit), run alone per the engineer's sequential-review direction. Reviewer: Codebase fit completed. Raw report: docs/reviews/general-dsh-production-harness/raw/design-review-round-5-codebase-fit.md. Round 4 fixes F113-F130 held.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F160 | Major | codebase fit | Phase 03 task 2.1's list of tests that assume `default` misses the R3 conformance suite (`tests/test_runner_conformance.py`) and `tests/integration/test_tracing.py`. | fixed: phase 03 task 2.1 lists test_runner_conformance.py (R3 through `openai`) and test_tracing.py |
+| F161 | Nit | codebase fit | notes.md#rollout says a refusing worker exits 3; at start-up it exits 1 with a traceback. | fixed: notes.md#rollout gives both exits (3 during a turn, 1 at start-up) |
+| F162 | Nit | codebase fit | A profile resolves in the submitting process and again in the orchestrator; between the registry edit and the restart, submissions can fail. | fixed: notes.md#rollout says to pause submissions until submitter and orchestrator have the new registry |
+| F163 | Nit | codebase fit | Phase 03 task 1.1's Verify is weak (a one-task run fails the regression rule and writes into `docs/benchmarks/`; result files always differ). | fixed: task 1.1 Verify is a smoke run outside docs/benchmarks/, not judged against the baseline, checking names and label |
+| F164 | Nit | codebase fit | The Phases table shows phase 03 at 0/4; it has 5 tasks. | fixed: Phases table shows 0/5 |
+| F165 | Nit | codebase fit | R13's scenario covers only the retried case; R20 does not say the notices check runs in CI. | fixed: R13 adds the completion-time scenario; R20 and task 1.3 run the check in CI |

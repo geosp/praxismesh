@@ -3,7 +3,7 @@ title: Run production agents on DSH
 status: in-progress
 created: 2026-11-15
 updated: 2026-11-16
-design_review: { status: changes-requested, rounds: 4, last: 2026-11-16 }
+design_review: { status: passed, rounds: 5, last: 2026-11-16 }
 approved: 2026-11-15
 adr_review: pending
 ---
@@ -123,7 +123,7 @@ Unobserved usage is stored as null with `usage_known = false`, never as 0.
 
 ### R13 · Unknown usage is charged conservatively
 Each unsettled request is charged the D9 estimate before the turn retries, or when the turn or task ends with no later attempt.
-- **Given** the R12 case, **when** the budget is computed, **then** it is charged the D9 estimate and the attempt is retried.
+- **Given** the R12 case, **when** the budget is computed, **then** it is charged the D9 estimate and the attempt is retried; **given** a task that completes with no later attempt, **then** its result includes the charge.
 
 ### R14 · Capabilities come only from the template
 The DSH process gets only template-granted tools, skills and MCP servers, with the notes.md#r14 features off.
@@ -151,7 +151,7 @@ DSH turns report through `finish_task` and must reproduce the spike's TaskResult
 
 ### R20 · DSH licence notices are recorded
 The licence notices of every pinned DSH distribution are in the repository (ADR-0005 condition 1).
-- **Given** the pinned `infra/dsh/requirements.txt`, **when** the notices check runs, **then** each distribution has its notice.
+- **Given** the pinned `infra/dsh/requirements.txt`, **when** the CI notices check runs, **then** each distribution has its notice.
 
 ## Decisions
 
@@ -230,7 +230,7 @@ A profile switch or its revert is an edit, `make registry-lock`, a worker image 
 | --- | --- | --- | --- |
 | 01 | [Harness seam and registry](phases/01-harness-seam.md) | done | 6/6 |
 | 02 | [DSH runner and worker pair](phases/02-dsh-runner.md) | in-progress | 8/8 |
-| 03 | [Acceptance and default switch](phases/03-acceptance.md) | approved | 0/4 |
+| 03 | [Acceptance and default switch](phases/03-acceptance.md) | approved | 0/5 |
 
 ## Decision log
 

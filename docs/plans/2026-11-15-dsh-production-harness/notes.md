@@ -145,17 +145,19 @@ gateway provider and the MCP client (impl-review F77).
   templates run one attempt per worker pair and ~1.9x slower, so `default` switches only with two
   DSH pairs (`dsh-a`/`worker-dsh-a`, `dsh-b`/`worker-dsh-b`), each with its own attempt volume.
 - **Switch and revert.** Edit `registry/profiles/default.yaml`, run `make registry-lock`, rebuild the
-  worker image (the registry ships in it) and restart the orchestrator. Profiles resolve once per
-  task, so tasks already running keep their template.
+  worker image (the registry ships in it) and restart the orchestrator. A profile resolves when a
+  task is submitted (the submitter's checkout) and again in the orchestrator, so pause submissions
+  until both have the new registry (impl-review F162). Tasks already running keep their template.
 - **Drain.** The workflow checks its deadline only before a turn, so a DSH task can run for its
   wall time plus one last turn's `schedule_to_close` (6 x `turn_timeout`): 30 min + 60 min for
   `local-dsh` today. Keep the DSH pairs up until no task resolved to `local-dsh` is open.
 - **Code.** Phases 01 and 02 change the `openai_agents` path too (seam, fence, workflow
   cancellation). They roll forward only: fix forward rather than revert, and never run code
   older than migration 0004 against its data. `openai` remains the profile for `openai_agents`.
-- **A refusing DSH worker** (pin mismatch, dirty or unreachable container) logs "worker cannot
-  serve its queue", exits 3 and is restarted by Compose; it keeps refusing until its DSH
-  container is fixed and restarted. Watch for exit 3 restarts.
+- **A refusing DSH worker** (pin mismatch, dirty or unreachable container) is restarted by
+  Compose and keeps refusing until its DSH container is fixed and restarted. During a turn it logs
+  "worker cannot serve its queue" and exits 3; at start-up it exits 1 with a `CapabilityError`
+  naming the template (F161). Watch for either restart loop.
 - **Known deviations, deferred** (impl-review F103, F106, F111): an `unresolved usage` denial
   starts no exit timer, a stale attempt's charge writes usage columns unfenced, and launcher
   replies to `poll` have no timeout. R8 and R6 hold otherwise.
