@@ -323,3 +323,29 @@ Targeted follow-up (docs/reviews/README.md rule 6) on the decision changes from 
 | F129 | Nit | zoom out | Barrier cost grows with turn length times session and workspace size; not under Risks. | open |
 | F130 | Nit | zoom out | A worker that refuses (exit 3) restarts in a loop; R17 and Rollout don't say how an operator notices. | open |
 | F131 | Nit | fresh reader | Readability: requirements holding two rules (R7, R8, R11, R12, R15, R16), repeated facts, a 60-word decision-log line, the commands sentence in the Summary, the SIGSTOP fallback, unmapped requirements in Why, the Phases table status. | open |
+
+## 2026-11-16 · impl-review · phase 02 · round 3 · changes-requested
+
+- Targeted follow-up (docs/reviews/README.md rule 6), beyond the skill's two rounds at the engineer's request. Diff base: 562733a72b880d13576ced63e8b8ad09716094df; frozen review commit: 98835319f201867887a5555e3651a2aa8eadd1e4; focus 76dffd6..98835319.
+- Reviewers: Contract completed; Failure and retry completed; Scope and composition completed (fresh `impl-reviewer` subagents; each stopped once on a usage limit and was resumed). Raw reports: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-02-round-3-{contract,failure,scope}.md.
+- Reopened: F102 (as F132), F99 (as F133), F101 (as F134). Deferred F103-F112 not re-raised.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F132 | Major | contract, scope | Commands of every attempt and task share one IPC namespace; SysV shared memory and message queues outlive an attempt and are readable by a later task (R15, D4; reopens F102). | open |
+| F133 | Major | contract, failure | A pre-flight that cannot reach the launcher (stopped or restarting container) raises `LauncherError`, not a refusal: no refused row, the attempt counts, the worker keeps polling, and the turn ends `AttemptsExhausted` (R17, R10; reopens F99). | open |
+| F134 | Major | failure, scope | Rows marked `lost` by `start` or `record_refusal` get the ledger's usage only if a later real attempt opens; `close_unfinished` touches `started` rows only, so a lost row can keep 0 (R12, D7; reopens F101). | open |
+| F135 | Nit | scope | Two rules for a row's usage: `_ledger_usage_sql` NULLs on any unknown up to the attempt, `_runner_failed` only on its own (D7). | open |
+| F136 | Nit | scope, failure | `complete_task` reconciles tokens but not inner turns (D11). | open |
+| F137 | Nit | all three | `complete_task` looks the template up by name in the current registry: `KeyError` if it is gone, and the current version's `context_window` rather than the task's (R11, D9). | open |
+| F138 | Nit | scope | An `Unserviceable` raised in `open_attempt` after `attempts.start` still uses an attempt and does not stop polling (narrow window after the pre-flight). | open |
+| F139 | Nit | all three | Worker shutdown: the task is not referenced, the wiring and the cross-attempt heartbeat hand-off are untested, and a refusing worker restart-loops until an operator acts. | open |
+| F140 | Nit | all three | `list_files` still checks then walks by name (names only could leak); the F97 resolution text overstates it. | open |
+| F141 | Nit | contract | `read_file`/`write_file` now refuse in-workspace symlinks for `openai_agents` too, a behaviour change without a recorded decision (task 2.3). | open |
+| F142 | Nit | scope | The F98 reconciliation is tested on one turn only, and the cumulative ledger SQL on one attempt per turn. | open |
+| F143 | Nit | failure | An exception inside `destroy()` skips the dirty record, so the container can be served again (R10). | open |
+| F144 | Nit | failure | A worker-side stop timeout is a non-retryable `DshCleanupFailure` even if the launcher cleans up later (R9). | open |
+| F145 | Nit | failure | The final checkpoint after a step-limit stop skips the D6 tool-call check (the capture is at rest). | open |
+| F146 | Nit | failure | A cancel during the step-limit stop leaves the row for `complete_task` instead of `cancelled` (R18). | open |
+| F147 | Nit | failure | The refusal heartbeat is sent before `record_refusal`; a failed write leaves a counted refusal with no row. | open |
+| F148 | Nit | failure | Review metadata disagreed (impl passed, design changes-requested, Phases table); resolved by recording design review round 4. | open |
