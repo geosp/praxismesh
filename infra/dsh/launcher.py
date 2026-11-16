@@ -11,9 +11,12 @@ CAP_SYS_ADMIN for this process only. Each attempt gets:
 - for commands, a separate UID with every capability dropped and no_new_privs.
 
 The worker opens one control connection per attempt on the shared volume's
-socket and sends newline-delimited JSON requests. When that connection closes for
-any reason (including worker death), the attempt's cgroup is killed and its tree
-removed. At start-up the launcher reaps every leftover attempt cgroup and tree.
+socket and sends newline-delimited JSON requests. A request may carry an `id`,
+which its reply echoes; `exec` runs beside the connection, so the worker can
+still freeze or stop the attempt while a command runs. When that connection
+closes for any reason (including worker death), the attempt's cgroup is killed
+and its tree removed. At start-up the launcher reaps every leftover attempt
+cgroup and tree.
 
 Standard library only, so the image needs no extra packages.
 """
@@ -302,6 +305,25 @@ def setup_cgroups() -> None:
 def serve_connection(conn: socket.socket) -> None:
     attempt: Attempt | None = None
     stream = conn.makefile("rwb")
+    write_lock = threading.Lock()
+
+    def send(request: dict, reply: dict) -> None:
+        if "id" in request:
+            reply = {**reply, "id": request["id"]}
+        with write_lock:
+            try:
+                stream.write((json.dumps(reply) + "\n").encode())
+                stream.flush()
+            except (OSError, ValueError):
+                pass  # the worker went away; the connection's end destroys the attempt
+
+    def run_exec(target: Attempt, request: dict) -> None:
+        try:
+            reply = target.run_command(request["command"], float(request.get("timeout", 60)))
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+            reply = {"error": type(error).__name__, "detail": str(error)[:200]}
+        send(request, reply)
+
     try:
         for line in stream:
             request = json.loads(line)
@@ -317,9 +339,10 @@ def serve_connection(conn: socket.socket) -> None:
                 elif op == "start":
                     reply = {"pid": attempt.start(request["argv"], request.get("env", {}))}
                 elif op == "exec":
-                    reply = attempt.run_command(
-                        request["command"], float(request.get("timeout", 60))
-                    )
+                    # Beside the connection: a running command must not delay a
+                    # freeze or a stop (R8). Stopping kills it with the cgroup.
+                    threading.Thread(target=run_exec, args=(attempt, request), daemon=True).start()
+                    continue
                 elif op in ("freeze", "thaw"):
                     reply = {"ok": attempt.freeze(op == "freeze")}
                 elif op == "members":
@@ -334,8 +357,7 @@ def serve_connection(conn: socket.socket) -> None:
                     raise ValueError(f"unknown op {op!r}")
             except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
                 reply = {"error": type(error).__name__, "detail": str(error)[:200]}
-            stream.write((json.dumps(reply) + "\n").encode())
-            stream.flush()
+            send(request, reply)
     finally:
         # The worker's connection is the attempt's lifeline (R10).
         if attempt is not None:
