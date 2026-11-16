@@ -262,6 +262,12 @@ async def test_ungranted_tool_call_is_logged_and_left_unprefixed() -> None:
         "delete_database"
     )
     assert rig.refused == ["delete_database"]
+    # R16 (review F91): the refused call is visible as a call and its result.
+    refused = [(e.type, e.payload) for e in rig.sink.events if e.type != "token"]
+    assert refused == [
+        ("tool_call", {"tool": "delete_database", "call": None}),
+        ("tool_result", {"tool": "delete_database", "call": None, "status": "refused"}),
+    ]
 
 
 @pytest.mark.parametrize("asked", [None, 100, 2048, 9000])
@@ -384,7 +390,10 @@ async def test_executor_refuses_what_was_not_granted(tmp_path: Path) -> None:
     text, error = await ex.call("delete_database", {})
     assert error and text.startswith("refused") and ex.usage.tool_calls == 0
     assert ex.state.refused == ["delete_database"]
-    assert [e.type for e in sink.events] == ["tool_result"]
+    assert [(e.type, e.payload) for e in sink.events] == [  # paired (review F91)
+        ("tool_call", {"tool": "delete_database", "call": 1}),
+        ("tool_result", {"tool": "delete_database", "call": 1, "status": "refused"}),
+    ]
     assert (await ex.call("read_file", {"path": "a", "extra": 1}))[1]  # unknown argument
 
 

@@ -130,7 +130,7 @@ def to_model(request: dict[str, Any]) -> dict[str, Any]:
     out.pop("stream_options", None)
     # The conservative charge for an unobserved request assumes this cap (D9, F73).
     asked = out.pop("max_completion_tokens", None) or out.get("max_tokens")
-    capped = asked if isinstance(asked, int) and 0 < asked else DSH_MAX_OUTPUT_TOKENS
+    capped = asked if isinstance(asked, int) and asked > 0 else DSH_MAX_OUTPUT_TOKENS
     out["max_tokens"] = min(capped, DSH_MAX_OUTPUT_TOKENS)
 
     def strip(function: Any) -> None:
@@ -333,6 +333,9 @@ class Gateway:
                 self.refused.append(name)
                 TOOL_ERRORS.labels(template=self.template_ref, tool=name).inc()
                 log.warning("refused tool call", extra={"fields": {"tool": name}})
+                if self.events is not None:  # never reaches the executor (R16, F91)
+                    self.events.emit("tool_call", tool=name, call=None)
+                    self.events.emit("tool_result", tool=name, call=None, status="refused")
         if request.get("stream"):
             return 200, "text/event-stream", as_stream(completion)
         return json_reply(200, completion)

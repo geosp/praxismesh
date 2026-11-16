@@ -45,6 +45,10 @@ CLIENT = textwrap.dedent(
     open("/attempts/task-2/1/1/workspace/secret", "w").write("other attempt")
     open(f"{tree}/home/session.jsonl", "w").write("session")
     out["open"] = ask(f, op="open", attempt="task-1/1/1")
+    if sys.argv[1] == "hold":  # a live attempt a launcher restart must reap
+        out["start"] = ask(f, op="start", argv=["sh", "-c", "sleep 60 & sleep 60"])
+        import time; time.sleep(30)
+        sys.exit(0)
     if sys.argv[1] == "tmp":  # what one attempt leaves in /tmp, the next must not see
         out["write"] = ask(f, op="exec", command="echo leaked > /tmp/marker; echo rc=$?",
                            timeout=10)
@@ -198,10 +202,32 @@ def test_closed_connection_kills_the_attempt(launcher: str) -> None:
     assert leftover.stdout.strip() == "0"
 
 
-def test_restart_reaps_leftover_trees(launcher: str) -> None:
+def sleepers(name: str) -> str:
+    return docker(
+        "exec", name, "sh", "-c",
+        "for c in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < $c; echo; done | grep -c '[s]leep 60'",
+        check=False,
+    ).stdout.strip()  # fmt: skip
+
+
+def test_restart_reaps_leftover_attempts(launcher: str) -> None:
+    """Task 1.1 (review F94): a launcher starting up kills every leftover attempt's
+    processes, removes its cgroup and removes every leftover tree."""
     docker("exec", "-u", WORKER, launcher, "mkdir", "-p", "/attempts/task-9/1/1/workspace")
-    docker("exec", "-d", launcher, "python", "/opt/dsh/launcher.py")
-    time.sleep(2)
+    docker("exec", "-d", "-u", WORKER, launcher, "python", "/opt/dsh/client.py", "hold")
+    until = time.monotonic() + 10
+    while int(sleepers(launcher) or 0) < 2:
+        assert time.monotonic() < until
+        time.sleep(0.2)
+    assert attempt_state(launcher)[0]  # a live attempt cgroup
+    docker("exec", "-d", launcher, "python", "/opt/dsh/launcher.py")  # the restart
+    until = time.monotonic() + 10
+    while (attempt_state(launcher) != ("", False) or sleepers(launcher) != "0") and (
+        time.monotonic() < until
+    ):
+        time.sleep(0.2)
+    assert attempt_state(launcher) == ("", False)
+    assert sleepers(launcher) == "0"
     assert "task-9" not in docker("exec", launcher, "ls", "-A", "/attempts").stdout
 
 

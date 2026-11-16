@@ -39,7 +39,7 @@ from harness_activity.dsh import runner as dsh_runner
 from harness_activity.dsh.launcher_client import LauncherClient
 from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, UsageLedger
 from harness_activity.dsh.pins import RuntimePinMismatch
-from harness_activity.dsh.runner import DshRunner
+from harness_activity.dsh.runner import DshRunner, LauncherUnhealthy
 from harness_activity.events import MemorySink
 from harness_activity.runner import AttemptContext, RunnerFailure, Superseded, Usage
 from registry.loader import load_registry
@@ -535,6 +535,38 @@ async def test_step_limit_stops_a_runtime_that_does_not_exit(
             await scope.close()
     assert (result.status, result.summary) == ("continue", "inner-turn limit reached")
     assert denied and ended - denied[0] < 5.0
+    assert container.attempt_cgroups() == []
+
+
+async def test_failed_cleanup_after_success_stops_new_attempts(
+    container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R10 (review F71): the turn succeeded, but closing its attempt left a process
+    behind. The outcome stands; the runner refuses new attempts on that container,
+    retryably, so a worker paired with a clean one takes them."""
+    original = LauncherClient.request
+
+    async def leaky_stop(self: LauncherClient, op: str, **fields: Any) -> dict[str, Any]:
+        reply = await original(self, op, **fields)
+        return {**reply, "processes_left": 1} if op == "stop" else reply
+
+    runner = container.runner()
+    monkeypatch.setattr(LauncherClient, "request", leaky_stop)
+    with FakeModel([SCRIPT[2]]) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        registry = load_registry()
+        task = f"task-leaky-{run_id()}"
+        config = build_config(registry, registry.templates["local-dsh"], task)
+        scope = await runner.open_attempt(
+            AttemptContext(task, 1, 1, "wf", 1_000_000, time.monotonic() + 60)
+        )
+        result = await runner.run(
+            config, scope.workspace, scope.store.session, "go", _no_op, Usage()
+        )
+        await scope.close()
+    assert result.status == "done"
+    with pytest.raises(LauncherUnhealthy):
+        await runner.open_attempt(AttemptContext(task, 1, 2, "wf", 1_000, time.monotonic() + 60))
     assert container.attempt_cgroups() == []
 
 

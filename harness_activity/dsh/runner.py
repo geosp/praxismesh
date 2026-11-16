@@ -29,6 +29,7 @@ import secrets
 import shutil
 import stat
 import time
+from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -108,6 +109,12 @@ def share(root: Path, gid: int) -> None:
             os.chmod(path, mode | stat.S_ISGID if path.is_dir() else mode)
 
 
+class LauncherUnhealthy(Exception):
+    """An earlier attempt on this worker's DSH container left processes or files
+    behind. Retryable: this worker refuses attempts until it is restarted with a
+    clean container, and another worker may take the turn (R10, review F71)."""
+
+
 @dataclass
 class DshAttempt:
     """An open attempt: its tree and its launcher connection."""
@@ -117,6 +124,9 @@ class DshAttempt:
     context: AttemptContext
     gid: int
     session_store: DshSessionStore | None = None
+    # Called with the launcher's stop report when closing found the attempt not
+    # cleaned up (processes left, or its tree still there).
+    on_dirty: Callable[[dict[str, Any]], None] | None = None
     stopped: bool = False
     closed: bool = False
     frozen: bool = False  # held after a run, so nothing changes what was captured
@@ -146,7 +156,11 @@ class DshAttempt:
         self.closed = True
         try:
             if not self.stopped:
-                await asyncio.wait_for(self.stop(), CLEANUP_GRACE_SECONDS + 10)
+                report = await asyncio.wait_for(self.stop(), CLEANUP_GRACE_SECONDS + 10)
+                if report.get("processes_left") != 0 or not report.get("tree_removed"):
+                    log.error("DSH attempt cleanup failed", extra={"fields": report})
+                    if self.on_dirty is not None:
+                        self.on_dirty(report)
         except (LauncherError, TimeoutError, OSError) as error:
             log.warning("DSH attempt stop failed", extra={"fields": {"error": str(error)[:200]}})
         finally:
@@ -171,6 +185,8 @@ class DshRunner:
         self.control, self.root = control, control.parent
         # The registry lock's runtime digest; checked each time an attempt opens.
         self.pinned = pinned
+        # Why this worker's container can no longer be trusted to be clean (F71).
+        self.unhealthy: str | None = None
         self.ledger_store, self.blobs = ledger_store, blobs
         self.sink = sink or NoOpSink()
         self.relay_port = relay_port
@@ -190,6 +206,8 @@ class DshRunner:
     async def open_attempt(self, context: AttemptContext, *, fresh: bool = True) -> _Scope:
         """Create the attempt tree and open the attempt with the launcher. `fresh`
         removes anything an earlier attempt with the same identity left behind."""
+        if self.unhealthy is not None:
+            raise LauncherUnhealthy(self.unhealthy)
         tree = self.root / context.task_id / str(context.turn) / str(context.attempt)
         gid = self.control.stat().st_gid  # the group the launcher shares with us
         launcher = await LauncherClient.connect(self.control)
@@ -215,12 +233,18 @@ class DshRunner:
         except BaseException:
             await launcher.close()
             raise
-        attempt = DshAttempt(tree, launcher, context, gid)
+        attempt = DshAttempt(tree, launcher, context, gid, on_dirty=self._dirty)
         attempt.session_store = DshSessionStore(
             context.task_id, attempt.home, self.blobs, lambda path: share(path, gid)
         )
         self.attempts[attempt.workspace] = attempt
         return _Scope(self, attempt)
+
+    def _dirty(self, report: dict[str, Any]) -> None:
+        self.unhealthy = (
+            f"an attempt left {report.get('processes_left')} processes"
+            f"{'' if report.get('tree_removed') else ' and its tree'} behind"
+        )
 
     async def _attempt_for(self, workspace: Path) -> DshAttempt:
         """The attempt the Activity opened for this workspace, or, for a caller that
