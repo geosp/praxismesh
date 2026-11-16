@@ -18,7 +18,7 @@ Record both the standard evidence report below and the summary in the plan's rev
 
 ## Gate rules
 
-1. **Fresh reviewers.** Reviewers and verifiers are subagents that start with a fresh context and receive only the rule 3 inputs. Any session may coordinate them, including the one that wrote the work. The coordinator passes only pinned inputs, saves every subagent report verbatim and never edits a verdict or finding. The report records `reviewers: fresh-subagent` (or `session: fresh` when a separate session ran it).
+1. **Fresh reviewers.** Reviewers and verifiers are subagents that start with a fresh context and receive only the rule 3 inputs. Any session may coordinate them, including the one that wrote the work. The coordinator passes only pinned inputs, saves every subagent report verbatim and never edits a verdict or finding. A subagent that can write a file writes its report to a scratch path the coordinator names, outside the reviewed tree; the coordinator copies that file unchanged into `raw/` (for example with `cp`) and adds a provenance header, rather than re-typing it. The report records `reviewers: fresh-subagent` (or `session: fresh` when a separate session ran it).
 2. **Pinned revision.** Review a committed revision only.
    - Record `git rev-parse HEAD` as `commit_sha` (for an implementation review this is the `code_sha`).
    - The reviewed paths must have no uncommitted changes: `git status --porcelain -- <paths>` is empty.
@@ -36,6 +36,7 @@ Record both the standard evidence report below and the summary in the plan's rev
    - Verification uses `pass`, `fail` or `blocked` (see the `verify-phase` skill). Blocked is never counted as passed (§8).
 6. **No fixing by reviewers.** Reviewer and verifier subagents never change the work. The coordinator applies fixes, then starts new fresh subagents for the re-check. They get the correction list only after recording their own assessment, or the round is explicitly labeled a targeted follow-up (§0.3).
 7. **Light tier (Phases 0-2).** One coordinator runs the implementation-review subagents and then the verifier against the same `code_sha`. Independence between those two is knowingly waived; independence from the implementer is not (§7.0). From Phase 3A on, they run in separate sessions.
+8. **One subagent at a time.** Run the lenses of a round, and the verifier briefs, one after another. Save and commit each report before starting the next, so a usage limit costs at most the subagent in flight. A targeted follow-up (rule 6) runs one subagent by default: the lens that raised the reopened findings, or a narrow verifier that reads docs and code and runs read-only probes when only the documentation changed.
 
 A review verdict alone never authorizes a merge. Required CI checks on the latest head still apply.
 
@@ -57,7 +58,7 @@ Separation between roles comes from **sessions**, not credentials: every session
 | Role | Runs | May | May not |
 |---|---|---|---|
 | Implementer | A normal session; Skill Central `impl-plan apply` | Edit files, run tests, commit, push a feature branch, open and update its PR | Push to `main`, merge, change repository settings, protection or secrets |
-| Design or implementation reviewer | `design-review` / `impl-review`; agents `design-reader`, `design-reviewer`, `impl-reviewer` | Read code and inputs; run read-only commands (`git diff`, `git show`, `grep`, `gh issue view`, `gh pr view`) | Edit files, commit, push, write anything to GitHub, fix what it finds |
+| Design or implementation reviewer | `design-review` / `impl-review`; agents `design-reader`, `design-reviewer`, `impl-reviewer` | Read code and inputs; run read-only commands (`git diff`, `git show`, `grep`, `gh issue view`, `gh pr view`); write its own report to the scratch path it is given (rule 1) | Edit repository files, commit, push, write anything to GitHub, fix what it finds |
 | Verifier | `verify-phase`; agent `verifier` | Run tests and the demo in a disposable worktree at the pinned commit | Edit the user's working copy, commit, push, write to GitHub |
 | Coordinator | The session that runs a skill and writes its report | Choose inputs, merge findings, write the report, open a docs PR | Change the reviewed code, merge, change protection |
 | Owner (a human) | - | Merge PRs, change repository settings, rulesets, secrets and security features | - |
