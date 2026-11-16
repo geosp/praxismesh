@@ -41,6 +41,14 @@ pytestmark = pytest.mark.integration
 WINDOW = load_registry().templates["local-dsh"].template.context_window or 0
 
 
+@pytest.fixture(autouse=True)
+def _model_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The stub runner never calls a model, but the template's config needs an
+    endpoint; tests must not depend on the developer's infra/.env (verification
+    phase 02, finding 1)."""
+    monkeypatch.setenv("VLLM_BASE_URL", "http://127.0.0.1:9")
+
+
 @pytest.fixture
 async def engine() -> AsyncIterator[AsyncEngine]:
     eng = make_engine()

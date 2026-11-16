@@ -524,9 +524,6 @@ async def test_step_limit_stops_a_runtime_that_does_not_exit(
     monkeypatch.setattr(dsh_runner, "DRIVER", ["python", "-c", STUBBORN_DRIVER])
     registry = load_registry()
     task = f"task-step-limit-{run_id()}"
-    config = dataclasses.replace(
-        build_config(registry, registry.templates["local-dsh"], task), inner_max_turns=1
-    )
     runner = container.runner()
     denied: list[float] = []
     original = UsageLedger.admit
@@ -540,6 +537,10 @@ async def test_step_limit_stops_a_runtime_that_does_not_exit(
     monkeypatch.setattr(UsageLedger, "admit", admit)
     with FakeModel([SCRIPT[0], SCRIPT[0]]) as fake:
         monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        # The config reads the endpoint, so it is built once the fake model runs.
+        config = dataclasses.replace(
+            build_config(registry, registry.templates["local-dsh"], task), inner_max_turns=1
+        )
         scope = await runner.open_attempt(
             AttemptContext(task, 1, 1, "wf", 1_000_000, time.monotonic() + 60)
         )
