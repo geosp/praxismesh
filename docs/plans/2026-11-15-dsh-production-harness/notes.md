@@ -111,7 +111,10 @@ request the template's `context_window` as input and the DSH composition's per-r
 output cap (2048 tokens, `DSH_MAX_OUTPUT_TOKENS`) as output. The gateway clamps every
 request's `max_tokens` to that cap, so the charge bounds what a request can have used.
 A turn that ends with no later attempt (cancel, a non-retryable failure, attempts
-exhausted) charges its own unsettled rows (impl-review F59). The count is derived from the
+exhausted) charges its own unsettled rows (impl-review F59), and `complete_task`
+takes the task's usage as at least the ledger's settled tokens plus the charge for
+every unobserved request, so a turn that ended with no Activity code running (a
+dead worker, `schedule_to_close`, a cancel) is counted too (F98). The count is derived from the
 ledger rows each time, so a later attempt charges the same amount even if the attempt
 that first closed them was lost. This replaces the spike's fail-closed admission denial.
 
