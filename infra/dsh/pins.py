@@ -23,6 +23,10 @@ from pathlib import Path
 
 SITE = Path(os.environ.get("DSH_SITE", "/opt/dsh/site"))
 PINS = Path(os.environ.get("DSH_PINS", "/opt/dsh/pins.json"))
+CONTROL_DIR = Path(__file__).resolve().parent
+# The container's own code: the launcher that isolates attempts, the driver and
+# bridge DSH runs, and this file. Pinned with the requirements (review F92).
+CONTROL_FILES = ("pins.py", "launcher.py", "driver.py", "mcp_bridge.py")
 
 
 def normalized_requirements(text: str) -> list[str]:
@@ -44,6 +48,16 @@ def normalized_requirements(text: str) -> list[str]:
 def requirements_digest(text: str) -> str:
     body = "\n".join(normalized_requirements(text)) + "\n"
     return "sha256:" + hashlib.sha256(body.encode()).hexdigest()
+
+
+def runtime_digest(requirements: str, control_dir: Path) -> str:
+    """The digest the registry lock pins: the requirements digest and the SHA-256
+    of every control file, so an image with an older launcher does not match."""
+    lines = [requirements] + [
+        f"{name} {hashlib.sha256((control_dir / name).read_bytes()).hexdigest()}"
+        for name in CONTROL_FILES
+    ]
+    return "sha256:" + hashlib.sha256(("\n".join(lines) + "\n").encode()).hexdigest()
 
 
 def _dist_infos(site: Path, names: list[str]) -> list[Path]:
@@ -87,6 +101,7 @@ def report() -> dict[str, object]:
     mismatches = verify_installed(SITE, pins["packages"])
     return {
         "requirements_digest": pins["requirements_digest"],
+        "runtime_digest": runtime_digest(pins["requirements_digest"], CONTROL_DIR),
         "packages": pins["packages"],
         "integrity": "ok" if not mismatches else "mismatch",
         "mismatches": mismatches[:20],

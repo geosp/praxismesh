@@ -290,12 +290,22 @@ def reap() -> list[str]:
 
 
 def digests() -> dict[str, object]:
-    """The pinned requirements digest and an integrity check of every installed file
-    of the pinned distributions; the worker compares them with the registry lock."""
-    try:
-        return pins.report()
-    except (OSError, ValueError, RuntimeError) as error:
-        return {"integrity": "error", "detail": str(error)[:200]}
+    """The pinned runtime digest and an integrity check of every installed file of
+    the pinned distributions; the worker compares them with the registry lock.
+
+    Computed once at start-up (the root file system is read-only, so it cannot
+    change) and reported on every `digests` request, which the worker sends each
+    time it opens an attempt (R17, review F62)."""
+    global _REPORT
+    if _REPORT is None:
+        try:
+            _REPORT = pins.report()
+        except (OSError, ValueError, RuntimeError) as error:
+            _REPORT = {"integrity": "error", "detail": str(error)[:200]}
+    return _REPORT
+
+
+_REPORT: dict[str, object] | None = None
 
 
 def setup_cgroups() -> None:
@@ -376,6 +386,7 @@ def serve_connection(conn: socket.socket) -> None:
 def main() -> int:
     setup_cgroups()
     reaped = reap()
+    digests()
     CONTROL.unlink(missing_ok=True)
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(str(CONTROL))

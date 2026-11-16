@@ -5,4 +5,4 @@ templates:
   local-default@1: sha256:6122e8de71a551797b991d7ce87c701c366623076a63135b2f40e3f4b6e7f7ee
   local-dsh@1: sha256:54ef665b737246fca02e747d5ee38dbaab5c9c9fb0df61dbf2768bc6a0bcf567
 runtimes:
-  dsh: sha256:1e1efdf580d79c7d0b2cb9decdb431e97a73310255db59bddaeeccf80a3afed5
+  dsh: sha256:793c0e5f18b141b09ba5978108830e7606f337a8cc8c81ac27da9035729a6fdd

@@ -92,7 +92,7 @@ async def build_harness(
         pinned = read_runtime_pins(REGISTRY_ROOT).get("dsh")
         if pinned is None:
             raise CapabilityError("the registry lock pins no dsh runtime")
-        dsh = DshRunner(control, UsageLedgerRepository(engine), blobs)
+        dsh = DshRunner(control, UsageLedgerRepository(engine), blobs, pinned=pinned)
         try:
             report = await dsh.digests()
         except LauncherError as error:

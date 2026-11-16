@@ -79,7 +79,7 @@ async def test_local_dsh_gets_the_dsh_runner_after_the_pin_check(
     control = volume / ".control.sock"
     monkeypatch.setenv("DSH_CONTROL", str(control))
     registry = load_registry()
-    async with launcher(control, {"integrity": "ok", "requirements_digest": PINNED}) as ops:
+    async with launcher(control, {"integrity": "ok", "runtime_digest": PINNED}) as ops:
         acts = await build_harness(
             registry, registry.templates["local-dsh"], engine, MemoryBlobStore(), "worker"
         )
@@ -92,8 +92,8 @@ async def test_local_dsh_gets_the_dsh_runner_after_the_pin_check(
 @pytest.mark.parametrize(
     "report",
     [
-        {"integrity": "ok", "requirements_digest": "sha256:" + "0" * 64},
-        {"integrity": "mismatch", "requirements_digest": PINNED, "mismatches": ["runtime"]},
+        {"integrity": "ok", "runtime_digest": "sha256:" + "0" * 64},
+        {"integrity": "mismatch", "runtime_digest": PINNED, "mismatches": ["runtime"]},
     ],
 )
 async def test_local_dsh_refuses_a_launcher_that_differs_from_the_lock(

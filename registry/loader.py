@@ -80,7 +80,8 @@ def read_runtime_pins(root: Path) -> dict[str, str]:
 
 def runtime_digest(root: Path, harness: str) -> str:
     """The digest a harness runtime must report, computed from its hash-pinned
-    requirements with the same code the runtime image uses (infra/dsh/pins.py)."""
+    requirements and its control files with the same code the runtime image uses
+    (infra/dsh/pins.py)."""
     if harness != "dsh":
         raise RegistryError(f"harness {harness!r} has no pinned runtime")
     import importlib.util
@@ -92,7 +93,8 @@ def runtime_digest(root: Path, harness: str) -> str:
         raise RegistryError(f"{pins_path} not found")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    digest: str = module.requirements_digest((dsh / "requirements.txt").read_text())
+    requirements = module.requirements_digest((dsh / "requirements.txt").read_text())
+    digest: str = module.runtime_digest(requirements, dsh)
     return digest
 
 

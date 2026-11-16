@@ -37,6 +37,7 @@ from typing import Any
 from agents.memory import Session
 
 from common.blob_store import BlobStore
+from common.errors import CapabilityError
 from harness_activity import skills
 from harness_activity import tools as tool_bodies
 from harness_activity.config import HarnessConfig
@@ -46,6 +47,7 @@ from harness_activity.dsh.executor import Executor
 from harness_activity.dsh.gateway import Gateway, SocketServer
 from harness_activity.dsh.launcher_client import LauncherClient, LauncherError
 from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, LedgerStore, UsageLedger
+from harness_activity.dsh.pins import RuntimePinMismatch, verify_launcher_report
 from harness_activity.dsh.policy import CLEANUP_GRACE_SECONDS, classify
 from harness_activity.dsh.session import DshSessionStore
 from harness_activity.events import AttemptEvents, EventSink, NoOpSink
@@ -160,8 +162,11 @@ class DshRunner:
         sink: EventSink | None = None,
         *,
         relay_port: int = RELAY_PORT,
+        pinned: str | None = None,
     ) -> None:
         self.control, self.root = control, control.parent
+        # The registry lock's runtime digest; checked each time an attempt opens.
+        self.pinned = pinned
         self.ledger_store, self.blobs = ledger_store, blobs
         self.sink = sink or NoOpSink()
         self.relay_port = relay_port
@@ -185,6 +190,16 @@ class DshRunner:
         gid = self.control.stat().st_gid  # the group the launcher shares with us
         launcher = await LauncherClient.connect(self.control)
         try:
+            if self.pinned is not None:
+                # R17: the paired container may have been recreated since this
+                # worker checked it at start-up (review F62).
+                try:
+                    verify_launcher_report(
+                        (await launcher.request("digests"))["digests"], self.pinned
+                    )
+                except CapabilityError as error:
+                    log.error("DSH runtime pin mismatch; attempt refused: %s", error)
+                    raise RuntimePinMismatch(str(error)) from error
             if fresh:
                 shutil.rmtree(tree, ignore_errors=True)
             for path in (tree.parent.parent, tree.parent, tree, *(tree / name for name in DIRS)):

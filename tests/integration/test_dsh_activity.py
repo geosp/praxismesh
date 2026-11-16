@@ -34,11 +34,12 @@ from harness_activity.activity import HarnessActivities
 from harness_activity.config import build_config
 from harness_activity.dsh.launcher_client import LauncherClient
 from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS
+from harness_activity.dsh.pins import RuntimePinMismatch
 from harness_activity.dsh.runner import DshRunner
 from harness_activity.events import MemorySink
 from harness_activity.runner import AttemptContext, RunnerFailure, Usage
 from registry.loader import load_registry
-from tests.support.dsh import DshContainer, build_image, start_container
+from tests.support.dsh import DshContainer, MemoryLedgerStore, build_image, start_container
 from tests.support.fake_model import FakeModel
 from tests.support.stack import run_id
 
@@ -357,6 +358,24 @@ async def test_failed_thaw_is_a_retryable_checkpoint_failure(
     assert (failure.category, failure.retryable) == ("DshCheckpointFailure", True)
     assert after < 0  # stopped at once, not at the deadline
     assert container.attempt_cgroups() == []
+
+
+async def test_attempt_on_an_unpinned_runtime_is_refused(container: DshContainer) -> None:
+    """R17 (review F62): the worker checked its container at start-up; the container
+    was then recreated from another image. Opening an attempt re-checks the pin and
+    refuses, retryably, before anything is created."""
+    runner = DshRunner(
+        container.control, MemoryLedgerStore(), MemoryBlobStore(), pinned="sha256:" + "0" * 64
+    )
+    task = f"task-unpinned-{run_id()}"
+    with pytest.raises(RuntimePinMismatch):
+        await runner.open_attempt(AttemptContext(task, 1, 1, "wf", 1_000, time.monotonic() + 60))
+    assert container.attempt_cgroups() == [] and not (container.attempts / task).exists()
+    # The pinned runtime opens normally.
+    scope = await container.runner().open_attempt(
+        AttemptContext(task, 1, 1, "wf", 1_000, time.monotonic() + 60)
+    )
+    await scope.close()
 
 
 async def _no_op(usage: Usage) -> None:
