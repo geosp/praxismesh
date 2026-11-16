@@ -7,7 +7,11 @@ import logging
 from temporalio import activity
 
 from common.observability import log_context
-from common.persistence.repositories import AttemptRepository, TaskRepository
+from common.persistence.repositories import (
+    AttemptRepository,
+    TaskRepository,
+    UsageLedgerRepository,
+)
 from common.schemas import (
     CompleteTaskInput,
     RecordTaskInput,
@@ -15,6 +19,8 @@ from common.schemas import (
     TaskResult,
     TaskStart,
 )
+from harness_activity.dsh.composition import DEFAULT_CONTEXT_WINDOW
+from harness_activity.dsh.ledger import unknown_charge
 from orchestrator.constants import template_queue
 from registry.loader import Registry
 
@@ -31,6 +37,35 @@ class OrchestratorActivities:
         self.registry = registry
         self.tasks = tasks
         self.attempts = AttemptRepository(tasks.engine)
+        self.ledger = UsageLedgerRepository(tasks.engine)
+
+    async def _with_ledger_usage(self, payload: CompleteTaskInput) -> CompleteTaskInput:
+        """Usage at least as the gateway ledger records it (R11). A turn can end
+        with no Activity code running (a dead worker, schedule_to_close, a cancel),
+        so the Workflow's totals may miss requests settled after the last heartbeat
+        and the D9 charge for those never observed (review F98)."""
+        settled_in, settled_out, unknown, requests = await self.ledger.task_totals(payload.task_id)
+        if not requests:
+            return payload  # no ledger rows: openai_agents counts in the Activity
+        # The task's own template version. If this orchestrator no longer has it,
+        # the larger of the default and the current version's window, so the
+        # charge stays conservative (F137, F151).
+        loaded = self.registry.templates.get(payload.resolved.template)
+        current = (loaded.template.context_window if loaded is not None else None) or 0
+        if loaded is not None and loaded.hash == payload.resolved.template_hash and current:
+            window = current
+        else:
+            window = max(current, DEFAULT_CONTEXT_WINDOW)
+        charge_in, charge_out = unknown_charge(unknown, window)
+        return payload.model_copy(
+            update={
+                "tokens_in": max(payload.tokens_in, settled_in + charge_in),
+                "tokens_out": max(payload.tokens_out, settled_out + charge_out),
+                # D11: every model request of every attempt is an inner turn (F136).
+                "inner_turns": max(payload.inner_turns, requests),
+                "usage_known": payload.usage_known and unknown == 0,
+            }
+        )
 
     @activity.defn(name="resolve_capabilities")
     async def resolve_capabilities(self, start: TaskStart) -> ResolvedTask:
@@ -71,6 +106,7 @@ class OrchestratorActivities:
     @activity.defn(name="complete_task")
     async def complete_task(self, payload: CompleteTaskInput) -> TaskResult:
         r = payload.resolved
+        payload = await self._with_ledger_usage(payload)
         result = TaskResult(
             task_id=payload.task_id,
             status=payload.status,

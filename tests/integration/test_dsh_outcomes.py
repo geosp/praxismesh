@@ -6,21 +6,25 @@ Each case runs through `TaskWorkflow` on the local stack: the orchestrator and a
 container, and the deterministic fake model as the scripted provider. The
 registry is a copy with a two-step inner limit and short timeouts.
 
-What differs from the spike's record, by decision:
+Every case's expected TaskResult is read from the spike's record. What differs,
+by decision (plan D11, decision log 2026-11-16):
 
+- The fake model reports 100 input and 10 output tokens per completion; the
+  spike's fixture reported 7 and 3. Tokens are compared per answered request.
 - The spike's fixture provider told its gateway that a failure came before
   generation. The production gateway can prove that only for a request the
   endpoint refused (4xx). A malformed response, a dropped connection or a request
-  still in flight at the deadline leaves usage unknown: the next attempt charges
-  it conservatively and the result says `usage_known = false` (D9, R12, R13).
-- Usage is cumulative over the attempts of a turn, so a retried turn counts the
-  inner turns of its failed attempt too.
+  still in flight at the deadline leaves usage unknown: it is charged
+  conservatively and the result says `usage_known = false` (D9, R12, R13).
+- Inner turns are cumulative over the attempts of a turn, like tokens, so a
+  retried or lost attempt's model steps count too (`extra_inner_turns`).
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import itertools
 import json
 import os
 import shutil
@@ -58,6 +62,14 @@ from tests.support.stack import run_id
 from tests.support.worker_procs import ROOT, descendants
 
 pytestmark = pytest.mark.integration
+EVIDENCE = {
+    summary["case"]: summary
+    for summary in json.loads((ROOT / "docs/spikes/dsh-phase02-r2-evidence.json").read_text())[
+        "driver_summaries"
+    ].values()
+    if "case" in summary
+}
+SPIKE_REQUEST = (7, 3)  # what the spike's fixture reported for every completion
 
 ARTIFACT = b"controlled fixture artifact\n"
 SUMMARY = "Controlled fixture completed."
@@ -77,20 +89,29 @@ ONE_REQUEST = (100, 10)  # what the fake model reports for every completion
 
 @dataclass(frozen=True)
 class Case:
+    """What the production run adds to, or changes from, the spike's record."""
+
     script: list[dict[str, Any]]
-    status: str = "succeeded"
-    reason: str | None = None
-    turns: int = 1
     # (turn, attempt, outcome, failure_category) of every attempt row.
     rows: list[tuple[int, int, str, str | None]] = field(
         default_factory=lambda: [(1, 1, "done", None)]
     )
-    requests: int = 1  # model requests the endpoint answered with a completion
-    inner_turns: int = 1
     unknown: int = 0  # requests whose usage was never observed
-    summary: str = SUMMARY
-    questions: list[str] = field(default_factory=list)
+    extra_inner_turns: int = 0  # steps of retried or lost attempts (D11)
     settings: dict[str, Any] = field(default_factory=dict)
+
+
+def spike(name: str) -> dict[str, Any]:
+    """The TaskResult the spike recorded for a case."""
+    result: dict[str, Any] = EVIDENCE[name]["result"]
+    return result
+
+
+def answered(name: str) -> int:
+    """Model requests the endpoint answered with a completion, from the spike."""
+    tokens_in = spike(name)["tokens_in"]
+    assert tokens_in % SPIKE_REQUEST[0] == 0
+    return int(tokens_in // SPIKE_REQUEST[0])
 
 
 def retried(category: str) -> list[tuple[int, int, str, str | None]]:
@@ -104,53 +125,41 @@ CASES: dict[str, Case] = {
     "done": Case([DONE]),
     # The model answers in text and never calls finish_task: every turn continues
     # until the profile's turn budget is used up.
-    "plain-text": Case(
-        [{"text": '{"status":"succeeded"}'}],
-        status="failed", reason="turn budget exhausted", turns=TURNS, rows=CONTINUES,
-        requests=TURNS, inner_turns=TURNS, summary="",
-    ),
+    "plain-text": Case([{"text": '{"status":"succeeded"}'}], rows=CONTINUES),
     # Every finish_task is invalid, so each turn stops at the inner-turn limit.
-    "inner-limit": Case(
-        [finish(status="succeeded")],
-        status="failed", reason="turn budget exhausted", turns=TURNS, rows=CONTINUES,
-        requests=TURNS * INNER_LIMIT, inner_turns=TURNS * INNER_LIMIT, summary="",
-    ),
+    "inner-limit": Case([finish(status="succeeded")], rows=CONTINUES),
     "needs-input": Case(
         [finish(status="needs_input", summary="Fixture needs an owner choice.",
                 questions=[QUESTION])],
-        status="needs_input", rows=[(1, 1, "needs_input", None)],
-        summary="Fixture needs an owner choice.", questions=[QUESTION],
+        rows=[(1, 1, "needs_input", None)],
     ),
     # An invalid completion is an admitted call that fails; the model corrects it.
-    "invalid-status": Case([finish(status="succeeded"), DONE], requests=2, inner_turns=2),
-    "invalid-payload": Case(
-        [finish(summary={"invalid": "object"}), DONE], requests=2, inner_turns=2
-    ),
+    "invalid-status": Case([finish(status="succeeded"), DONE]),
+    "invalid-payload": Case([finish(summary={"invalid": "object"}), DONE]),
     "invalid-reference": Case(
-        [finish(artifacts=[{"path": "../escape", "ref": {"checksum": "bad"}}]), DONE],
-        requests=2, inner_turns=2,
+        [finish(artifacts=[{"path": "../escape", "ref": {"checksum": "bad"}}]), DONE]
     ),
     # Refused before generation: nothing was used, and the turn is retried.
     "retry-model": Case(
-        [{**DONE, "fault": "overloaded"}], rows=retried("DshProviderFailure"), inner_turns=2
+        [{**DONE, "fault": "overloaded"}], rows=retried("DshProviderFailure"),
+        extra_inner_turns=1,
     ),
     "retry-protocol": Case(
-        [{**DONE, "fault": "malformed"}], rows=retried("DshUsageUnknown"), inner_turns=2,
-        unknown=1,
+        [{**DONE, "fault": "malformed"}], rows=retried("DshUsageUnknown"), unknown=1,
+        extra_inner_turns=1,
     ),
     "retry-infrastructure": Case(
-        [{**DONE, "fault": "disconnect"}], rows=retried("DshUsageUnknown"), inner_turns=2,
-        unknown=1,
+        [{**DONE, "fault": "disconnect"}], rows=retried("DshUsageUnknown"), unknown=1,
+        extra_inner_turns=1,
     ),
     "bad-request": Case(
         [{**DONE, "fault": "rejected", "always": True}],
-        status="failed", reason="harness turn 1 failed: HarnessInputError",
-        rows=[(1, 1, "failed", "HarnessInputError")], requests=0, summary="",
+        rows=[(1, 1, "failed", "HarnessInputError")],
     ),
     # The model stalls on the first attempt; the turn deadline stops it.
     "deadline": Case(
-        [{**DONE, "pause": True}], rows=retried("DshUsageUnknown"), inner_turns=2, unknown=1,
-        settings={"turn_timeout": "PT30S"},
+        [{**DONE, "pause": True}], rows=retried("DshUsageUnknown"), unknown=1,
+        extra_inner_turns=1, settings={"turn_timeout": "PT30S"},
     ),
 }  # fmt: skip
 
@@ -259,7 +268,7 @@ async def check_usage(result: TaskResult, task_id: str, unknown: int) -> None:
 async def test_outcome_case(
     name: str, container: DshContainer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    case = CASES[name]
+    case, recorded = CASES[name], spike(name)
     registry = registry_for(tmp_path, **case.settings)
     with FakeModel(case.script) as fake:
         monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
@@ -268,16 +277,19 @@ async def test_outcome_case(
             result = TaskResult.model_validate(await asyncio.wait_for(handle.result(), 300))
         served = len(fake.state.served)
 
-    assert (result.status, result.failure_reason) == (case.status, case.reason)
-    assert (result.summary, result.questions) == (case.summary, case.questions)
-    assert (result.turns, result.attempts) == (case.turns, len(case.rows))
-    assert result.template == "local-dsh" and result.inner_turns == case.inner_turns
-    assert await attempt_rows(task_id) == case.rows
+    # R18: the spike's TaskResult, with only the recorded differences.
+    for key in ("status", "failure_reason", "summary", "questions", "turns", "attempts"):
+        assert getattr(result, key) == recorded[key], key
+    assert [a.path for a in result.artifacts] == [a["path"] for a in recorded["artifacts"]]
+    assert result.template == "local-dsh"
+    assert result.inner_turns == recorded["inner_turns"] + case.extra_inner_turns
+    assert await attempt_rows(task_id) == case.rows and len(case.rows) == recorded["attempts"]
     await check_usage(result, task_id, case.unknown)
-    assert result.tokens_in == case.requests * ONE_REQUEST[0] + case.unknown * WINDOW
+    requests = answered(name)
+    assert result.tokens_in == requests * ONE_REQUEST[0] + case.unknown * WINDOW
     # No request after finish_task or past the inner limit reached the endpoint.
     faults = sum(1 for _, _, outcome, _ in case.rows if outcome == "failed")
-    assert served == case.requests + faults
+    assert served == requests + faults
     if result.status == "succeeded":
         (artifact,) = result.artifacts
         assert artifact.path == "answer.txt" and artifact.ref.retention_class == "audit"
@@ -317,8 +329,11 @@ async def test_lost_after_finish_completes_without_restarting_the_runtime(
             result = TaskResult.model_validate(await asyncio.wait_for(handle.result(), 300))
         served = len(fake.state.served)
 
-    assert (result.status, result.summary) == ("succeeded", SUMMARY)
-    assert (result.turns, result.attempts, result.inner_turns) == (1, 2, 1)
+    recorded = spike("lost-after-finish")
+    for key in ("status", "summary", "turns", "attempts"):
+        assert getattr(result, key) == recorded[key], key
+    # D11: the lost attempt's model step counts, as its tokens do.
+    assert result.inner_turns == recorded["inner_turns"] + 1
     assert runs == [(1, 1)] and served == 1  # attempt 2 never started DSH or hit the model
     assert await attempt_rows(task_id) == [
         (1, 1, "lost", "lost_or_timed_out"),
@@ -326,6 +341,7 @@ async def test_lost_after_finish_completes_without_restarting_the_runtime(
     ]
     await check_usage(result, task_id, unknown=0)
     assert (result.tokens_in, result.tokens_out) == ONE_REQUEST
+    assert answered("lost-after-finish") == 1
     (artifact,) = result.artifacts
     assert await S3BlobStore.from_env().get(artifact.ref) == ARTIFACT
 
@@ -333,9 +349,12 @@ async def test_lost_after_finish_completes_without_restarting_the_runtime(
 async def test_cancel_stops_the_attempt_within_the_grace_and_stays_clean(
     container: DshContainer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """R18 `cancel`, R8: cancelling the workflow while the model request is held
-    stops the attempt cooperatively within the 5 s grace, closes the attempt row
-    as `cancelled`, and leaves the container clean through the 10 s window."""
+    """R18 `cancel`, R8, R12: cancelling the workflow while the model request is
+    held stops the attempt cooperatively within the 5 s grace, as the spike
+    recorded; the attempt row is `cancelled` with its in-flight request's usage
+    unknown, and the container stays clean through the 10 s window."""
+    (recorded,) = EVIDENCE["cancel"]["native_attempts"]
+    assert (recorded["stop_reason"], recorded["cooperative_stop"]) == ("cancelled", True)
     registry = registry_for(tmp_path)
     with FakeModel([{**DONE, "pause": True}]) as fake:
         monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
@@ -359,8 +378,23 @@ async def test_cancel_stops_the_attempt_within_the_grace_and_stays_clean(
                 await asyncio.sleep(0.05)
             stopped_in = asyncio.get_running_loop().time() - trigger
             assert stopped_in < 5.0
-            assert rows[0][2] in ("cancelled", "failed")
+            assert rows == [(1, 1, "cancelled", "DshCancelled")]  # cooperative, not forced
+            usage = await query(
+                "SELECT tokens_in, tokens_out, usage_known FROM task_attempts WHERE task_id = :t",
+                t=task_id,
+            )
+            assert usage == [(None, None, False)]  # F59: unknown, never 0
             assert await container.stays_clean(10.0) == {}
+        # F98: the task result counts the cancelled request, charged, as unknown.
+        until = asyncio.get_running_loop().time() + 30
+        while not (stored := await query("SELECT result FROM tasks WHERE task_id = :t", t=task_id))[
+            0
+        ][0]:
+            assert asyncio.get_running_loop().time() < until
+            await asyncio.sleep(0.2)
+        result = TaskResult.model_validate(stored[0][0])
+        assert result.usage_known is False
+        assert (result.tokens_in, result.tokens_out) == (WINDOW, DSH_MAX_OUTPUT_TOKENS)
 
 
 async def test_forced_stop_is_recorded_as_a_non_retryable_failure(
@@ -397,12 +431,14 @@ async def test_command_isolation_blocks_session_other_attempts_and_reaps_backgro
     other = container.attempts / "other-task/1/1/workspace"
     other.mkdir(parents=True)
     (other / "secret.txt").write_text("other-attempt-secret")
+    # Each probe prints a label, so the test sees that it ran and what it saw.
     probe_cmd = (
         "sh -c '"
-        "cat /attempts/*/1/1/home/sessions/* 2>&1 || true; "
-        "cat /run/attempt/home/sessions/* 2>&1 || true; "
-        "ls -A /attempts 2>&1; "
-        "(sleep 55 >/dev/null 2>&1 &); "
+        "echo other:; cat /attempts/other-task/1/1/workspace/secret.txt 2>/dev/null; "
+        "echo attempts:; ls -A /attempts 2>/dev/null; "
+        "echo session:; cat /attempts/*/1/1/home/sessions/* /run/attempt/home/sessions/* "
+        "../home/sessions/* 2>/dev/null; "
+        "echo end:; (sleep 55 >/dev/null 2>&1 &); "
         "echo isolated-ok"
         "'"
     )
@@ -424,8 +460,14 @@ async def test_command_isolation_blocks_session_other_attempts_and_reaps_backgro
     assert result.status == "succeeded" and await attempt_rows(task_id) == [(1, 1, "done", None)]
     tool_outputs = [m["content"] for m in second_req["messages"] if m.get("role") == "tool"]
     assert len(tool_outputs) == 1 and "isolated-ok" in tool_outputs[0]
-    assert "other-attempt-secret" not in tool_outputs[0]
-    assert "session.v4" not in tool_outputs[0]
+    # Review F90: every probe ran and saw nothing; the session file holds the
+    # task's instructions, so reading it would show them.
+    seen = tool_outputs[0]
+    labels = ["other:", "attempts:", "session:", "end:"]
+    assert all(label in seen for label in labels)
+    between = [seen.split(a, 1)[1].split(b, 1)[0].strip() for a, b in itertools.pairwise(labels)]
+    assert between == ["", "", ""]
+    assert "other-attempt-secret" not in seen and "controlled completion fixture" not in seen
     # Neither the backgrounded `sleep 55` nor any attempt process survived.
     assert container.attempt_processes() == []
 

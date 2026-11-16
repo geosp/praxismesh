@@ -45,6 +45,41 @@ CLIENT = textwrap.dedent(
     open("/attempts/task-2/1/1/workspace/secret", "w").write("other attempt")
     open(f"{tree}/home/session.jsonl", "w").write("session")
     out["open"] = ask(f, op="open", attempt="task-1/1/1")
+    if sys.argv[1] == "dirty":  # an attempt whose tree cannot be removed
+        out["start"] = ask(f, op="start", argv=["sleep", "60"])
+        print(json.dumps(out), flush=True)
+        sys.stdin.readline()  # the test pins the tree with a mount, then goes on
+        out["stop"] = ask(f, op="stop", grace=2)
+        out["after"] = ask(f, op="digests")
+        print(json.dumps(out)); sys.exit(0)
+    if sys.argv[1] == "hold":  # a live attempt a launcher restart must reap
+        out["start"] = ask(f, op="start", argv=["sh", "-c", "sleep 60 & sleep 60"])
+        import time; time.sleep(30)
+        sys.exit(0)
+    if sys.argv[1] == "tmp":  # what one attempt leaves in /tmp, the next must not see
+        write = ("for d in /tmp /run /dev/shm; do echo leaked > $d/marker && echo ok; done; "
+                 "echo rc=$?")
+        out["write"] = ask(f, op="exec", command=write, timeout=10)
+        ipc = "ipcmk -M 4096 && ipcmk -Q && echo ipc-ok"
+        out["ipc_write"] = ask(f, op="exec", command=ipc, timeout=10)
+        out["stop"] = ask(f, op="stop", grace=2)
+        for name in ("home", "workspace", "ipc"):
+            os.makedirs(f"/attempts/task-3/1/1/{name}", exist_ok=True)
+        out["open2"] = ask(f, op="open", attempt="task-3/1/1")
+        read = ("cat /tmp/marker /run/marker /dev/shm/marker 2>/dev/null; echo rc=$?; "
+                "ls -A /tmp /run /dev/shm")
+        out["read"] = ask(f, op="exec", command=read, timeout=10)
+        out["ipc_read"] = ask(f, op="exec", command="ipcs -m -q", timeout=10)
+        out["stop2"] = ask(f, op="stop", grace=2)
+        print(json.dumps(out)); sys.exit(0)
+    if sys.argv[1] == "frozen-stop":  # a stop while a barrier holds the freeze
+        handler = ("import signal,sys,time; "
+                   "signal.signal(signal.SIGTERM, lambda *a: sys.exit(0)); time.sleep(60)")
+        out["start"] = ask(f, op="start", argv=["python", "-c", handler])
+        import time; time.sleep(0.5)
+        out["freeze"] = ask(f, op="freeze")
+        out["stop"] = ask(f, op="stop", grace=2)
+        print(json.dumps(out)); sys.exit(0)
     out["start"] = ask(f, op="start", argv=["sh", "-c", "sleep 60 & sleep 60"])
     import time; time.sleep(0.5)
     out["members"] = ask(f, op="members")
@@ -144,6 +179,54 @@ def test_attempt_isolation_and_stop(launcher: str) -> None:
     assert attempt_state(launcher) == ("", False)
 
 
+def test_stop_while_frozen_is_cooperative(launcher: str) -> None:
+    """R8, R9, D6 (review F60): a frozen runtime cannot run its SIGTERM handler, so
+    the launcher thaws it first; a runtime that exits on SIGTERM is a cooperative stop."""
+    out = client(launcher, "frozen-stop")
+    assert out["freeze"] == {"ok": True}
+    assert out["stop"]["cooperative"] is True
+    assert out["stop"]["processes_left"] == 0 and out["stop"]["tree_removed"]
+    assert attempt_state(launcher) == ("", False)
+
+
+def test_commands_get_their_own_tmp(launcher: str) -> None:
+    """R15 (review F63, F102): a command's /tmp, /run and /dev/shm belong to its
+    attempt; what a command of one attempt writes there is gone for the next
+    attempt, of any task, and never reaches the container's own."""
+    out = client(launcher, "tmp")
+    assert out["write"]["stdout"].split().count("ok") == 3  # every place was writable
+    seen = out["read"]["stdout"]
+    assert "leaked" not in seen and "marker" not in seen and "rc=1" in seen
+    # Review F132: SysV shared memory and queues outlive their process; a later
+    # attempt must not see them.
+    assert "ipc-ok" in out["ipc_write"]["stdout"]
+    assert "0x" not in out["ipc_read"]["stdout"], out["ipc_read"]["stdout"]
+    for shared in ("/tmp", "/run", "/dev/shm"):
+        listing = docker("exec", launcher, "ls", "-A", shared).stdout.split()
+        assert "marker" not in listing, shared
+    assert attempt_state(launcher) == ("", False)
+
+
+def test_launcher_remembers_an_attempt_it_could_not_clean(launcher: str) -> None:
+    """R10 (review F99): a destroy that leaves the tree behind is reported by every
+    later `digests` reply, so any worker refuses the container until it restarts."""
+    proc = subprocess.Popen(
+        ["docker", "exec", "-i", "-u", WORKER, launcher, "python", "/opt/dsh/client.py", "dirty"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+    )  # fmt: skip
+    assert proc.stdout is not None and proc.stdin is not None
+    assert "start" in json.loads(proc.stdout.readline())
+    pin = "/attempts/task-1/1/1/workspace/pinned"
+    docker("exec", launcher, "sh", "-c", f"mkdir -p {pin} && mount -t tmpfs none {pin}")
+    proc.stdin.write("\n")
+    proc.stdin.flush()
+    out = json.loads(proc.stdout.readline())
+    proc.wait(timeout=30)
+    assert out["stop"]["tree_removed"] is False
+    assert out["after"]["dirty"] == ["task-1/1/1"]
+    docker("exec", launcher, "umount", pin, check=False)
+
+
 def test_closed_connection_kills_the_attempt(launcher: str) -> None:
     client(launcher, "close")  # exits without stop: the worker died
     until = time.monotonic() + 10
@@ -159,10 +242,32 @@ def test_closed_connection_kills_the_attempt(launcher: str) -> None:
     assert leftover.stdout.strip() == "0"
 
 
-def test_restart_reaps_leftover_trees(launcher: str) -> None:
+def sleepers(name: str) -> str:
+    return docker(
+        "exec", name, "sh", "-c",
+        "for c in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < $c; echo; done | grep -c '[s]leep 60'",
+        check=False,
+    ).stdout.strip()  # fmt: skip
+
+
+def test_restart_reaps_leftover_attempts(launcher: str) -> None:
+    """Task 1.1 (review F94): a launcher starting up kills every leftover attempt's
+    processes, removes its cgroup and removes every leftover tree."""
     docker("exec", "-u", WORKER, launcher, "mkdir", "-p", "/attempts/task-9/1/1/workspace")
-    docker("exec", "-d", launcher, "python", "/opt/dsh/launcher.py")
-    time.sleep(2)
+    docker("exec", "-d", "-u", WORKER, launcher, "python", "/opt/dsh/client.py", "hold")
+    until = time.monotonic() + 10
+    while int(sleepers(launcher) or 0) < 2:
+        assert time.monotonic() < until
+        time.sleep(0.2)
+    assert attempt_state(launcher)[0]  # a live attempt cgroup
+    docker("exec", "-d", launcher, "python", "/opt/dsh/launcher.py")  # the restart
+    until = time.monotonic() + 10
+    while (attempt_state(launcher) != ("", False) or sleepers(launcher) != "0") and (
+        time.monotonic() < until
+    ):
+        time.sleep(0.2)
+    assert attempt_state(launcher) == ("", False)
+    assert sleepers(launcher) == "0"
     assert "task-9" not in docker("exec", launcher, "ls", "-A", "/attempts").stdout
 
 

@@ -122,7 +122,10 @@ class ExecutionAttempt(Strict):
     worker_identity: str
     outcome: AttemptOutcome
     failure_category: str | None = None
-    tokens_in: int | None = 0  # None when usage_known is false (D7)
+    # The turn's cumulative usage through this attempt. None when a request of this
+    # attempt (or, for a lost attempt, of one up to it) was never observed; numbers
+    # with usage_known false include the conservative D9 charge (D7, review F69).
+    tokens_in: int | None = 0
     tokens_out: int | None = 0
     usage_known: bool = True
     tool_calls: int = 0

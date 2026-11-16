@@ -41,6 +41,7 @@ make_runner: Callable[[], HarnessRunner] = OpenAIAgentsRunner
 # The production SQLAlchemySessionStore is checked against Postgres in
 # tests/integration/test_harness_activity.py::test_session_store_contract.
 make_store: Callable[[str], SessionStore] = MemorySessionStore
+runner_name = "openai_agents"  # which runner this test runs, set by `_runner`
 
 
 def _subdir(base: Path, name: str) -> Path:
@@ -71,6 +72,7 @@ async def _runner(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> AsyncIterator[str]:
     name: str = request.param
+    monkeypatch.setitem(globals(), "runner_name", name)
     if name != "dsh":
         monkeypatch.setitem(globals(), "make_runner", RUNNERS[name])
         yield name
@@ -101,10 +103,14 @@ def tmp_path(tmp_path: Path, _runner: str, request: pytest.FixtureRequest) -> Pa
 
 def instructions_seen(first_request: dict[str, Any]) -> str:
     """The template's instructions as the model got them: the system message for
-    `openai_agents`; for `dsh`, the first user message (DSH keeps its own system
-    message)."""
+    `openai_agents`, as before phase 02 (review F93); for `dsh`, the first user
+    message (DSH keeps its own system message)."""
     messages = first_request["messages"]
-    return str(messages[0]["content"]) + "\n" + str(messages[1]["content"])
+    if runner_name != "dsh":
+        assert messages[0]["role"] == "system"
+        return str(messages[0]["content"])
+    assert messages[1]["role"] == "user"
+    return str(messages[1]["content"])
 
 
 async def test_memory_store_contract() -> None:

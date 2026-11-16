@@ -12,13 +12,16 @@ arguments and then returns only an error string (design review J11).
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import logging
 import os
 import shlex
+import stat
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
 from agents import FunctionTool, function_tool
@@ -57,6 +60,57 @@ def inside(workspace: Path, path: str) -> Path:
     if resolved != root and root not in resolved.parents:
         raise WorkspaceError(f"path outside the workspace: {path}")
     return resolved
+
+
+def _parts(workspace: Path, path: str) -> list[str]:
+    """The components of `path` below the workspace; no `..`, nothing outside."""
+    pure = PurePosixPath(path)
+    if pure.is_absolute():
+        try:
+            pure = pure.relative_to(PurePosixPath(workspace.resolve()))
+        except ValueError:
+            raise WorkspaceError(f"path outside the workspace: {path}") from None
+    parts = [p for p in pure.parts if p != "."]
+    if ".." in parts:
+        raise WorkspaceError(f"path outside the workspace: {path}")
+    return parts
+
+
+def open_inside(
+    workspace: Path, path: str, flags: int, mode: int = 0o664, *, make_dirs: bool = False
+) -> int:
+    """Open `path` in the workspace without following any symbolic link: every
+    component is opened relative to its parent with O_NOFOLLOW. Another UID can
+    write the workspace (a DSH command), so a link, even one swapped in after a
+    check, must never take the worker out of it (DSH plan D4, review F97)."""
+    parts = _parts(workspace, path)
+    if not parts:
+        raise WorkspaceError(f"not a file in the workspace: {path}")
+    directory = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for name in parts[:-1]:
+            if make_dirs:
+                with contextlib.suppress(FileExistsError):
+                    os.mkdir(name, 0o770, dir_fd=directory)
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        return os.open(parts[-1], flags | os.O_NOFOLLOW | os.O_NONBLOCK, mode, dir_fd=directory)
+    except OSError as error:
+        if error.errno in (errno.ELOOP, errno.ENOTDIR):
+            raise WorkspaceError(f"path outside the workspace: {path}") from None
+        raise
+    finally:
+        os.close(directory)
+
+
+def read_regular(workspace: Path, path: str) -> bytes:
+    """The bytes of a regular file in the workspace, never through a link."""
+    fd = open_inside(workspace, path, os.O_RDONLY)
+    with os.fdopen(fd, "rb") as f:
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+            raise WorkspaceError(f"not a regular file: {path}")
+        return f.read()
 
 
 def command_env(workspace: Path) -> dict[str, str]:
@@ -106,18 +160,21 @@ def local_command_runner(workspace: Path) -> CommandRunner:
 
 def read_file_body(workspace: Path, path: str) -> str:
     try:
-        return inside(workspace, path).read_text()
+        return read_regular(workspace, path).decode()
     except (WorkspaceError, OSError, UnicodeDecodeError) as e:
         return f"error: {e}"
 
 
 def write_file_body(workspace: Path, path: str, content: str) -> str:
     try:
-        target = inside(workspace, path)
-        if target.relative_to(workspace.resolve()).parts[:1] == (SKILLS_DIR,):
+        if _parts(workspace, path)[:1] == [SKILLS_DIR]:
             raise WorkspaceError("skills are read-only")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = open_inside(workspace, path, flags, make_dirs=True)
+        with os.fdopen(fd, "w") as f:
+            if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                raise WorkspaceError(f"not a regular file: {path}")
+            f.write(content)
     except (WorkspaceError, OSError) as e:
         return f"error: {e}"
     return f"wrote {len(content)} characters to {path}"
@@ -125,13 +182,26 @@ def write_file_body(workspace: Path, path: str, content: str) -> str:
 
 def list_files_body(workspace: Path, path: str = ".") -> list[str] | str:
     try:
-        base = inside(workspace, path)
-    except WorkspaceError as e:
+        parts = _parts(workspace, path)
+        top = (
+            open_inside(workspace, path, os.O_RDONLY | os.O_DIRECTORY)
+            if parts
+            else os.open(workspace, os.O_RDONLY | os.O_DIRECTORY)
+        )
+    except (WorkspaceError, OSError) as e:
         return f"error: {e}"
-    root = workspace.resolve()
-    return sorted(
-        str(p.relative_to(root)) for p in base.rglob("*") if p.is_file() and not p.is_symlink()
-    )
+    # Walk by descriptor, never following a link, so nothing swapped in after the
+    # open takes the listing outside the workspace (review F140).
+    found = []
+    try:
+        for directory, _, files, fd in os.fwalk(".", dir_fd=top, follow_symlinks=False):
+            for name in files:
+                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if stat.S_ISREG(info.st_mode):
+                    found.append(str(PurePosixPath(*parts, directory, name)))
+    finally:
+        os.close(top)
+    return sorted(os.path.normpath(p) for p in found)
 
 
 def finish_task_body(

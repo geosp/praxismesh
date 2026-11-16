@@ -219,7 +219,14 @@ class AttemptRepository:
                 if newer.first() is not None:
                     raise FenceRejected("a newer attempt owns this task")
 
-    async def record_refusal(self, task_id: str, turn: int, attempt: int, worker: str) -> None:
+    async def record_refusal(
+        self,
+        task_id: str,
+        turn: int,
+        attempt: int,
+        worker: str,
+        category: str = "template_version_unavailable",
+    ) -> None:
         """Record a Temporal attempt that refused the task (wrong template version).
 
         It never runs, but it is newer than the attempts before it, so it must fence
@@ -242,12 +249,11 @@ class AttemptRepository:
                     """
                     INSERT INTO task_attempts (task_id, turn, attempt, worker_identity, outcome,
                         failure_category, ended_at, retention_class)
-                    VALUES (:t, :turn, :a, :w, 'refused', 'template_version_unavailable',
-                        CURRENT_TIMESTAMP, 'audit')
+                    VALUES (:t, :turn, :a, :w, 'refused', :c, CURRENT_TIMESTAMP, 'audit')
                     ON CONFLICT (task_id, turn, attempt) DO NOTHING
                     """
                 ),
-                {"t": task_id, "turn": turn, "a": attempt, "w": worker},
+                {"t": task_id, "turn": turn, "a": attempt, "w": worker, "c": category},
             )
 
     async def assert_current(self, task_id: str, turn: int, attempt: int) -> None:
@@ -281,6 +287,20 @@ class AttemptRepository:
         N1). Task-wide completion intentionally leaves it unset.
         """
         async with self.engine.begin() as conn:
+            # The rows close without a finish: give them the ledger's usage (F101),
+            # and so do rows a newer start or refusal marked lost, which no later
+            # attempt may have reached (F134).
+            await conn.execute(
+                text(
+                    _ledger_usage_sql(
+                        "a.outcome IN ('started', 'lost') "
+                        "AND (CAST(:turn AS INTEGER) IS NULL OR a.turn = :turn) "
+                        "AND (CAST(:through_attempt AS INTEGER) IS NULL "
+                        "OR a.attempt <= :through_attempt)"
+                    )
+                ),
+                {"t": task_id, "turn": turn, "through_attempt": through_attempt},
+            )
             await conn.execute(
                 text(
                     "UPDATE task_attempts SET outcome = :o, failure_category = :c, "
@@ -321,6 +341,32 @@ class AttemptRepository:
                 {"t": task_id, "turn": turn, "a": attempt},
             )
             return found.first() is not None
+
+
+def _ledger_usage_sql(rows: str) -> str:
+    """Set the usage of the attempt rows `rows` selects (alias `a`, task `:t`) to
+    the ledger's usage of their turn through each attempt: the settled tokens, or
+    NULL with `usage_known` false when a request up to it was never observed. Rows
+    of turns with no ledger rows (openai_agents) and rows already unknown are left
+    alone (D7, review F68, F101)."""
+    through = (
+        "FROM usage_ledger l WHERE l.task_id = :t AND l.turn = a.turn AND l.attempt <= a.attempt"
+    )
+    return f"""
+        UPDATE task_attempts a SET
+            tokens_in = CASE WHEN s.unknown > 0 THEN NULL ELSE s.tokens_in END,
+            tokens_out = CASE WHEN s.unknown > 0 THEN NULL ELSE s.tokens_out END,
+            usage_known = s.unknown = 0
+        FROM (
+            SELECT a.turn, a.attempt,
+                (SELECT coalesce(sum(l.input_tokens), 0) {through}) AS tokens_in,
+                (SELECT coalesce(sum(l.output_tokens), 0) {through}) AS tokens_out,
+                (SELECT count(*) {through} AND l.input_tokens IS NULL) AS unknown
+            FROM task_attempts a WHERE a.task_id = :t AND {rows}
+                AND EXISTS (SELECT 1 {through})
+        ) s
+        WHERE a.task_id = :t AND a.turn = s.turn AND a.attempt = s.attempt AND a.usage_known
+    """
 
 
 class FenceRejected(RuntimeError):
@@ -448,15 +494,20 @@ class UsageLedgerRepository:
 
     async def dispatch(
         self, task_id: str, turn: int, attempt: int, request_id: str, purpose: str
-    ) -> None:
+    ) -> bool:
+        """Write the row before the request is sent, fenced like every attempt write:
+        a stale attempt dispatches nothing, so no spend escapes the totals a newer
+        attempt took from the ledger (D10, review F61)."""
         async with self.engine.begin() as conn:
-            await conn.execute(
+            await conn.execute(_TASK_LOCK, {"t": task_id})
+            done = await conn.execute(
                 text(
                     "INSERT INTO usage_ledger (task_id, turn, attempt, request_id, purpose) "
-                    "VALUES (:t, :turn, :a, :r, :p)"
+                    "SELECT :t, :turn, :a, :r, :p WHERE " + _NO_NEWER_ATTEMPT
                 ),
                 {"t": task_id, "turn": turn, "a": attempt, "r": request_id, "p": purpose},
             )
+            return done.rowcount == 1
 
     async def settle(
         self,
@@ -514,6 +565,13 @@ class UsageLedgerRepository:
                 ),
                 params,
             )
+            # A lost attempt's row holds the turn's usage through that attempt, like
+            # every attempt row: exact from the ledger, or unknown if any request up
+            # to it was never observed; never the 0 it was created with (review F68).
+            await conn.execute(
+                text(_ledger_usage_sql("a.turn = :turn AND a.attempt < :a AND a.outcome = 'lost'")),
+                params,
+            )
             settled = await conn.execute(
                 text(
                     f"SELECT coalesce(sum(input_tokens), 0), coalesce(sum(output_tokens), 0), "
@@ -533,6 +591,33 @@ class UsageLedgerRepository:
                 int(settled_out),
                 int(settled_count),
             )
+
+    async def task_totals(self, task_id: str) -> tuple[int, int, int, int]:
+        """The whole task's settled input and output tokens, its requests whose usage
+        was never observed, and all its requests (R11, D11, review F98, F136)."""
+        async with self.engine.connect() as conn:
+            found = await conn.execute(
+                text(
+                    "SELECT coalesce(sum(input_tokens), 0), coalesce(sum(output_tokens), 0), "
+                    "count(*) FILTER (WHERE input_tokens IS NULL), count(*) "
+                    "FROM usage_ledger WHERE task_id = :t"
+                ),
+                {"t": task_id},
+            )
+            tokens_in, tokens_out, unknown, requests = found.one()
+        return int(tokens_in), int(tokens_out), int(unknown), int(requests)
+
+    async def unknown_requests(self, task_id: str, turn: int, attempt: int) -> int:
+        """Requests this attempt dispatched whose usage was never observed."""
+        async with self.engine.connect() as conn:
+            found = await conn.execute(
+                text(
+                    "SELECT count(*) FROM usage_ledger WHERE task_id = :t AND turn = :turn "
+                    "AND attempt = :a AND input_tokens IS NULL"
+                ),
+                {"t": task_id, "turn": turn, "a": attempt},
+            )
+            return int(found.scalar_one())
 
 
 class RecordingBlobStore:

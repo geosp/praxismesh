@@ -224,3 +224,172 @@ passed (2 rounds), verification and demo passed.
 ## 2026-11-15 · start · phase 02
 
 Branch `feat/62-dsh-runner` from 562733a72b880d13576ced63e8b8ad09716094df (stacked on PR #66).
+
+## 2026-11-16 · impl-review · phase 02 · round 1 · changes-requested
+
+- Diff base: 562733a72b880d13576ced63e8b8ad09716094df; frozen review commit: 43798c76e42d04d205fbb8b9ba3b64916a8f4ab3.
+- Reviewers: Contract completed; Failure and retry completed; Scope and composition completed (fresh `impl-reviewer` subagents, docs/reviews/README.md rule 1). Raw reports: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-02-round-1-{contract,failure,scope}.md. An earlier attempt in another tool ended at its quota before any report was saved; this round replaces it.
+- Mechanical: plan-tool check 0 errors, 0 warnings; no unticked tasks; R5-R18 defined with scenarios.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F58 | Major | all three | Workflow `ActivityError` branch drops `usage_known`; a turn that fails for good after a D9 charge reports `usage_known = true` (R12, D7). | fixed: failed_turn_usage carries usage_known; test_failed_turn_keeps_unknown_usage (tests/test_task_workflow.py, mutation-checked) |
+| F59 | Major | all three | D9 charge and `usage_known = false` only applied when a later attempt opens; cancel, non-retryable stops and `AttemptsExhausted` leave unsettled requests uncharged (R12, R13, D9). | fixed: Activity charges its own unsettled rows on runner failure, cancel and AttemptsExhausted, NULL tokens on its row; tests/integration/test_dsh_usage.py (mutation-checked); cancel case in test_dsh_outcomes asserts (None, None, False) |
+| F60 | Major | all three | Stop (deadline, cancel, thaw failure) while the barrier holds the freeze sends SIGTERM to a frozen runtime and becomes non-retryable `DshForcedStop` (R8, R9, D6). | fixed: launcher thaws before SIGTERM; runner ends an in-flight barrier before stop; a thaw that failed before the stop is DshCheckpointFailure (retryable); test_stop_while_frozen_is_cooperative, test_deadline_during_the_barrier_is_a_retryable_deadline, test_failed_thaw_is_a_retryable_checkpoint_failure (mutation-checked) |
+| F61 | Major | scope, failure, contract | Ledger dispatch is unfenced and an attempt's first request has no barrier; a stale attempt's spend after the newer attempt's `close_unknown` escapes the turn total (R11, R13, D10). | fixed: UsageLedgerRepository.dispatch is fenced under the task lock; a refused dispatch is Superseded; test_stale_attempt_cannot_dispatch, test_stale_attempt_dispatches_nothing (mutation-checked) |
+| F62 | Major | scope, failure, contract | R17 pin checked once at worker start; a recreated DSH container is served unchecked (R17). | fixed: the launcher reports a start-up runtime report; DshRunner re-verifies it at every open_attempt and raises RuntimePinMismatch (retryable); test_attempt_on_an_unpinned_runtime_is_refused (mutation-checked) |
+| F63 | Major | failure | Commands share the container `/tmp` across attempts and tasks (R15). | fixed: commands bind a command-owned command-tmp/ and the runtime its tmp/ on /tmp; test_commands_get_their_own_tmp (mutation-checked) |
+| F64 | Major | contract, scope | Step-limit/budget denial returns 429 only; no 5 s bound enforced or tested after a step limit (R8). | fixed: after a step-limit or budget denial the runtime gets 2 s, then a cooperative stop with the remaining 3 s; still a continue at the limit; test_step_limit_stops_a_runtime_that_does_not_exit |
+| F65 | Major | contract, scope | R18 tests hard-code expectations that differ from `dsh-phase02-r2-evidence.json` (inner_turns, usage_known) with no recorded decision; cancel case has no TaskResult check (R18). | fixed: R18 tests read dsh-phase02-r2-evidence.json and apply only recorded differences (plan D11, decision log); workflow waits for a cancelled turn's Activity (WAIT_CANCELLATION_COMPLETED), cancel row asserted exactly |
+| F66 | Major | contract | Stale-attempt test can pass vacuously (early exit or cancel); R7 "stale attempt that finished" not exercised on DSH (R6, R7). | fixed: test_stale_attempt_that_finished_is_fenced at checkpoint, publish and finish with the early exit stubbed (insert and assert_current mutations caught; the finish clause is also covered by the row no longer being started) |
+| F67 | Major | contract | Failed freeze before the final checkpoint is ignored; a torn workspace can be checkpointed and published (R5, D6). | fixed: a failed final freeze is DshCheckpointFailure (retryable); test_failed_final_freeze_is_a_retryable_checkpoint_failure |
+| F68 | Nit | all three | Lost attempt with only settled requests keeps `tokens_in = 0, usage_known = true` (R11, R12). | fixed: close_unknown sets a lost attempt's row to the ledger's usage through it (NULL if any request up to it is unknown); test_lost_attempt_with_settled_requests_records_them (mutation-checked) |
+| F69 | Nit | scope, failure | Attempt rows write non-null tokens with `usage_known = false`, against the schema comment (D7). | fixed: one rule (attempt rows hold the turn's cumulative usage; NULL when an own request was unobserved; usage_known false when a D9 charge is included) in ExecutionAttempt and notes.md#d7 |
+| F70 | Nit | scope, contract | `cooperative` covers only the runtime PID; commands killed by `cgroup.kill` still count as cooperative (R9). | accepted: commands killed with the cgroup are the R15 behaviour; R9 concerns the runtime ignoring SIGTERM |
+| F71 | Nit | scope | Success-path cleanup report (`processes_left`, `tree_removed`) is ignored (R8, R10). | fixed: a dirty stop report marks the runner unhealthy; later attempts raise LauncherUnhealthy (retryable); test_failed_cleanup_after_success_stops_new_attempts (mutation-checked) |
+| F72 | Nit | scope, failure | Attempt deadline built from per-turn `remaining_wall_time`; retries can exceed task wall time; step ceiling is per attempt. | accepted: pre-existing per-turn deadline and per-attempt step ceiling, as for openai_agents; bounded by schedule_to_close |
+| F73 | Nit | scope, contract | Gateway does not clamp `max_tokens`; D9 assumes 2048 output tokens unchecked (D9). | fixed: to_model clamps max_tokens to DSH_MAX_OUTPUT_TOKENS; test_output_is_capped_at_the_charge_assumption |
+| F74 | Nit | scope | Inner turns from the ledger count requests; live count uses logical steps. | accepted: the max() keeps the larger count; requests equal steps unless a body is re-sent, which maxRetries 0 prevents |
+| F75 | Nit | scope | Activity heartbeat-base charge merge tested over two attempts only (D9). | fixed: test_retryable_failure_is_charged_once_across_attempts covers three attempts at Activity scope |
+| F76 | Nit | scope | Tree created before launcher `open` is orphaned on worker death until launcher restart (R10). | accepted: narrow window; the launcher reaps the tree at its next start (test_restart_reaps_leftover_attempts) |
+| F77 | Nit | scope, contract | `includeDefaultRoots: false` never set; live poison files only in workspace, not HOME (R14). | fixed: includeDefaultRoots belongs to the never-inserted dsh-skill-filesystem plugin (notes.md#r14); test_exactly_the_provider_and_tool_plugins_are_inserted; live test plants discovery files in the runtime HOME |
+| F78 | Nit | scope | `context_window` default 32768 in composition vs `or 0` in `_open` (unreachable). | fixed: the Activity charges with composition.DEFAULT_CONTEXT_WINDOW as its fallback |
+| F79 | Nit | failure | Cancellation outside the poll loop leaves the attempt row `started`. | accepted: a later start marks the row lost; only bare-runner use before the poll loop is affected |
+| F80 | Nit | failure | Ledger request ids restart for a second `run` in one attempt; PK collision (Activity path unaffected). | accepted: the Activity makes one run per attempt; only bare HarnessRunner use repeats run() |
+| F81 | Nit | failure | Tool body in a thread can recreate files after `destroy` (R10). | accepted: narrow window; the tree is removed again by DshAttempt.close and launcher reaping |
+| F82 | Nit | failure, contract | Tool-call counts since the last heartbeat are lost with the worker (R11). | accepted: tool-call counts are informational; tokens are rebuilt from the ledger |
+| F83 | Nit | failure | `checkpoints.session_ref` is `json`, D7 says `jsonb` (D7). | accepted: sa.JSON stores the same documents; no query depends on jsonb operators |
+| F84 | Nit | failure | A transient barrier failure forces a retry of a run that later finished. | accepted: the retry is safe and rare |
+| F85 | Nit | failure | Failed thaw is reported as barrier failure after the checkpoint committed (D6). | accepted: the checkpoint was captured while frozen, so it is consistent; the failed thaw is retryable |
+| F86 | Nit | failure | Unproven race: `destroy` rmtree during barrier pack could commit an empty session (R5). | fixed: the runner closes the gateway server (cancelling an in-flight barrier, which thaws) before stopping; covered by test_deadline_during_the_barrier_is_a_retryable_deadline (no commit after the deadline) |
+| F87 | Nit | contract | Plan D9 and decision log still say `context_window + max_tokens`; code uses the 2048 cap from notes.md#d9 (D9). | fixed: plan D9 and decision-log line corrected (2048-token cap, enforced by the gateway) |
+| F88 | Nit | contract | `apparmor:unconfined` added without a decision-log entry (D3). | fixed: decision-log entry 2026-11-16 for apparmor:unconfined |
+| F89 | Nit | contract | DSH image carries the full slim userland, not only granted `cli_tools` (D4). | accepted: D4 restated in plan and notes.md#d4 (boundary is UID, capabilities, seccomp and mount view; the base userland stays) |
+| F90 | Nit | contract | Outcomes-level isolation test assertions cannot fail (R15; launcher test covers it). | fixed: labelled probes; exposing other attempts or the session makes the test fail (mutation-checked) |
+| F91 | Nit | contract | Refused tool calls emit no event (gateway) or an unpaired `tool_result` (executor) (R16). | fixed: refused calls emit a paired tool_call and tool_result in the executor and gateway; unit tests updated |
+| F92 | Nit | contract | Pin lock covers the DSH distribution only, not launcher/driver/bridge (R17). | fixed: the runtime digest covers pins.py, launcher.py, driver.py and mcp_bridge.py; test_control_files_are_part_of_the_pin (mutation-checked); lock regenerated |
+| F93 | Nit | contract | Conformance `instructions_seen` now joins messages 0 and 1 for every runner, weakening the openai_agents check (task 2.3). | fixed: instructions_seen checks the system message for openai_agents and the first user message for dsh |
+| F94 | Nit | contract | Reap-at-start test checks trees only, not processes or cgroups (task 1.1). | fixed: test_restart_reaps_leftover_attempts kills a live attempt's processes and cgroup through a real launcher restart (mutation-checked) |
+| F95 | Nit | contract | Migration downgrade rewrites NULL tokens to 0 (D7). | accepted: rolling back below D7 is not supported (notes.md#d7) |
+
+## 2026-11-16 · impl-review · phase 02 · round 2 · changes-requested
+
+- Diff base: 562733a72b880d13576ced63e8b8ad09716094df; frozen review commit: e053d233cb39655e47ed0c22d1e37c1ed71fe14b.
+- Reviewers: Contract completed; Failure and retry completed; Scope and composition completed (fresh `impl-reviewer` subagents). The briefs first carried a wrong full SHA; each reviewer got the correction and reviewed the stated range. Raw reports: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-02-round-2-{contract,failure,scope}.md.
+- Round-1 findings closed as accepted stay closed (F70, F72, F74, F76, F80, F82, F85, F95 raised again). Reopened: F59 (as F98), F63 (as F102), F64 (as F96), F68/F69 (as F101), F71 (as F100).
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F96 | Blocker | contract | A step-limit stop removes the attempt tree, then the Activity commits an empty finish checkpoint as a valid `continue` (R5, D6; reopens F64). | fixed: the launcher's stop takes keep_tree; a step-limit stop ends the processes and keeps the tree for the final checkpoint; test_step_limit_stop_keeps_the_workspace_for_the_checkpoint (through run_harness_turn) |
+| F97 | Blocker | contract | A declared output symlinked by a command makes the worker publish its own files (e.g. `/proc/self/environ`) as an artifact; `inside()` and `share()` also check then follow (D4, R15). | fixed: outputs, read_file, write_file and list_files open each component with O_NOFOLLOW; share() uses fwalk and no-follow descriptors; test_symlinked_output_is_not_published (fails without the fix), test_file_bodies_never_follow_a_link |
+| F98 | Major | all three | A cancelled turn, or one ended by schedule_to_close or a dead worker, never gets the D9 charge or `usage_known = false` into the TaskResult; the Workflow reads a pre-charge heartbeat or none (R12, R13, D9; reopens F59). | fixed: complete_task reconciles with the ledger (settled plus D9 charge, usage unknown); test_complete_task_charges_what_the_ledger_left_unobserved; the R18 cancel test checks the stored TaskResult |
+| F99 | Major | scope, failure | A pin mismatch or unhealthy container refuses per attempt after `attempts.start`, so the worker keeps polling and each turn burns its five attempts (R17, R10). | fixed: a pre-flight check before attempts.start records an uncounted refusal (dsh_unserviceable) and shuts the worker down (exit 3); the launcher reports attempts it could not clean (dirty) until it restarts; test_unserviceable_worker_refuses_without_using_an_attempt, test_launcher_remembers_an_attempt_it_could_not_clean, test_local_dsh_refuses_a_container_left_dirty (all mutation-checked). The worker shutdown wiring in workers/main.py has no automated test |
+| F100 | Major | scope, failure | A dirty stop inside `run()` (deadline, cancel, step limit), or a `LauncherError` from stop, never marks the runner unhealthy; an errored stop is classified clean (R10; reopens F71). | fixed: DshAttempt.stop checks its own report on every path, with a reply timeout; a refused stop reports nothing cleaned; test_dirty_stop_during_a_run_stops_new_attempts (both variants failed before) |
+| F101 | Major | scope, failure | Rows closed by `close_unfinished` (failed, task_completed) keep their 0 tokens and `usage_known = true` (D7, R12; reopens F68, F69). | fixed: close_unfinished applies the ledger usage (settled through the attempt, or NULL) to the rows it closes; test_rows_closed_without_a_finish_hold_the_ledger_usage |
+| F102 | Major | contract | Commands still share the container's `/run` and `/dev/shm` across attempts and tasks (R15, D4; reopens F63). | fixed: each attempt process gets a private tmpfs on /run and /dev/shm; test_commands_get_their_own_tmp covers /tmp, /run and /dev/shm |
+| F103 | Nit | scope | An `unresolved usage` denial starts no exit timer; a retrying runtime runs to the deadline (R8). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
+| F104 | Nit | scope | The charged-once test hands the next attempt the post-charge details, not the last heartbeat Temporal passes (D9 test scope). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
+| F105 | Nit | scope | Worker-side tool bodies run outside the frozen cgroup; an abandoned call could write during a capture (D6). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
+| F106 | Nit | contract | A stale attempt's `_charge` rewrites usage columns without the fence (R6). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
+| F107 | Nit | contract | The output cap does not bound `n > 1` (D9). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
+| F108 | Nit | contract | The R17 digest is self-reported by the launcher it vouches for (R17; inherent). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
+| F109 | Nit | contract | The CLI attempt listing omits `usage_known` (D7). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
+| F110 | Nit | failure | A dirty cleanup after a successful turn keeps the outcome, unlike the in-run path (R8, R10). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
+| F111 | Nit | failure | No timeout on `poll` or the in-run `stop`; a stalled launcher skips the stop margin (R8). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
+| F112 | Nit | failure | Every `CancelledError` (heartbeat failure, timeout) is recorded as `DshCancelled` (R8, R18). | open: deferred by the engineer (round 2 fixes limited to Blockers and Majors) |
+
+## 2026-11-16 · design-review · plan · round 4 · changes-requested
+
+Targeted follow-up (docs/reviews/README.md rule 6) on the decision changes from the phase 02 impl review (D4, D9, D11, decision log 2026-11-16), at 98835319f201867887a5555e3651a2aa8eadd1e4. Reviewers: Fresh reader completed; Codebase fit completed; Zoom out completed (fresh subagents; codebase fit and zoom out stopped once on a usage limit and were resumed). Raw reports: docs/reviews/general-dsh-production-harness/raw/design-review-round-4-{fresh-reader,codebase-fit,zoom-out}.md. Structure check: 0 errors, 0 warnings.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F113 | Major | fresh reader | The 2026-11-16 decision changes did not reach the requirements: R13 (charge at the failure when no later attempt runs), R15 (per-attempt `/tmp`, `/run`, `/dev/shm`), R17 (control files, re-check at every attempt); D3's `SYS_ADMIN` grant lives only in the log. | fixed: R13 (charge at turn or task end), R15 (private /tmp, /run, /dev/shm, IPC), R17 (control files, before each attempt, refuse and stop polling), D3 (SYS_ADMIN for the launcher only) |
+| F114 | Major | codebase fit | Phase 03 task 2.1 points `default` at DSH with no other profile allowing `local-default`, so `openai_agents` is no longer selectable (ADR-0005 condition 5) and CI checks that assume `default` = `local-default` break. | fixed: phase 03 task 2.1 adds an `openai` profile and repoints the tests and Make targets before the switch |
+| F115 | Major | codebase fit, zoom out | Phase 03 task 1.1 omits the DSH container the benchmark needs and the hard-coded template, profile, harness label and output name in `tests/benchmarks/run.py`; its Verify cannot catch it. | fixed: phase 03 task 1.1 rewritten (template from the profile, results and label by profile, paired DSH container; Verify runs one real task per profile) |
+| F116 | Major | codebase fit | ADR-0005 condition 1 also requires recording DSH's licence notices; no requirement or task does. | fixed: R20 and phase 03 task 1.3 (licence notices under docs/licences/dsh/ with a check) |
+| F117 | Major | zoom out | The rollback drain bound is wrong (max wall time plus up to 6 x turn_timeout) and never says to keep the DSH pair up until no local-dsh task is open. | fixed: Rollout and notes.md#rollout state the drain bound (wall time plus 6 x turn_timeout) and keep the DSH pairs up; task 2.2 Verify includes an in-flight DSH task |
+| F118 | Major | zoom out | Rollback is more than two field edits: registry lock, worker image rebuild, orchestrator restart. | fixed: Rollout lists edit, registry lock, image rebuild, orchestrator restart |
+| F119 | Major | zoom out | Code rollback is ambiguous (roll back code on the 0004 schema, or roll forward only?) and contradicts the migration docstring; in-flight workflow behaviour on a revert is unstated. | fixed: code rolls forward only (Rollout, notes.md#rollout) |
+| F120 | Major | zoom out | Switching `default` to one DSH pair cuts its capacity to about a quarter; the number of DSH pairs needed before the switch is not stated. | fixed: two DSH pairs before the switch (notes.md#rollout, task 2.1) |
+| F121 | Major | fresh reader | Core terms undefined: task, turn, attempt and inner turn; settled and unsettled ledger rows. | fixed: Terms define task, turn, attempt, inner turn, settled and unsettled |
+| F122 | Major | fresh reader | The Summary omits the event sink (D8/R16) that serves its stated reason, and the rollback limits. | fixed: Summary names the event sink, the openai profile and the rollback limits |
+| F123 | Major | fresh reader, zoom out | Parts that don't connect: the transport between worker and DSH container, how worker death is detected (R10), why `session_position` 0 is safe (D1), whose row R12 means, and R18 vs D11 (exact match or recorded differences). | fixed: Terms (Unix sockets on the shared volume), R10 (control connection), D1 (blob replaces the home), R12 (the lost attempt's row), R18 (up to the D9 and D11 differences) |
+| F124 | Major | fresh reader | D6 (what the flush check does on failure) and D10 (refusal rows) can only be paraphrased at headline level; the substance is in notes.md. | fixed: D6 (a missing ID fails the barrier), D10 (ledger dispatch and refusal rows) |
+| F125 | Nit | codebase fit, zoom out | Phase 03 task 1.1's `turn_timeout`/`max_wall_time_cap` edit is a no-op; the values already match. | fixed: the no-op template edit is dropped from task 1.1 |
+| F126 | Nit | codebase fit | notes.md#d3 says `cgroupns: private`; the Compose key is `cgroup: private`. | fixed: notes.md#d3 says `cgroup: private` |
+| F127 | Nit | codebase fit | Phase 01 task 2.2 cites stale `registry/loader.py` line numbers. | fixed: phase 01 task 2.2 names Registry.resolve instead of line numbers |
+| F128 | Nit | zoom out | Deferred F103, F106, F111 leave R8 and R6 short of their absolute wording, with no recorded deviation. | fixed: notes.md#rollout records F103, F106, F111 as known deviations |
+| F129 | Nit | zoom out | Barrier cost grows with turn length times session and workspace size; not under Risks. | fixed: Risks line for barrier cost |
+| F130 | Nit | zoom out | A worker that refuses (exit 3) restarts in a loop; R17 and Rollout don't say how an operator notices. | fixed: notes.md#rollout says how a refusing worker shows (log line, exit 3 restarts) |
+| F131 | Nit | fresh reader | Readability: requirements holding two rules (R7, R8, R11, R12, R15, R16), repeated facts, a 60-word decision-log line, the commands sentence in the Summary, the SIGSTOP fallback, unmapped requirements in Why, the Phases table status. | accepted: the Summary's commands sentence and the decision log were rewritten; multi-rule requirements and repeated facts stay as approved |
+
+## 2026-11-16 · impl-review · phase 02 · round 3 · changes-requested
+
+- Targeted follow-up (docs/reviews/README.md rule 6), beyond the skill's two rounds at the engineer's request. Diff base: 562733a72b880d13576ced63e8b8ad09716094df; frozen review commit: 98835319f201867887a5555e3651a2aa8eadd1e4; focus 76dffd6..98835319.
+- Reviewers: Contract completed; Failure and retry completed; Scope and composition completed (fresh `impl-reviewer` subagents; each stopped once on a usage limit and was resumed). Raw reports: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-02-round-3-{contract,failure,scope}.md.
+- Reopened: F102 (as F132), F99 (as F133), F101 (as F134). Deferred F103-F112 not re-raised.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F132 | Major | contract, scope | Commands of every attempt and task share one IPC namespace; SysV shared memory and message queues outlive an attempt and are readable by a later task (R15, D4; reopens F102). | fixed: unshare(CLONE_NEWNS | CLONE_NEWIPC); test_commands_get_their_own_tmp checks SysV shm and queues (failed before) |
+| F133 | Major | contract, failure | A pre-flight that cannot reach the launcher (stopped or restarting container) raises `LauncherError`, not a refusal: no refused row, the attempt counts, the worker keeps polling, and the turn ends `AttemptsExhausted` (R17, R10; reopens F99). | fixed: DshRunner.check times out and raises LauncherUnreachable (Unserviceable); test_unreachable_launcher_is_a_refusal_every_time over seven attempts (failed before) |
+| F134 | Major | failure, scope | Rows marked `lost` by `start` or `record_refusal` get the ledger's usage only if a later real attempt opens; `close_unfinished` touches `started` rows only, so a lost row can keep 0 (R12, D7; reopens F101). | fixed: close_unfinished applies the ledger usage to lost rows too; test_lost_rows_hold_the_ledger_usage_when_the_task_completes (failed before) |
+| F135 | Nit | scope | Two rules for a row's usage: `_ledger_usage_sql` NULLs on any unknown up to the attempt, `_runner_failed` only on its own (D7). | accepted: a finished-and-failed row and a row closed without a finish follow the two rules notes.md#d7 states |
+| F136 | Nit | scope, failure | `complete_task` reconciles tokens but not inner turns (D11). | fixed: complete_task takes inner turns from the ledger request count; F98 test asserts it |
+| F137 | Nit | all three | `complete_task` looks the template up by name in the current registry: `KeyError` if it is gone, and the current version's `context_window` rather than the task's (R11, D9). | fixed: complete_task uses the task's template version or the default window; test_complete_task_survives_a_template_the_orchestrator_no_longer_has |
+| F138 | Nit | scope | An `Unserviceable` raised in `open_attempt` after `attempts.start` still uses an attempt and does not stop polling (narrow window after the pre-flight). | accepted: narrow window after the pre-flight; the next turn's pre-flight refuses |
+| F139 | Nit | all three | Worker shutdown: the task is not referenced, the wiring and the cross-attempt heartbeat hand-off are untested, and a refusing worker restart-loops until an operator acts. | accepted: the shutdown wiring and cross-attempt hand-off need a Temporal worker test; notes.md#rollout documents the restart loop |
+| F140 | Nit | all three | `list_files` still checks then walks by name (names only could leak); the F97 resolution text overstates it. | fixed: list_files walks with fwalk from a no-follow descriptor; test_list_files_never_follows_a_link |
+| F141 | Nit | contract | `read_file`/`write_file` now refuse in-workspace symlinks for `openai_agents` too, a behaviour change without a recorded decision (task 2.3). | accepted: recorded in notes.md#rollout (file tools refuse every link) |
+| F142 | Nit | scope | The F98 reconciliation is tested on one turn only, and the cumulative ledger SQL on one attempt per turn. | accepted: the reconciliation takes a max per task and the SQL is per attempt; broader tests deferred |
+| F143 | Nit | failure | An exception inside `destroy()` skips the dirty record, so the container can be served again (R10). | fixed: destroy marks the attempt dirty when cleanup raises; test_launcher_destroy_error_marks_the_attempt_dirty (failed before) |
+| F144 | Nit | failure | A worker-side stop timeout is a non-retryable `DshCleanupFailure` even if the launcher cleans up later (R9). | accepted: conservative per R9 |
+| F145 | Nit | failure | The final checkpoint after a step-limit stop skips the D6 tool-call check (the capture is at rest). | accepted: the capture is at rest after the processes were killed |
+| F146 | Nit | failure | A cancel during the step-limit stop leaves the row for `complete_task` instead of `cancelled` (R18). | accepted: narrow window; F98 and F134 keep the usage right |
+| F147 | Nit | failure | The refusal heartbeat is sent before `record_refusal`; a failed write leaves a counted refusal with no row. | fixed: record_refusal before the refusal heartbeat |
+| F148 | Nit | failure | Review metadata disagreed (impl passed, design changes-requested, Phases table); resolved by recording design review round 4. | fixed: design review round 4 recorded |
+
+## 2026-11-16 · impl-review · phase 02 · round 4 · passed
+
+- Targeted follow-up (docs/reviews/README.md rule 6) on 11bb0d6ced126c12f03ea7dade4b7d1381d0c99c..3239e2a436e0911cd6b71ca8cfbcf875853e1e95; one fresh `impl-reviewer` subagent (contract lens), run alone per the engineer's sequential-review direction. Raw report: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-02-round-4-contract.md.
+- Reviewer: Contract completed. No Blocker or Major; F132, F133, F134, F136, F137, F140, F143, F147 confirmed enforced.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F149 | Nit | contract | The template-version refusal still heartbeats before `record_refusal` (F147 on one path only). | fixed: the version refusal records its row before the heartbeat |
+| F150 | Nit | contract | A failed refusal write now counts the attempt and does not stop polling (F147 trade-off). | accepted: a failed refusal write counts the attempt; the trade-off keeps every subtracted refusal backed by a row |
+| F151 | Nit | contract | The F137 test passes on the old code; with the version gone the charge falls back to 32768 even if that version's window was larger. | fixed: with the version gone, the charge uses the larger of the default and the current window; the test fails on the old code and covers a missing name |
+| F152 | Nit | contract | `complete_task` counts ledger requests while the Activity counts logical steps (D11 unit). | accepted: requests equal logical steps unless DSH re-sends a body, which maxRetries 0 prevents (as F74) |
+| F153 | Nit | contract | The pre-flight can take 20 s without a heartbeat, past a short `heartbeat_timeout`. | accepted: local-dsh's heartbeat_timeout is 30 s; a shorter one with a hung launcher is a deployment error |
+| F154 | Nit | contract | The F133 test covers a missing socket only, not a hung or dropping launcher. | accepted: the timeout branches share the refusal path the missing-socket test covers |
+| F155 | Nit | contract | The F140 test does not observe the race it fixes. | accepted: the no-follow walk is structural; the race is not reproduced in a test |
+| F156 | Nit | contract | `list_files` changed for `openai_agents` too: a missing directory or a file path now errors, and a file deleted mid-walk raises. | accepted: errors are returned as tool text for both runners; recorded with F141 |
+| F157 | Nit | contract | Worker start-up messages for an unreachable launcher lost the template ref. | fixed: start-up errors name the template again |
+| F158 | Nit | contract | notes.md#d4 and phase 02 task 1.1 do not mention the IPC namespace, `/run` and `/dev/shm`. | fixed: notes.md#d4 and phase 02 task 1.1 name the IPC namespace, /run and /dev/shm |
+| F159 | Nit | contract | F134 is tested on the task-completion path only. | accepted: the same SQL is tested on the task-completion path |
+
+## 2026-11-16 · design-review · plan · round 5 · changes-requested
+
+Targeted follow-up (docs/reviews/README.md rule 6) on 98835319..e51495c2bce9de2cfb1fada3505d518090f49626; one fresh `design-reviewer` subagent (codebase fit), run alone per the engineer's sequential-review direction. Reviewer: Codebase fit completed. Raw report: docs/reviews/general-dsh-production-harness/raw/design-review-round-5-codebase-fit.md. Round 4 fixes F113-F130 held.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F160 | Major | codebase fit | Phase 03 task 2.1's list of tests that assume `default` misses the R3 conformance suite (`tests/test_runner_conformance.py`) and `tests/integration/test_tracing.py`. | fixed: phase 03 task 2.1 lists test_runner_conformance.py (R3 through `openai`) and test_tracing.py |
+| F161 | Nit | codebase fit | notes.md#rollout says a refusing worker exits 3; at start-up it exits 1 with a traceback. | fixed: notes.md#rollout gives both exits (3 during a turn, 1 at start-up) |
+| F162 | Nit | codebase fit | A profile resolves in the submitting process and again in the orchestrator; between the registry edit and the restart, submissions can fail. | fixed: notes.md#rollout says to pause submissions until submitter and orchestrator have the new registry |
+| F163 | Nit | codebase fit | Phase 03 task 1.1's Verify is weak (a one-task run fails the regression rule and writes into `docs/benchmarks/`; result files always differ). | fixed: task 1.1 Verify is a smoke run outside docs/benchmarks/, not judged against the baseline, checking names and label |
+| F164 | Nit | codebase fit | The Phases table shows phase 03 at 0/4; it has 5 tasks. | fixed: Phases table shows 0/5 |
+| F165 | Nit | codebase fit | R13's scenario covers only the retried case; R20 does not say the notices check runs in CI. | fixed: R13 adds the completion-time scenario; R20 and task 1.3 run the check in CI |
+
+## 2026-11-16 · verification · phase 02 · pass
+
+code_sha 86cfec8, docs_sha 7b06ce6; fresh verifier subagents run one at a time. First pass at 62ffc76
+failed (four integration tests needed the developer's `VLLM_BASE_URL`); fixed in d170701 and
+re-verified. Report: docs/reviews/general-dsh-production-harness/verification-phase-02.md; demo:
+docs/demos/general-dsh-production-harness-02.md; raw reports under that review folder.
+
+## 2026-11-16 · done · phase 02
+
+Shared done gate passed; all eight tasks checked; design review passed (5 rounds), impl review
+passed (4 rounds), verification and demo passed (code 86cfec8, docs 7b06ce6).

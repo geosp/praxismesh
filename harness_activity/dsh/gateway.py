@@ -25,6 +25,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -33,7 +34,8 @@ import httpx
 
 from common.observability.metrics import TOOL_ERRORS
 from harness_activity.dsh.composition import TOOL_PREFIX
-from harness_activity.dsh.ledger import Dispatch, UsageLedger
+from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, SUPERSEDED, Dispatch, UsageLedger
+from harness_activity.dsh.policy import STEP_DENIALS
 from harness_activity.events import AttemptEvents
 from harness_activity.runner import StopRun, Superseded, Usage
 
@@ -121,10 +123,15 @@ class SocketServer:
 
 
 def to_model(request: dict[str, Any]) -> dict[str, Any]:
-    """The request the endpoint gets: bare tool names, one complete response."""
+    """The request the endpoint gets: bare tool names, one complete response, and
+    at most the output the D9 charge assumes."""
     out = copy.deepcopy(request)
     out["stream"] = False
     out.pop("stream_options", None)
+    # The conservative charge for an unobserved request assumes this cap (D9, F73).
+    asked = out.pop("max_completion_tokens", None) or out.get("max_tokens")
+    capped = asked if isinstance(asked, int) and asked > 0 else DSH_MAX_OUTPUT_TOKENS
+    out["max_tokens"] = min(capped, DSH_MAX_OUTPUT_TOKENS)
 
     def strip(function: Any) -> None:
         if isinstance(function, dict) and str(function.get("name", "")).startswith(TOOL_PREFIX):
@@ -202,6 +209,9 @@ class Gateway:
         self.stop_summary: str | None = None
         # Set when the attempt must be stopped now instead of ending by itself.
         self.abort = asyncio.Event()
+        # When a request was first denied at the step limit or token budget: the
+        # runtime must exit within the grace from then on (R8, review F64).
+        self.limited_at: float | None = None
 
     def routes(self) -> dict[tuple[str, str], Route]:
         return {
@@ -236,7 +246,13 @@ class Gateway:
         if deny is None and self.dispatched and self.barrier is not None:
             deny = await self._barrier(request)
         record = await self.ledger.admit("main", step, deny=deny)
+        if record.denial == SUPERSEDED:
+            # A newer attempt owns the turn: this attempt spends nothing more (F61).
+            self.error_type = "Superseded"
+            self.abort.set()
         if not record.dispatched:
+            if record.denial in STEP_DENIALS and self.limited_at is None:
+                self.limited_at = time.monotonic()
             return error_reply(429, f"request not admitted: {record.denial}")
         self.dispatched += 1
         self.usage.inner_turns = self.ledger.settled()["logical_steps"]
@@ -317,6 +333,9 @@ class Gateway:
                 self.refused.append(name)
                 TOOL_ERRORS.labels(template=self.template_ref, tool=name).inc()
                 log.warning("refused tool call", extra={"fields": {"tool": name}})
+                if self.events is not None:  # never reaches the executor (R16, F91)
+                    self.events.emit("tool_call", tool=name, call=None)
+                    self.events.emit("tool_result", tool=name, call=None, status="refused")
         if request.get("stream"):
             return 200, "text/event-stream", as_stream(completion)
         return json_reply(200, completion)

@@ -15,12 +15,17 @@ from typing import Any, Protocol
 # Per-request output cap in the DSH composition; with the template's
 # context_window it bounds what an unobserved request can have used (D9).
 DSH_MAX_OUTPUT_TOKENS = 2048
+# The denial for a request a stale attempt tried to dispatch (D10).
+SUPERSEDED = "superseded"
 
 
 class LedgerStore(Protocol):
     async def dispatch(
         self, task_id: str, turn: int, attempt: int, request_id: str, purpose: str
-    ) -> None: ...
+    ) -> bool:
+        """Write the row; False, with nothing written, when a newer attempt of the
+        task exists (D10, review F61)."""
+        ...
 
     async def settle(
         self,
@@ -87,8 +92,10 @@ class UsageLedger:
                 dispatched=reason is None,
                 denial=reason,
             )
-            if record.dispatched:
-                await self.store.dispatch(*self.key, record.request_id, purpose)
+            if record.dispatched and not await self.store.dispatch(
+                *self.key, record.request_id, purpose
+            ):
+                record.dispatched, record.denial = False, SUPERSEDED
             self.records.append(record)
             return record
 

@@ -50,9 +50,12 @@ COMMAND_UID = int(os.environ.get("DSH_COMMAND_UID", "4242"))
 SHARED_GID = int(os.environ.get("DSH_SHARED_GID", "4243"))
 WORKER_UID = int(os.environ.get("DSH_WORKER_UID", "10001"))
 COMMAND_OUTPUT_CAP = 8000
+# Inside the attempt tree, the /tmp of the attempt's commands; removed with the tree.
+COMMAND_TMP = "command-tmp"
 
 libc = ctypes.CDLL(None, use_errno=True)
 CLONE_NEWNS = 0x00020000
+CLONE_NEWIPC = 0x08000000
 CLONE_NEWUSER = 0x10000000
 MS_RDONLY, MS_NOSUID, MS_NODEV, MS_BIND, MS_REC, MS_PRIVATE = 1, 2, 4, 4096, 16384, 1 << 18
 PR_SET_NO_NEW_PRIVS, PR_SET_SECCOMP, SECCOMP_MODE_FILTER = 38, 22, 2
@@ -143,12 +146,22 @@ def _isolate(attempt: str, view: str) -> None:
     mount namespace that shows only this attempt (`view` is where it appears)."""
     (_cgroup_of(attempt) / "cgroup.procs").write_text("0")
     os.umask(0o007)
-    _check(libc.unshare(CLONE_NEWNS), "unshare mount namespace")
+    # A mount namespace of its own, and an IPC namespace of its own: SysV shared
+    # memory and message queues outlive their process (review F132).
+    _check(libc.unshare(CLONE_NEWNS | CLONE_NEWIPC), "unshare mount and IPC namespaces")
     _mount(None, "/", None, MS_REC | MS_PRIVATE)
+    # The container's other writable places are shared by every attempt: each
+    # attempt process gets empty ones of its own (review F102). /run first, since
+    # the runtime's view of its tree is mounted inside it.
+    for shared in ("/run", "/dev/shm"):
+        _mount("none", shared, "tmpfs", MS_NOSUID | MS_NODEV, "size=16m,mode=1777")
     tree = ATTEMPTS / attempt
     source = tree / ("workspace" if view == "/work" else "")
     os.makedirs(view, exist_ok=True)
     _mount(str(source), view, None, MS_BIND | MS_REC)
+    # /tmp is the attempt's own too: the container's is shared by every attempt
+    # (review F63). Commands get a directory the runtime's packages are not in.
+    _mount(str(tree / (COMMAND_TMP if view == "/work" else "tmp")), "/tmp", None, MS_BIND)
     # Hide every attempt tree and the control socket behind an empty tmpfs.
     _mount("none", str(ATTEMPTS), "tmpfs", MS_NOSUID | MS_NODEV, "size=1m,mode=0755")
     os.chdir(view)
@@ -185,6 +198,10 @@ class Attempt:
         self.cgroup = _cgroup_of(attempt)
         self.runtime: subprocess.Popen | None = None
         self.cgroup.mkdir(parents=True, exist_ok=False)
+        tree = ATTEMPTS / attempt
+        os.makedirs(tree / "tmp", exist_ok=True)
+        (tree / COMMAND_TMP).mkdir(mode=0o700, exist_ok=True)
+        os.chown(tree / COMMAND_TMP, COMMAND_UID, SHARED_GID)
 
     def start(self, argv: list[str], env: dict[str, str]) -> int:
         tree = ATTEMPTS / self.id
@@ -239,19 +256,49 @@ class Attempt:
     def members(self) -> list[int]:
         return [int(p) for p in (self.cgroup / "cgroup.procs").read_text().split()]
 
-    def stop(self, grace: float) -> dict:
-        """SIGTERM the runtime; kill the whole cgroup when the grace runs out."""
+    def stop(self, grace: float, keep_tree: bool = False) -> dict:
+        """SIGTERM the runtime; kill the whole cgroup when the grace runs out.
+
+        With `keep_tree` the attempt's processes end but its cgroup and tree stay,
+        so the worker can still checkpoint the workspace; the attempt stays open
+        until a full stop or the connection's end (review F96)."""
         cooperative = True
         if self.runtime is not None and self.runtime.poll() is None:
+            # A barrier may hold the attempt frozen, and a frozen runtime cannot run
+            # its SIGTERM handler: thaw first, so the grace is the runtime's (F60).
+            self.freeze(False)
             self.runtime.terminate()
             try:
                 self.runtime.wait(timeout=grace)
             except subprocess.TimeoutExpired:
                 cooperative = False
+        if keep_tree:
+            return {"cooperative": cooperative, **kill_members(self.id), "tree_removed": False}
         return {"cooperative": cooperative, **destroy(self.id)}
 
 
+def kill_members(attempt: str) -> dict:
+    """Kill every process of the attempt's cgroup and wait until it is empty."""
+    cg = _cgroup_of(attempt)
+    (cg / "cgroup.freeze").write_text("0")
+    (cg / "cgroup.kill").write_text("1")
+    until = time.monotonic() + 5
+    while (cg / "cgroup.procs").read_text().strip() and time.monotonic() < until:
+        time.sleep(0.01)
+    return {"processes_left": len((cg / "cgroup.procs").read_text().split())}
+
+
 def destroy(attempt: str) -> dict:
+    """Kill the attempt and remove its cgroup and tree. Anything left, or a
+    cleanup that fails partway, marks the attempt dirty (review F99, F143)."""
+    try:
+        return _destroy(attempt)
+    except OSError as error:
+        DIRTY.add(attempt)
+        return {"processes_left": None, "tree_removed": False, "error": str(error)[:200]}
+
+
+def _destroy(attempt: str) -> dict:
     cg = _cgroup_of(attempt)
     if cg.exists():
         (cg / "cgroup.freeze").write_text("0")
@@ -269,7 +316,14 @@ def destroy(attempt: str) -> dict:
     for parent in (tree.parent, tree.parent.parent):
         with contextlib.suppress(OSError):
             parent.rmdir()
+    if left or tree.exists():
+        DIRTY.add(attempt)  # reported until this launcher restarts and reaps (F99)
     return {"processes_left": left, "tree_removed": not tree.exists()}
+
+
+# Attempts this launcher could not clean up. Every `digests` reply lists them, so
+# no worker, restarted or not, serves this container until it restarts.
+DIRTY: set[str] = set()
 
 
 def reap() -> list[str]:
@@ -287,12 +341,22 @@ def reap() -> list[str]:
 
 
 def digests() -> dict[str, object]:
-    """The pinned requirements digest and an integrity check of every installed file
-    of the pinned distributions; the worker compares them with the registry lock."""
-    try:
-        return pins.report()
-    except (OSError, ValueError, RuntimeError) as error:
-        return {"integrity": "error", "detail": str(error)[:200]}
+    """The pinned runtime digest and an integrity check of every installed file of
+    the pinned distributions; the worker compares them with the registry lock.
+
+    Computed once at start-up (the root file system is read-only, so it cannot
+    change) and reported on every `digests` request, which the worker sends each
+    time it opens an attempt (R17, review F62)."""
+    global _REPORT
+    if _REPORT is None:
+        try:
+            _REPORT = pins.report()
+        except (OSError, ValueError, RuntimeError) as error:
+            _REPORT = {"integrity": "error", "detail": str(error)[:200]}
+    return _REPORT
+
+
+_REPORT: dict[str, object] | None = None
 
 
 def setup_cgroups() -> None:
@@ -335,7 +399,7 @@ def serve_connection(conn: socket.socket) -> None:
             op = request.get("op")
             try:
                 if op == "digests":
-                    reply = {"digests": digests()}
+                    reply = {"digests": digests(), "dirty": sorted(DIRTY)}
                 elif op == "open":
                     attempt = Attempt(_attempt_id(request["attempt"]))
                     reply = {"opened": attempt.id}
@@ -356,8 +420,10 @@ def serve_connection(conn: socket.socket) -> None:
                     code = attempt.runtime.poll() if attempt.runtime else None
                     reply = {"running": code is None and attempt.runtime is not None, "exit": code}
                 elif op == "stop":
-                    reply = attempt.stop(float(request.get("grace", 5)))
-                    attempt = None
+                    keep = bool(request.get("keep_tree", False))
+                    reply = attempt.stop(float(request.get("grace", 5)), keep_tree=keep)
+                    if not keep:
+                        attempt = None
                 else:
                     raise ValueError(f"unknown op {op!r}")
             except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
@@ -373,6 +439,7 @@ def serve_connection(conn: socket.socket) -> None:
 def main() -> int:
     setup_cgroups()
     reaped = reap()
+    digests()
     CONTROL.unlink(missing_ok=True)
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     server.bind(str(CONTROL))

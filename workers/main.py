@@ -46,9 +46,8 @@ from common.persistence.repositories import (
 )
 from harness_activity.activity import HarnessActivities, worker_identity
 from harness_activity.dsh.launcher_client import LauncherError
-from harness_activity.dsh.pins import verify_launcher_report
 from harness_activity.dsh.runner import DshRunner
-from harness_activity.runner import OpenAIAgentsRunner
+from harness_activity.runner import OpenAIAgentsRunner, Unserviceable
 from orchestrator.activities import OrchestratorActivities
 from orchestrator.constants import orchestration_queue, template_queue
 from orchestrator.workflow import TaskWorkflow
@@ -61,6 +60,9 @@ from registry.loader import (
 )
 
 DEFAULT_DSH_CONTROL = "/attempts/.control.sock"
+# Why this process's worker stopped polling, if it did (review F99).
+UNSERVICEABLE: list[str] = []
+EXIT_UNSERVICEABLE = 3
 
 
 async def connect(service: str, provider: TracerProvider | None = None) -> Client:
@@ -92,15 +94,21 @@ async def build_harness(
         pinned = read_runtime_pins(REGISTRY_ROOT).get("dsh")
         if pinned is None:
             raise CapabilityError("the registry lock pins no dsh runtime")
-        dsh = DshRunner(control, UsageLedgerRepository(engine), blobs)
+        dsh = DshRunner(control, UsageLedgerRepository(engine), blobs, pinned=pinned)
         try:
-            report = await dsh.digests()
-        except LauncherError as error:
+            await dsh.check()
+        except (LauncherError, Unserviceable) as error:
             raise CapabilityError(f"template {loaded.template.ref}: {error}") from error
-        verify_launcher_report(report, pinned)
         # The attempt trees live on the volume shared with the DSH container.
         return HarnessActivities(
-            registry, engine, blobs, dsh, control.parent, identity, open_attempt=dsh.open_attempt
+            registry,
+            engine,
+            blobs,
+            dsh,
+            control.parent,
+            identity,
+            open_attempt=dsh.open_attempt,
+            preflight=dsh.check,
         )
     if harness == "openai_agents":
         return HarnessActivities(
@@ -144,13 +152,22 @@ async def build_worker(
     harness = await build_harness(
         registry, loaded, engine, RecordingBlobStore(s3, engine), identity, provider
     )
-    return Worker(
+    worker = Worker(
         client,
         task_queue=template_queue(template),
         activities=[harness.run_harness_turn],
         max_concurrent_activities=loaded.template.concurrency_per_pod,
         identity=identity,
     )
+
+    def stop_polling(reason: str) -> None:
+        # R17 (review F99): a worker that cannot serve stops taking turns; it exits
+        # non-zero, and its start-up check refuses until the container is fixed.
+        UNSERVICEABLE.append(reason)
+        asyncio.get_running_loop().create_task(worker.shutdown())
+
+    harness.on_unserviceable = stop_polling
+    return worker
 
 
 async def main(argv: Sequence[str]) -> int:
@@ -168,7 +185,7 @@ async def main(argv: Sequence[str]) -> int:
     client = await connect(f"praxis-{args.role}", provider)
     worker = await build_worker(client, args.role, args.template, provider)
     await worker.run()
-    return 0
+    return EXIT_UNSERVICEABLE if UNSERVICEABLE else 0
 
 
 if __name__ == "__main__":

@@ -27,8 +27,9 @@ class MemoryStore:
     def __init__(self) -> None:
         self.rows: dict[str, tuple[int, int] | None] = {}
 
-    async def dispatch(self, task_id: str, turn: int, attempt: int, rid: str, purpose: str) -> None:
+    async def dispatch(self, task_id: str, turn: int, attempt: int, rid: str, purpose: str) -> bool:
         self.rows[rid] = None
+        return True
 
     async def settle(
         self, task_id: str, turn: int, attempt: int, rid: str, incoming: int, outgoing: int

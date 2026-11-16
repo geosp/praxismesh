@@ -67,6 +67,16 @@ class Superseded(Exception):
     The runner lets it propagate: a superseded attempt writes nothing more."""
 
 
+class Unserviceable(Exception):
+    """The runner cannot serve attempts on this worker (for DSH: its paired
+    container is not the pinned runtime, or is not clean)."""
+
+
+class WorkerUnserviceable(Exception):
+    """Retryable: this worker refused the turn without using one of its attempts,
+    and stops polling; another worker takes the turn (R17, review F99)."""
+
+
 class RunnerFailure(Exception):
     """An attempt that did not run to a valid end, already classified by its runner
     (DSH migration plan D2). The Activity records the attempt as failed with

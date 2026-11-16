@@ -39,7 +39,9 @@ def volume() -> Iterator[Path]:
 
 
 @asynccontextmanager
-async def launcher(control: Path, report: dict[str, Any]) -> AsyncIterator[list[str]]:
+async def launcher(
+    control: Path, report: dict[str, Any], dirty: list[str] | None = None
+) -> AsyncIterator[list[str]]:
     """A stand-in for the DSH launcher that answers `digests`."""
     ops: list[str] = []
 
@@ -47,7 +49,8 @@ async def launcher(control: Path, report: dict[str, Any]) -> AsyncIterator[list[
         while line := await reader.readline():
             request = json.loads(line)
             ops.append(request["op"])
-            writer.write((json.dumps({"id": request["id"], "digests": report}) + "\n").encode())
+            reply = {"id": request["id"], "digests": report, "dirty": dirty or []}
+            writer.write((json.dumps(reply) + "\n").encode())
             await writer.drain()
         writer.close()
 
@@ -79,7 +82,7 @@ async def test_local_dsh_gets_the_dsh_runner_after_the_pin_check(
     control = volume / ".control.sock"
     monkeypatch.setenv("DSH_CONTROL", str(control))
     registry = load_registry()
-    async with launcher(control, {"integrity": "ok", "requirements_digest": PINNED}) as ops:
+    async with launcher(control, {"integrity": "ok", "runtime_digest": PINNED}) as ops:
         acts = await build_harness(
             registry, registry.templates["local-dsh"], engine, MemoryBlobStore(), "worker"
         )
@@ -92,8 +95,8 @@ async def test_local_dsh_gets_the_dsh_runner_after_the_pin_check(
 @pytest.mark.parametrize(
     "report",
     [
-        {"integrity": "ok", "requirements_digest": "sha256:" + "0" * 64},
-        {"integrity": "mismatch", "requirements_digest": PINNED, "mismatches": ["runtime"]},
+        {"integrity": "ok", "runtime_digest": "sha256:" + "0" * 64},
+        {"integrity": "mismatch", "runtime_digest": PINNED, "mismatches": ["runtime"]},
     ],
 )
 async def test_local_dsh_refuses_a_launcher_that_differs_from_the_lock(
@@ -118,3 +121,19 @@ async def test_local_dsh_refuses_without_a_launcher(
         await build_harness(
             registry, registry.templates["local-dsh"], engine, MemoryBlobStore(), "worker"
         )
+
+
+async def test_local_dsh_refuses_a_container_left_dirty(
+    engine: AsyncEngine, volume: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R10 (review F99): the container remembers an attempt it could not clean up,
+    so a restarted worker still refuses it until the container restarts."""
+    control = volume / ".control.sock"
+    monkeypatch.setenv("DSH_CONTROL", str(control))
+    registry = load_registry()
+    report = {"integrity": "ok", "runtime_digest": PINNED}
+    async with launcher(control, report, dirty=["task-1/1/1"]):
+        with pytest.raises(CapabilityError, match="left"):
+            await build_harness(
+                registry, registry.templates["local-dsh"], engine, MemoryBlobStore(), "worker"
+            )

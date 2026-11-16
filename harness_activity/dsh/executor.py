@@ -127,6 +127,7 @@ class Executor:
                 TOOL_ERRORS.labels(template=self.config.template_ref, tool=name).inc()
                 log.warning("refused tool call", extra={"fields": {"tool": name}})
                 entry["outcome"] = "refused"
+                self._emit("tool_call", name, number)  # every result has its call (F91)
                 self._emit("tool_result", name, number, "refused")
                 return f"refused: {reason}", True
             entry["admitted"] = True

@@ -27,7 +27,7 @@ from harness_activity.dsh.composition import TOOL_PREFIX
 from harness_activity.dsh.executor import Executor
 from harness_activity.dsh.gateway import Gateway, SocketServer, as_stream, to_model
 from harness_activity.dsh.launcher_client import LauncherClient, LauncherError
-from harness_activity.dsh.ledger import UsageLedger
+from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, UsageLedger
 from harness_activity.dsh.runner import share
 from harness_activity.dsh.session import DshSessionStore
 from harness_activity.events import AttemptEvents, MemorySink
@@ -198,6 +198,16 @@ async def test_superseded_in_the_barrier_aborts_the_attempt() -> None:
     assert rig.gateway.error_type == "Superseded" and rig.gateway.abort.is_set()
 
 
+async def test_stale_attempt_dispatches_nothing() -> None:
+    """D10, R11 (review F61): the ledger's fenced dispatch refuses a stale attempt,
+    even on its first request, which runs no barrier; the attempt is aborted."""
+    rig = Rig()
+    rig.store.superseded = True
+    assert (await rig.post(request()))[0] == 429
+    assert rig.sent == [] and rig.store.rows == {}
+    assert rig.gateway.error_type == "Superseded" and rig.gateway.abort.is_set()
+
+
 async def test_failed_barrier_denies_the_request_without_dispatch() -> None:
     rig = Rig()
     await rig.post(request())
@@ -252,6 +262,24 @@ async def test_ungranted_tool_call_is_logged_and_left_unprefixed() -> None:
         "delete_database"
     )
     assert rig.refused == ["delete_database"]
+    # R16 (review F91): the refused call is visible as a call and its result.
+    refused = [(e.type, e.payload) for e in rig.sink.events if e.type != "token"]
+    assert refused == [
+        ("tool_call", {"tool": "delete_database", "call": None}),
+        ("tool_result", {"tool": "delete_database", "call": None, "status": "refused"}),
+    ]
+
+
+@pytest.mark.parametrize("asked", [None, 100, 2048, 9000])
+def test_output_is_capped_at_the_charge_assumption(asked: int | None) -> None:
+    """D9 (review F73): every request the endpoint gets is bounded by the output cap
+    the conservative charge assumes, whatever DSH asked for."""
+    body: dict[str, Any] = {"model": "spark", "messages": []}
+    if asked is not None:
+        body["max_tokens"] = asked
+    sent = to_model(body)
+    assert sent["max_tokens"] == min(asked or DSH_MAX_OUTPUT_TOKENS, DSH_MAX_OUTPUT_TOKENS)
+    assert "max_completion_tokens" not in sent
 
 
 def test_request_and_response_translation() -> None:
@@ -362,7 +390,10 @@ async def test_executor_refuses_what_was_not_granted(tmp_path: Path) -> None:
     text, error = await ex.call("delete_database", {})
     assert error and text.startswith("refused") and ex.usage.tool_calls == 0
     assert ex.state.refused == ["delete_database"]
-    assert [e.type for e in sink.events] == ["tool_result"]
+    assert [(e.type, e.payload) for e in sink.events] == [  # paired (review F91)
+        ("tool_call", {"tool": "delete_database", "call": 1}),
+        ("tool_result", {"tool": "delete_database", "call": 1, "status": "refused"}),
+    ]
     assert (await ex.call("read_file", {"path": "a", "extra": 1}))[1]  # unknown argument
 
 
@@ -422,6 +453,86 @@ async def test_session_store_round_trips_the_session_blob(tmp_path: Path) -> Non
     assert list((tmp_path / "b").iterdir()) == []
     await second.load(replace(checkpoint(None, None)))  # an openai_agents checkpoint
     assert list((tmp_path / "b").iterdir()) == []
+
+
+def test_share_never_follows_a_link_out_of_the_tree(tmp_path: Path) -> None:
+    """Review F97: a command may plant links in the tree; share changes only what
+    is inside it."""
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o700)
+    (outside / "secret").write_text("x")
+    (outside / "secret").chmod(0o600)
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "file-link").symlink_to(outside / "secret")
+    (tree / "dir-link").symlink_to(outside, target_is_directory=True)
+    share(tree, os.getgid())
+    assert stat.S_IMODE((outside / "secret").stat().st_mode) == 0o600
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o700
+
+
+def test_file_bodies_never_follow_a_link(tmp_path: Path) -> None:
+    """Review F97: reads and writes refuse any link component, even inside."""
+    from harness_activity import tools
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret").write_text("TOP")
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "dir-link").symlink_to(outside, target_is_directory=True)
+    (ws / "file-link").symlink_to(outside / "secret")
+    assert tools.read_file_body(ws, "dir-link/secret").startswith("error")
+    assert tools.read_file_body(ws, "file-link").startswith("error")
+    assert tools.write_file_body(ws, "dir-link/new", "x").startswith("error")
+    assert tools.write_file_body(ws, "file-link", "x").startswith("error")
+    assert (outside / "secret").read_text() == "TOP" and not (outside / "new").exists()
+    assert tools.write_file_body(ws, "a/b/c.txt", "ok").startswith("wrote")
+    assert tools.read_file_body(ws, "a/b/c.txt") == "ok"
+    with pytest.raises(tools.WorkspaceError):
+        tools.read_regular(ws, "dir-link/secret")
+
+
+def test_list_files_never_follows_a_link(tmp_path: Path) -> None:
+    """Review F140: listing a linked directory, or a tree holding one, shows
+    nothing outside the workspace."""
+    from harness_activity import tools
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "worker-secret").write_text("x")
+    ws = tmp_path / "ws"
+    (ws / "sub").mkdir(parents=True)
+    (ws / "sub/kept.txt").write_text("ok")
+    (ws / "dir-link").symlink_to(outside, target_is_directory=True)
+    (ws / "sub/inner-link").symlink_to(outside, target_is_directory=True)
+    assert str(tools.list_files_body(ws, "dir-link")).startswith("error")
+    assert tools.list_files_body(ws, ".") == ["sub/kept.txt"]
+    assert tools.list_files_body(ws, "sub") == ["sub/kept.txt"]
+
+
+def test_launcher_destroy_error_marks_the_attempt_dirty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R10 (review F143): a cleanup that raises still reports the attempt dirty."""
+    import importlib.util
+    import sys
+
+    path = Path(__file__).resolve().parents[1] / "infra/dsh/launcher.py"
+    monkeypatch.syspath_prepend(str(path.parent))
+    spec = importlib.util.spec_from_file_location("dsh_launcher_under_test", path)
+    assert spec is not None and spec.loader is not None
+    launcher = importlib.util.module_from_spec(spec)
+    sys.modules.pop("dsh_launcher_under_test", None)
+    spec.loader.exec_module(launcher)
+    cgroup = tmp_path / "cg"
+    (cgroup / "cgroup.kill").mkdir(parents=True)  # writing it raises an OSError
+    (cgroup / "cgroup.freeze").write_text("0")
+    monkeypatch.setattr(launcher, "_cgroup_of", lambda attempt: cgroup)
+    monkeypatch.setattr(launcher, "ATTEMPTS", tmp_path / "attempts")
+    report = launcher.destroy("task-x/1/1")
+    assert report["processes_left"] is None and report["tree_removed"] is False
+    assert {"task-x/1/1"} == launcher.DIRTY
 
 
 def test_share_gives_the_group_the_owners_access(tmp_path: Path) -> None:

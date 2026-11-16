@@ -25,7 +25,7 @@ import yaml
 from common.blob_store import MemoryBlobStore
 from harness_activity.dsh.runner import DshRunner
 from harness_activity.events import EventSink
-from registry.loader import REGISTRY_ROOT
+from registry.loader import REGISTRY_ROOT, read_runtime_pins
 from registry.lock import update
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -83,11 +83,15 @@ class MemoryLedgerStore:
 
     def __init__(self) -> None:
         self.rows: dict[tuple[str, int, int, str], tuple[int, int] | None] = {}
+        self.superseded = False  # a newer attempt exists: the fence refuses
 
     async def dispatch(
         self, task_id: str, turn: int, attempt: int, request_id: str, purpose: str
-    ) -> None:
+    ) -> bool:
+        if self.superseded:
+            return False
         self.rows[(task_id, turn, attempt, request_id)] = None
+        return True
 
     async def settle(
         self,
@@ -117,7 +121,9 @@ class DshContainer:
         return path / "workspace"
 
     def runner(self, sink: EventSink | None = None) -> DshRunner:
-        return DshRunner(self.control, MemoryLedgerStore(), MemoryBlobStore(), sink)
+        # Every attempt checks the pin, as a worker's does (R17).
+        pinned = read_runtime_pins(REGISTRY_ROOT)["dsh"]
+        return DshRunner(self.control, MemoryLedgerStore(), MemoryBlobStore(), sink, pinned=pinned)
 
     def exec(self, *command: str) -> subprocess.CompletedProcess[str]:
         return docker("exec", self.name, *command, check=False)

@@ -15,6 +15,7 @@ import tarfile
 import time
 from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -24,7 +25,10 @@ from temporalio.testing import ActivityEnvironment
 
 from common.blob_store import MemoryBlobStore
 from common.persistence.repositories import (
+    AttemptRepository,
+    Checkpoint,
     CheckpointRepository,
+    FenceRejected,
     TaskRepository,
     UsageLedgerRepository,
     make_engine,
@@ -32,12 +36,27 @@ from common.persistence.repositories import (
 from common.schemas import TaskStart, TurnInput, TurnOutcome
 from harness_activity.activity import HarnessActivities
 from harness_activity.config import build_config
-from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS
-from harness_activity.dsh.runner import DshRunner
+from harness_activity.dsh import runner as dsh_runner
+from harness_activity.dsh.launcher_client import LauncherClient, LauncherError
+from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, UsageLedger
+from harness_activity.dsh.pins import RuntimePinMismatch
+from harness_activity.dsh.runner import DshRunner, LauncherUnhealthy
 from harness_activity.events import MemorySink
-from harness_activity.runner import AttemptContext, RunnerFailure, Usage
-from registry.loader import load_registry
-from tests.support.dsh import DshContainer, build_image, start_container
+from harness_activity.runner import (
+    AttemptContext,
+    RunnerFailure,
+    Superseded,
+    Usage,
+    WorkerUnserviceable,
+)
+from registry.loader import Registry, load_registry
+from tests.support.dsh import (
+    DshContainer,
+    MemoryLedgerStore,
+    build_image,
+    make_dsh_registry,
+    start_container,
+)
 from tests.support.fake_model import FakeModel
 from tests.support.stack import run_id
 
@@ -73,6 +92,7 @@ class Harness:
     sink: MemorySink
     task_id: str
     heartbeats: list[dict[str, Any]]
+    registry: Registry = dataclasses.field(default_factory=load_registry)
 
     def env(self, attempt: int, details: dict[str, Any] | None) -> ActivityEnvironment:
         env = ActivityEnvironment()
@@ -93,14 +113,17 @@ class Harness:
             turn=1,
             template="local-dsh",
             template_version=1,
-            template_hash=load_registry().templates["local-dsh"].hash,
+            template_hash=self.registry.templates["local-dsh"].hash,
             remaining_tokens=1_000_000,
             remaining_wall_time=timedelta(minutes=10),
             request_id="req-dsh-activity",
         )
 
 
-async def harness(engine: AsyncEngine, container: DshContainer) -> Harness:
+async def harness(
+    engine: AsyncEngine, container: DshContainer, registry: Registry | None = None
+) -> Harness:
+    registry = registry or load_registry()
     blobs, sink = MemoryBlobStore(), MemorySink()
     task_id = f"task-dsh-{run_id()}"
     instructions = await blobs.put(INSTRUCTIONS.encode(), retention="task")
@@ -119,7 +142,7 @@ async def harness(engine: AsyncEngine, container: DshContainer) -> Harness:
     )
     runner = DshRunner(container.control, UsageLedgerRepository(engine), blobs, sink)
     acts = HarnessActivities(
-        load_registry(),
+        registry,
         engine,
         blobs,
         runner,
@@ -127,7 +150,7 @@ async def harness(engine: AsyncEngine, container: DshContainer) -> Harness:
         "test-dsh-worker",
         open_attempt=runner.open_attempt,
     )
-    return Harness(acts, blobs, sink, task_id, [])
+    return Harness(acts, blobs, sink, task_id, [], registry)
 
 
 async def rows(engine: AsyncEngine, sql: str, **params: Any) -> list[Any]:
@@ -256,6 +279,79 @@ async def test_dsh_resumes_and_charges_a_lost_request(
     ]
 
 
+@pytest.mark.parametrize("stage", ["checkpoint", "publish", "finish"])
+async def test_stale_attempt_that_finished_is_fenced(
+    stage: str, engine: AsyncEngine, container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R6, R7, D10 (review F66): attempt 1 finishes its run, but attempt 2 starts
+    just before attempt 1 writes its finish checkpoint, publishes its artifacts, or
+    finishes its row. The fence refuses that write, the early exit is out of the
+    way, and attempt 1 returns no `TurnOutcome`."""
+    h = await harness(engine, container)
+    attempts = AttemptRepository(engine)
+    rejected: list[str] = []
+    insert, assert_current, finish = (
+        CheckpointRepository.insert_fenced,
+        AttemptRepository.assert_current,
+        AttemptRepository.finish,
+    )
+
+    async def newer_start() -> None:
+        await attempts.start(h.task_id, 1, 2, "newer-worker")
+
+    async def spy_insert(self: CheckpointRepository, cp: Checkpoint) -> None:
+        if cp.finish is not None and stage == "checkpoint":
+            await newer_start()
+        try:
+            await insert(self, cp)
+        except FenceRejected:
+            rejected.append("checkpoint")
+            raise
+        if cp.finish is not None and stage in ("publish", "finish"):
+            await newer_start()
+
+    async def spy_current(self: AttemptRepository, *args: Any) -> None:
+        if stage == "finish":
+            return None  # a newer attempt started between this check and the finish
+        try:
+            await assert_current(self, *args)
+        except FenceRejected:
+            rejected.append("publish")
+            raise
+
+    async def spy_finish(self: AttemptRepository, *args: Any, **kw: Any) -> None:
+        try:
+            await finish(self, *args, **kw)
+        except FenceRejected:
+            rejected.append("finish")
+            raise
+
+    async def never_newer(self: AttemptRepository, *args: Any) -> bool:
+        return False  # only the fence may stop the stale attempt
+
+    monkeypatch.setattr(CheckpointRepository, "insert_fenced", spy_insert)
+    monkeypatch.setattr(AttemptRepository, "assert_current", spy_current)
+    monkeypatch.setattr(AttemptRepository, "finish", spy_finish)
+    monkeypatch.setattr(AttemptRepository, "newer_attempt_exists", never_newer)
+    with FakeModel(SCRIPT) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        with pytest.raises(Superseded):
+            await h.env(1, None).run(h.acts.run_harness_turn, h.turn())
+    assert rejected == [stage]
+    finished = await rows(
+        engine,
+        "SELECT count(*) FROM checkpoints WHERE task_id = :t AND attempt = 1 "
+        "AND finish IS NOT NULL",
+        t=h.task_id,
+    )
+    assert finished[0][0] == (0 if stage == "checkpoint" else 1)
+    outcomes = await rows(
+        engine, "SELECT attempt, outcome FROM task_attempts WHERE task_id = :t ORDER BY 1",
+        t=h.task_id,
+    )  # fmt: skip
+    assert [tuple(r) for r in outcomes] == [(1, "lost"), (2, "started")]
+
+
 async def test_deadline_stops_a_running_command_within_the_grace(
     container: DshContainer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -288,6 +384,334 @@ async def test_deadline_stops_a_running_command_within_the_grace(
         "for c in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < $c; echo; done | grep -c '[s]leep 50'",
     )
     assert left.stdout.strip() == "0"  # the command died with the attempt
+
+
+TOOL_THEN_DONE: list[dict[str, Any]] = [SCRIPT[0], SCRIPT[2]]
+
+
+async def run_one(
+    runner: DshRunner, seconds: float, before: Any, task: str
+) -> tuple[RunnerFailure, float]:
+    """One attempt with a deadline `seconds` from now; the failure and how long
+    after the deadline the run ended."""
+    registry = load_registry()
+    config = build_config(registry, registry.templates["local-dsh"], task)
+    deadline = time.monotonic() + seconds
+    scope = await runner.open_attempt(AttemptContext(task, 1, 1, "wf", 1_000_000, deadline))
+    try:
+        with pytest.raises(RunnerFailure) as failure:
+            await runner.run(config, scope.workspace, scope.store.session, "go", before, Usage())
+        return failure.value, time.monotonic() - deadline
+    finally:
+        await scope.close()
+
+
+async def test_deadline_during_the_barrier_is_a_retryable_deadline(
+    container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R8, R9, D6 (review F60): the deadline fires while the barrier holds the
+    attempt frozen and commits. The stop is cooperative, so it is a retryable
+    `DshTurnDeadline`, not a forced stop, and the commit in progress is abandoned."""
+    entered: list[float] = []
+    committed: list[float] = []
+
+    async def slow_commit(usage: Usage) -> None:
+        entered.append(time.monotonic())
+        await asyncio.sleep(60)
+        committed.append(time.monotonic())
+
+    with FakeModel(TOOL_THEN_DONE) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        failure, after = await run_one(
+            container.runner(), 12, slow_commit, f"task-barrier-deadline-{run_id()}"
+        )
+    assert entered and entered[0] < time.monotonic() - after  # the barrier was running
+    assert (failure.category, failure.retryable) == ("DshTurnDeadline", True)
+    assert after < 5 and committed == []
+    assert container.attempt_cgroups() == []
+
+
+async def test_failed_thaw_is_a_retryable_checkpoint_failure(
+    container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D6 (review F60): a barrier whose thaw fails leaves the attempt frozen. It is
+    stopped and classified as a retryable checkpoint failure, not a forced stop."""
+    original = LauncherClient.request
+
+    async def no_thaw(self: LauncherClient, op: str, **fields: Any) -> dict[str, Any]:
+        if op == "thaw":
+            return {"ok": False}
+        return await original(self, op, **fields)
+
+    monkeypatch.setattr(LauncherClient, "request", no_thaw)
+    with FakeModel(TOOL_THEN_DONE) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        failure, after = await run_one(
+            container.runner(), 60, _no_op, f"task-barrier-thaw-{run_id()}"
+        )
+    assert (failure.category, failure.retryable) == ("DshCheckpointFailure", True)
+    assert after < 0  # stopped at once, not at the deadline
+    assert container.attempt_cgroups() == []
+
+
+async def test_attempt_on_an_unpinned_runtime_is_refused(container: DshContainer) -> None:
+    """R17 (review F62): the worker checked its container at start-up; the container
+    was then recreated from another image. Opening an attempt re-checks the pin and
+    refuses, retryably, before anything is created."""
+    runner = DshRunner(
+        container.control, MemoryLedgerStore(), MemoryBlobStore(), pinned="sha256:" + "0" * 64
+    )
+    task = f"task-unpinned-{run_id()}"
+    with pytest.raises(RuntimePinMismatch):
+        await runner.open_attempt(AttemptContext(task, 1, 1, "wf", 1_000, time.monotonic() + 60))
+    assert container.attempt_cgroups() == [] and not (container.attempts / task).exists()
+    # The pinned runtime opens normally.
+    scope = await container.runner().open_attempt(
+        AttemptContext(task, 1, 1, "wf", 1_000, time.monotonic() + 60)
+    )
+    await scope.close()
+
+
+async def test_failed_final_freeze_is_a_retryable_checkpoint_failure(
+    container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R5, D6 (review F67): the runtime finished, but the attempt could not be
+    frozen, so something it started may still change the workspace. The run fails
+    retryably instead of returning a result the final checkpoint would capture."""
+    original = LauncherClient.request
+
+    async def no_freeze(self: LauncherClient, op: str, **fields: Any) -> dict[str, Any]:
+        if op == "freeze":
+            return {"ok": False}
+        return await original(self, op, **fields)
+
+    monkeypatch.setattr(LauncherClient, "request", no_freeze)
+    with FakeModel([SCRIPT[2]]) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        failure, _ = await run_one(container.runner(), 60, _no_op, f"task-final-freeze-{run_id()}")
+    assert (failure.category, failure.retryable) == ("DshCheckpointFailure", True)
+    assert container.attempt_cgroups() == []
+
+
+# A runtime that keeps running after the gateway denies its request: it sends two
+# model requests with the granted catalog, then waits, exiting only on SIGTERM.
+STUBBORN_DRIVER = """
+import json, os, signal, socket, sys, time
+signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+tree = "/run/attempt"
+tools = json.load(open(tree + "/config/tools.json"))
+model = json.load(open(tree + "/config/input.json"))["model"]
+def post(n):
+    body = json.dumps({"model": model, "messages": [{"role": "user", "content": str(n)}],
+        "tools": [{"type": "function", "function": {"name": "mcp__praxis__" + t["name"]}}
+                  for t in tools]}).encode()
+    s = socket.socket(socket.AF_UNIX); s.connect(tree + "/ipc/gateway.sock")
+    s.sendall(b"POST /v1/chat/completions HTTP/1.1\\r\\nAuthorization: Bearer "
+              + os.environ["PRAXIS_MODEL_KEY"].encode()
+              + b"\\r\\nContent-Length: " + str(len(body)).encode() + b"\\r\\n\\r\\n" + body)
+    while s.recv(65536): pass
+post(1); post(2)
+time.sleep(60)
+"""
+
+
+async def test_step_limit_stops_a_runtime_that_does_not_exit(
+    container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R8 (review F64): the step limit denies the second request; a runtime that
+    keeps running anyway is stopped within the 5 s grace, and the turn ends as a
+    `continue` at the inner-turn limit, not at the deadline."""
+    monkeypatch.setattr(dsh_runner, "DRIVER", ["python", "-c", STUBBORN_DRIVER])
+    registry = load_registry()
+    task = f"task-step-limit-{run_id()}"
+    runner = container.runner()
+    denied: list[float] = []
+    original = UsageLedger.admit
+
+    async def admit(self: UsageLedger, purpose: str, step: int, deny: str | None = None) -> Any:
+        record = await original(self, purpose, step, deny)
+        if record.denial:
+            denied.append(time.monotonic())
+        return record
+
+    monkeypatch.setattr(UsageLedger, "admit", admit)
+    with FakeModel([SCRIPT[0], SCRIPT[0]]) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        # The config reads the endpoint, so it is built once the fake model runs.
+        config = dataclasses.replace(
+            build_config(registry, registry.templates["local-dsh"], task), inner_max_turns=1
+        )
+        scope = await runner.open_attempt(
+            AttemptContext(task, 1, 1, "wf", 1_000_000, time.monotonic() + 60)
+        )
+        try:
+            result = await runner.run(
+                config, scope.workspace, scope.store.session, "go", _no_op, Usage()
+            )
+            ended = time.monotonic()
+        finally:
+            await scope.close()
+    assert (result.status, result.summary) == ("continue", "inner-turn limit reached")
+    assert denied and ended - denied[0] < 5.0
+    assert container.attempt_cgroups() == []
+
+
+async def test_failed_cleanup_after_success_stops_new_attempts(
+    container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R10 (review F71): the turn succeeded, but closing its attempt left a process
+    behind. The outcome stands; the runner refuses new attempts on that container,
+    retryably, so a worker paired with a clean one takes them."""
+    original = LauncherClient.request
+
+    async def leaky_stop(self: LauncherClient, op: str, **fields: Any) -> dict[str, Any]:
+        reply = await original(self, op, **fields)
+        return {**reply, "processes_left": 1} if op == "stop" else reply
+
+    runner = container.runner()
+    monkeypatch.setattr(LauncherClient, "request", leaky_stop)
+    with FakeModel([SCRIPT[2]]) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        registry = load_registry()
+        task = f"task-leaky-{run_id()}"
+        config = build_config(registry, registry.templates["local-dsh"], task)
+        scope = await runner.open_attempt(
+            AttemptContext(task, 1, 1, "wf", 1_000_000, time.monotonic() + 60)
+        )
+        result = await runner.run(
+            config, scope.workspace, scope.store.session, "go", _no_op, Usage()
+        )
+        await scope.close()
+    assert result.status == "done"
+    with pytest.raises(LauncherUnhealthy):
+        await runner.open_attempt(AttemptContext(task, 1, 2, "wf", 1_000, time.monotonic() + 60))
+    assert container.attempt_cgroups() == []
+
+
+async def test_symlinked_output_is_not_published(
+    engine: AsyncEngine, container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D4, R15 (review F97): a command links the declared output to the worker's
+    environment. The worker never follows a link out of the workspace, so the task
+    publishes no artifact and none of the worker's environment."""
+    h = await harness(engine, container)
+    link = "sh -c 'ln -s /proc/self/environ order-summary.md && ln -s / root-link && echo linked'"
+    script = [
+        {"tool": "run_command", "args": {"command": link}},
+        {"tool": "read_file", "args": {"path": "root-link/proc/self/environ"}},
+        {"tool": "write_file", "args": {"path": "root-link/tmp/praxis-f97", "content": "x"}},
+        SCRIPT[2],
+    ]
+    with FakeModel(script) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        outcome: TurnOutcome = await h.env(1, None).run(h.acts.run_harness_turn, h.turn())
+        last = fake.state.requests[-1]
+    assert outcome.status == "done" and outcome.outputs == []
+    results = [str(m["content"]) for m in last["messages"] if m.get("role") == "tool"]
+    assert "linked" in results[0]
+    assert results[1].startswith("error") and results[2].startswith("error")
+    assert not Path("/tmp/praxis-f97").exists()
+
+
+async def test_step_limit_stop_keeps_the_workspace_for_the_checkpoint(
+    engine: AsyncEngine, container: DshContainer, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """R5, D6 (review F96): the runtime is stopped at the step limit. Its attempt
+    tree stays until the attempt closes, so the turn's final checkpoint holds the
+    workspace, not an empty archive."""
+    monkeypatch.setattr(dsh_runner, "DRIVER", ["python", "-c", STUBBORN_DRIVER])
+    registry = load_registry(make_dsh_registry(tmp_path / "registry", inner_max_turns=1))
+    h = await harness(engine, container, registry)
+    with FakeModel([SCRIPT[0], SCRIPT[0]]) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        outcome: TurnOutcome = await h.env(1, None).run(h.acts.run_harness_turn, h.turn())
+    assert (outcome.status, outcome.summary) == ("continue", "inner-turn limit reached")
+    latest = await CheckpointRepository(engine).latest(h.task_id)
+    assert latest is not None and latest.attempt == 1
+    assert "input.txt" in names(await h.blobs.get(latest.workspace_ref))
+    assert container.attempt_cgroups() == [] and not (container.attempts / h.task_id).exists()
+
+
+@pytest.mark.parametrize("fault", ["processes left", "stop refused"])
+async def test_dirty_stop_during_a_run_stops_new_attempts(
+    fault: str, container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R10 (review F100): the deadline stop inside a run leaves a process behind, or
+    the launcher refuses the stop. The attempt is a cleanup failure, and the runner
+    refuses new attempts on that container."""
+    original = LauncherClient.request
+
+    async def bad_stop(self: LauncherClient, op: str, **fields: Any) -> dict[str, Any]:
+        reply = await original(self, op, **fields)
+        if op != "stop":
+            return reply
+        if fault == "stop refused":
+            raise LauncherError("stop: OSError")
+        return {**reply, "processes_left": 1}
+
+    runner = container.runner()
+    monkeypatch.setattr(LauncherClient, "request", bad_stop)
+    script = [{"tool": "run_command", "args": {"command": "sh -c 'sleep 50'"}}]
+    with FakeModel(script) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        failure, _ = await run_one(runner, 4, _no_op, f"task-dirty-{run_id()}")
+    assert (failure.category, failure.retryable) == ("DshCleanupFailure", False)
+    with pytest.raises(LauncherUnhealthy):
+        await runner.open_attempt(
+            AttemptContext(f"task-dirty-{run_id()}", 1, 1, "wf", 1_000, time.monotonic() + 60)
+        )
+
+
+async def test_unserviceable_worker_refuses_without_using_an_attempt(
+    engine: AsyncEngine, container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R17, R10 (review F99): before recording an attempt, the Activity checks its
+    container. A pin mismatch is an uncounted refusal, like a template-version
+    refusal, and tells the worker to stop polling; the next worker's attempt is
+    the turn's first real one."""
+    h = await harness(engine, container)
+    bad = DshRunner(container.control, MemoryLedgerStore(), h.blobs, pinned="sha256:" + "0" * 64)
+    stopped: list[str] = []
+    h.acts.preflight, h.acts.on_unserviceable = bad.check, stopped.append
+    with pytest.raises(WorkerUnserviceable):
+        await h.env(1, None).run(h.acts.run_harness_turn, h.turn())
+    assert stopped and "does not match" in stopped[0]
+    rows_before = await rows(
+        engine, "SELECT attempt, outcome, failure_category FROM task_attempts WHERE task_id = :t",
+        t=h.task_id,
+    )  # fmt: skip
+    assert [tuple(r) for r in rows_before] == [(1, "refused", "dsh_unserviceable")]
+    assert h.heartbeats[-1]["refusals"] == 1
+    h.acts.preflight = h.acts.runner.check  # type: ignore[attr-defined]
+    with FakeModel([SCRIPT[2]]) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        outcome: TurnOutcome = await h.env(2, h.heartbeats[-1]).run(
+            h.acts.run_harness_turn, h.turn()
+        )
+    assert outcome.status == "done" and outcome.attempts == 1
+
+
+async def test_unreachable_launcher_is_a_refusal_every_time(
+    engine: AsyncEngine, container: DshContainer, tmp_path: Path
+) -> None:
+    """R17, R10 (review F133): the paired container is down or restarting, so its
+    control socket does not answer. Each Temporal attempt is an uncounted refusal
+    that stops the worker, never a lost attempt, so the turn is never exhausted."""
+    h = await harness(engine, container)
+    gone = DshRunner(tmp_path / "missing.sock", MemoryLedgerStore(), h.blobs)
+    stopped: list[str] = []
+    h.acts.preflight, h.acts.on_unserviceable = gone.check, stopped.append
+    details: dict[str, Any] | None = None
+    for attempt in range(1, 8):  # more than MAX_REAL_ATTEMPTS
+        with pytest.raises(WorkerUnserviceable):
+            await h.env(attempt, details).run(h.acts.run_harness_turn, h.turn())
+        details = h.heartbeats[-1]
+    assert details is not None and details["refusals"] == 7 and len(stopped) == 7
+    found = await rows(
+        engine, "SELECT outcome, failure_category FROM task_attempts WHERE task_id = :t",
+        t=h.task_id,
+    )  # fmt: skip
+    assert [tuple(r) for r in found] == [("refused", "dsh_unserviceable")] * 7
 
 
 async def _no_op(usage: Usage) -> None:

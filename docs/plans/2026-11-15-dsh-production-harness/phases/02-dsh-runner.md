@@ -1,13 +1,21 @@
 ---
 phase: 2
 title: DSH runner and worker pair
-status: in-progress
+status: done
 branch: feat/62-dsh-runner
 base: 562733a72b880d13576ced63e8b8ad09716094df
 delivers: [R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, R16, R17, R18]
-design_review: { status: passed, rounds: 3, last: 2026-11-15 }
-impl_review: { status: none, rounds: 0, last: null }
+design_review: { status: passed, rounds: 5, last: 2026-11-16 }
+impl_review: { status: passed, rounds: 4, last: 2026-11-16 }
 approved: 2026-11-15
+verification: { status: passed, last: 2026-11-16 }
+demo: { status: passed, last: 2026-11-16 }
+evidence:
+  code_sha: 86cfec87bfb1ed83c60150d2104a41b6720b7018
+  docs_sha: 7b06ce60046f59817c65b97db783fddd6d8f0d95
+  review: docs/plans/2026-11-15-dsh-production-harness/reviews.md
+  verification: docs/reviews/general-dsh-production-harness/verification-phase-02.md
+  demo: docs/demos/general-dsh-production-harness-02.md
 ---
 
 # Phase 02 · DSH runner and worker pair
@@ -21,7 +29,7 @@ the spike's control cases pass as production integration tests.
 
 ### 1. Worker pair
 
-- [x] 1.1 Build the DSH image with the pinned release and digests recorded in the registry lock and the granted `cli_tools`. Build the launcher: it reports its digests, gives each attempt a cgroup, command UID and mount namespace, runs commands with all capabilities dropped and a seccomp filter that blocks new user namespaces (notes.md#probe-result-phase-01-task-01-2026-11-15), kills on control-socket close, and reaps processes and orphan trees at start (D3, D4, R17). Verify: the worker refuses a launcher whose reported digest differs from the lock; `infra/dsh/isolation-probe.sh` passes every check in the DSH container.
+- [x] 1.1 Build the DSH image with the pinned release and digests recorded in the registry lock and the granted `cli_tools`. Build the launcher: it reports its digests, gives each attempt a cgroup, command UID, mount and IPC namespaces, runs commands with all capabilities dropped and a seccomp filter that blocks new user namespaces (notes.md#probe-result-phase-01-task-01-2026-11-15), kills on control-socket close, and reaps processes and orphan trees at start (D3, D4, R17). Verify: the worker refuses a launcher whose reported digest differs from the lock; `infra/dsh/isolation-probe.sh` passes every check in the DSH container.
 - [x] 1.2 Add the DSH worker pair to `infra/docker-compose.yml` with a tmpfs attempt volume and the notes.md#d3 settings (D3). Verify: `docker compose up` starts both with no network or credentials in the DSH container.
 - [x] 1.3 Choose the runner from `template.harness` in `workers/main.py` (D1). Verify: `tpl.local-dsh` gets `DshRunner`; `local-default` is unchanged.
 

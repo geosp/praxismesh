@@ -43,10 +43,11 @@ SHORT_RETRY = RetryPolicy(maximum_attempts=5, non_retryable_error_types=NON_RETR
 TURN_ATTEMPTS = 0
 
 
-def failed_turn_usage(cause: BaseException | None) -> tuple[int, int, int, int]:
-    """What a turn that failed for good used: tokens in and out, inner turns and
-    attempts. A timeout carries the last heartbeat; a failure the Activity raised
-    carries its usage in the error's details (review F10, gate F1)."""
+def failed_turn_usage(cause: BaseException | None) -> tuple[int, int, int, int, bool]:
+    """What a turn that failed for good used: tokens in and out, inner turns,
+    attempts, and whether that usage is exact. A timeout carries the last heartbeat;
+    a failure the Activity raised carries its usage in the error's details (review
+    F10, gate F1). Usage that includes a conservative charge is not known (D7, F58)."""
     details: Any = getattr(cause, "last_heartbeat_details", None) or getattr(cause, "details", None)
     if details and isinstance(details[0], dict):
         d = details[0]
@@ -55,8 +56,9 @@ def failed_turn_usage(cause: BaseException | None) -> tuple[int, int, int, int]:
             int(d.get("tokens_out", 0)),
             int(d.get("inner_turns", 0)),
             int(d.get("attempts", 1)),
+            bool(d.get("usage_known", True)),
         )
-    return 0, 0, 0, 1
+    return 0, 0, 0, 1, True
 
 
 def failure_category(error: ActivityError) -> str:
@@ -123,6 +125,9 @@ class TaskWorkflow:
                     start_to_close_timeout=resolved.turn_timeout,
                     heartbeat_timeout=resolved.heartbeat_timeout,
                     schedule_to_close_timeout=resolved.turn_timeout * 6,
+                    # A cancelled turn records its attempt (cancelled, its unknown
+                    # usage) before the task completes and closes open rows (R18).
+                    cancellation_type=workflow.ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
                     retry_policy=RetryPolicy(
                         maximum_attempts=TURN_ATTEMPTS,
                         non_retryable_error_types=NON_RETRYABLE,
@@ -131,7 +136,10 @@ class TaskWorkflow:
             except ActivityError as e:
                 # Count what the lost attempts heartbeated before the turn failed
                 # for good (informal review F10).
-                lost_in, lost_out, lost_inner, lost_attempts = failed_turn_usage(e.cause)
+                lost_in, lost_out, lost_inner, lost_attempts, lost_known = failed_turn_usage(
+                    e.cause
+                )
+                usage_known = usage_known and lost_known
                 tokens_in += lost_in
                 tokens_out += lost_out
                 inner_turns += lost_inner

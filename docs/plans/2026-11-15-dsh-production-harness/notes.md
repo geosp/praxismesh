@@ -24,7 +24,7 @@ expected behaviour for each ported case.
 | LXC/Incus per attempt | Incus API | second host runtime; still needs start rights |
 | Docker-in-Docker | privileged container | privileged |
 
-Compose settings the pair needs: `cgroupns: private`, `cap_add: [SYS_ADMIN]` (for the
+Compose settings the pair needs: `cgroup: private`, `cap_add: [SYS_ADMIN]` (for the
 launcher only), `no-new-privileges`, `apparmor:unconfined` (so AppArmor on Ubuntu hosts
 does not block the launcher's cgroupfs remount and private mount namespace; commands drop
 all capabilities and get the seccomp filter), a tmpfs-backed attempt volume,
@@ -60,6 +60,16 @@ Fallback if cgroup freeze is unavailable: SIGSTOP the attempt's process group. I
 limit: a process that leaves the group escapes the freeze, so commands must not be
 able to `setsid` (the separate UID and a seccomp profile enforce it).
 
+## D4
+
+Commands run as UID 4242 with every capability dropped, `no_new_privs`, the seccomp
+filter blocking new user namespaces, and a private mount view that shows only their
+own workspace (as `/work`), a per-attempt `/tmp` (impl-review F63), private `/run` and
+`/dev/shm` (F102), and an IPC namespace of their own (F132). The image adds
+no packages beyond the granted `cli_tools` to its pinned base; the base's userland
+stays, and the command check reads only the first word, so the boundary is the UID,
+capabilities, seccomp and mount view, not the binary list (F89).
+
 ## D6
 
 Trigger: every model request after the first one of an attempt.
@@ -82,7 +92,15 @@ The migration is additive:
 - `checkpoints.session_ref jsonb null, session_digest text null`; `session_position` stays an integer (0 for DSH).
 
 `usage_known` is added to `Progress`, `TurnOutcome`, `ExecutionAttempt` and
-`TaskResult`. Deploy order: migration, orchestrator, then workers. Rolling code back
+`TaskResult`. An attempt row holds the turn's cumulative usage through that attempt. A row
+the attempt finished itself has NULL tokens when one of its own requests was never
+observed, and numbers with `usage_known = false` when they include a D9 charge. A
+row closed without a finish (lost, failed for good, closed at task completion) gets
+the ledger's settled usage through it, or NULL when any request up to it was never
+observed (impl-review F69, F101). A turn that fails for good, is cancelled or runs out of attempts
+charges its own unsettled requests, since no later attempt will (F59).
+
+Deploy order: migration, orchestrator, then workers. Rolling code back
 below this migration is not supported.
 
 ## D9
@@ -91,7 +109,13 @@ The gateway writes a `usage_ledger` row before dispatch and settles it on the
 response. The next attempt of a turn finds unsettled rows from earlier attempts,
 sets `usage_known = false` on their attempt rows, and charges each unsettled
 request the template's `context_window` as input and the DSH composition's per-request
-output cap (2048 tokens, `DSH_MAX_OUTPUT_TOKENS`) as output. The count is derived from the
+output cap (2048 tokens, `DSH_MAX_OUTPUT_TOKENS`) as output. The gateway clamps every
+request's `max_tokens` to that cap, so the charge bounds what a request can have used.
+A turn that ends with no later attempt (cancel, a non-retryable failure, attempts
+exhausted) charges its own unsettled rows (impl-review F59), and `complete_task`
+takes the task's usage as at least the ledger's settled tokens plus the charge for
+every unobserved request, so a turn that ended with no Activity code running (a
+dead worker, `schedule_to_close`, a cancel) is counted too (F98). The count is derived from the
 ledger rows each time, so a later attempt charges the same amount even if the attempt
 that first closed them was lost. This replaces the spike's fail-closed admission denial.
 
@@ -100,8 +124,10 @@ that first closed them was lost. This replaces the spike's fail-closed admission
 DSH features turned off, by composition id (spike `composition.yaml`):
 `jobs`, `session-title`, `mcp-resources`, `compaction-basic`, `image-offload`,
 `tool-fs`, `tool-working-directory`, `persistent-bash`, `persistent-pwsh`, the
-`dsh-skill*` plugins, `agent-loop.agents: []` (no delegation) and
-`includeDefaultRoots: false` (no discovery).
+`dsh-skill*` plugins, `agent-loop.agents: []` (no delegation), and no discovery:
+`includeDefaultRoots` is a setting of the `dsh-skill-filesystem` plugin (the spike set
+it to false), and production never inserts that plugin, so the patch inserts only the
+gateway provider and the MCP client (impl-review F77).
 
 ## D10
 
@@ -112,3 +138,28 @@ DSH features turned off, by composition id (spike `composition.yaml`):
 - Artifact references exist only in the `TurnOutcome` that `_finish` returns after the fenced
   finish succeeds. A stale attempt may still upload audit artifact blobs that nothing
   references: `assert_current` before upload is an early exit, not a guarantee.
+
+## Rollout
+
+- **Capacity.** `default` has two `openai_agents` worker slots today (`worker-a`, `worker-b`). DSH
+  templates run one attempt per worker pair and ~1.9x slower, so `default` switches only with two
+  DSH pairs (`dsh-a`/`worker-dsh-a`, `dsh-b`/`worker-dsh-b`), each with its own attempt volume.
+- **Switch and revert.** Edit `registry/profiles/default.yaml`, run `make registry-lock`, rebuild the
+  worker image (the registry ships in it) and restart the orchestrator. A profile resolves when a
+  task is submitted (the submitter's checkout) and again in the orchestrator, so pause submissions
+  until both have the new registry (impl-review F162). Tasks already running keep their template.
+- **Drain.** The workflow checks its deadline only before a turn, so a DSH task can run for its
+  wall time plus one last turn's `schedule_to_close` (6 x `turn_timeout`): 30 min + 60 min for
+  `local-dsh` today. Keep the DSH pairs up until no task resolved to `local-dsh` is open.
+- **Code.** Phases 01 and 02 change the `openai_agents` path too (seam, fence, workflow
+  cancellation). They roll forward only: fix forward rather than revert, and never run code
+  older than migration 0004 against its data. `openai` remains the profile for `openai_agents`.
+- **A refusing DSH worker** (pin mismatch, dirty or unreachable container) is restarted by
+  Compose and keeps refusing until its DSH container is fixed and restarted. During a turn it logs
+  "worker cannot serve its queue" and exits 3; at start-up it exits 1 with a `CapabilityError`
+  naming the template (F161). Watch for either restart loop.
+- **Known deviations, deferred** (impl-review F103, F106, F111): an `unresolved usage` denial
+  starts no exit timer, a stale attempt's charge writes usage columns unfenced, and launcher
+  replies to `poll` have no timeout. R8 and R6 hold otherwise.
+- **Tool paths** (F141): file tools refuse every symbolic link, also links inside the workspace,
+  for both runners.
