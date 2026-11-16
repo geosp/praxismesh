@@ -8,6 +8,14 @@ delivers: [R5, R6, R7, R8, R9, R10, R11, R12, R13, R14, R15, R16, R17, R18]
 design_review: { status: passed, rounds: 5, last: 2026-11-16 }
 impl_review: { status: passed, rounds: 4, last: 2026-11-16 }
 approved: 2026-11-15
+verification: { status: passed, last: 2026-11-16 }
+demo: { status: passed, last: 2026-11-16 }
+evidence:
+  code_sha: 86cfec87bfb1ed83c60150d2104a41b6720b7018
+  docs_sha: 7b06ce60046f59817c65b97db783fddd6d8f0d95
+  review: docs/plans/2026-11-15-dsh-production-harness/reviews.md
+  verification: docs/reviews/general-dsh-production-harness/verification-phase-02.md
+  demo: docs/demos/general-dsh-production-harness-02.md
 ---
 
 # Phase 02 · DSH runner and worker pair
