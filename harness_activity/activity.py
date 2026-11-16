@@ -230,11 +230,12 @@ class HarnessActivities:
             except Unserviceable as e:
                 # Like a version refusal: not an attempt, and this worker stops
                 # polling, so a worker that can serve takes the turn (R17, F99).
-                prior.refusals += 1
-                activity.heartbeat(asdict(prior))
+                # The row first: a refusal the next attempt subtracts must exist (F147).
                 await self.attempts.record_refusal(
                     turn.task_id, turn.turn, info.attempt, self.identity, "dsh_unserviceable"
                 )
+                prior.refusals += 1
+                activity.heartbeat(asdict(prior))
                 log.error("worker cannot serve its queue", extra={"fields": {"error": str(e)}})
                 if self.on_unserviceable is not None:
                     self.on_unserviceable(str(e))

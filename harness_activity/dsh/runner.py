@@ -91,6 +91,8 @@ LIMIT_EXIT_SECONDS = 2.0
 # Beyond the grace, how long the launcher may take to kill and remove an attempt
 # (its own kill wait is 5 s) before the stop counts as failed (review F100, F111).
 STOP_REPLY_MARGIN_SECONDS = 10.0
+# How long the pre-flight check waits for the launcher to connect and to report.
+CHECK_TIMEOUT_SECONDS = 10.0
 STEP_LIMIT_STOP = "step limit"
 # What a run stopped because a barrier could not thaw it ends as: the runtime was
 # frozen, so neither its exit nor its usage says anything about it (D6).
@@ -141,6 +143,11 @@ class LauncherUnhealthy(Unserviceable):
     """An earlier attempt on this worker's DSH container left processes or files
     behind. Retryable: this worker refuses attempts until it is restarted with a
     clean container, and another worker may take the turn (R10, review F71)."""
+
+
+class LauncherUnreachable(Unserviceable):
+    """The paired DSH container's launcher does not answer (stopped, restarting or
+    hung). Retryable, and not an attempt (review F133)."""
 
 
 @dataclass
@@ -269,11 +276,20 @@ class DshRunner:
         runtime and is clean. The Activity calls it before recording an attempt."""
         if self.unhealthy is not None:
             raise LauncherUnhealthy(self.unhealthy)
-        launcher = await LauncherClient.connect(self.control)
         try:
-            self._verify(await launcher.request("digests"))
+            launcher = await asyncio.wait_for(
+                LauncherClient.connect(self.control), CHECK_TIMEOUT_SECONDS
+            )
+        except (LauncherError, OSError, TimeoutError) as error:
+            # A container that is down or restarting cannot serve either (F133).
+            raise LauncherUnreachable(f"the DSH launcher is not answering: {error}") from error
+        try:
+            reply = await asyncio.wait_for(launcher.request("digests"), CHECK_TIMEOUT_SECONDS)
+        except (LauncherError, OSError, TimeoutError) as error:
+            raise LauncherUnreachable(f"the DSH launcher is not answering: {error}") from error
         finally:
             await launcher.close()
+        self._verify(reply)
 
     def _verify(self, reply: dict[str, Any]) -> None:
         if reply.get("dirty"):

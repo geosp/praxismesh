@@ -690,5 +690,28 @@ async def test_unserviceable_worker_refuses_without_using_an_attempt(
     assert outcome.status == "done" and outcome.attempts == 1
 
 
+async def test_unreachable_launcher_is_a_refusal_every_time(
+    engine: AsyncEngine, container: DshContainer, tmp_path: Path
+) -> None:
+    """R17, R10 (review F133): the paired container is down or restarting, so its
+    control socket does not answer. Each Temporal attempt is an uncounted refusal
+    that stops the worker, never a lost attempt, so the turn is never exhausted."""
+    h = await harness(engine, container)
+    gone = DshRunner(tmp_path / "missing.sock", MemoryLedgerStore(), h.blobs)
+    stopped: list[str] = []
+    h.acts.preflight, h.acts.on_unserviceable = gone.check, stopped.append
+    details: dict[str, Any] | None = None
+    for attempt in range(1, 8):  # more than MAX_REAL_ATTEMPTS
+        with pytest.raises(WorkerUnserviceable):
+            await h.env(attempt, details).run(h.acts.run_harness_turn, h.turn())
+        details = h.heartbeats[-1]
+    assert details is not None and details["refusals"] == 7 and len(stopped) == 7
+    found = await rows(
+        engine, "SELECT outcome, failure_category FROM task_attempts WHERE task_id = :t",
+        t=h.task_id,
+    )  # fmt: skip
+    assert [tuple(r) for r in found] == [("refused", "dsh_unserviceable")] * 7
+
+
 async def _no_op(usage: Usage) -> None:
     return None
