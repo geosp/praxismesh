@@ -379,6 +379,27 @@ async def test_attempt_on_an_unpinned_runtime_is_refused(container: DshContainer
     await scope.close()
 
 
+async def test_failed_final_freeze_is_a_retryable_checkpoint_failure(
+    container: DshContainer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R5, D6 (review F67): the runtime finished, but the attempt could not be
+    frozen, so something it started may still change the workspace. The run fails
+    retryably instead of returning a result the final checkpoint would capture."""
+    original = LauncherClient.request
+
+    async def no_freeze(self: LauncherClient, op: str, **fields: Any) -> dict[str, Any]:
+        if op == "freeze":
+            return {"ok": False}
+        return await original(self, op, **fields)
+
+    monkeypatch.setattr(LauncherClient, "request", no_freeze)
+    with FakeModel([SCRIPT[2]]) as fake:
+        monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
+        failure, _ = await run_one(container.runner(), 60, _no_op, f"task-final-freeze-{run_id()}")
+    assert (failure.category, failure.retryable) == ("DshCheckpointFailure", True)
+    assert container.attempt_cgroups() == []
+
+
 # A runtime that keeps running after the gateway denies its request: it sends two
 # model requests with the granted catalog, then waits, exiting only on SIGTERM.
 STUBBORN_DRIVER = """

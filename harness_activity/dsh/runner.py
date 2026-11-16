@@ -351,6 +351,7 @@ class DshRunner:
         error_type: str | None = None
         cancelled = False
         stuck_frozen = False
+        unfrozen = False
         try:
             async with AsyncExitStack() as stack:
                 await executor.start(stack)
@@ -442,6 +443,9 @@ class DshRunner:
                     # Nothing a command left behind may change the workspace now.
                     with contextlib.suppress(LauncherError):
                         attempt.frozen = bool((await attempt.launcher.request("freeze"))["ok"])
+                    # Without the freeze the final checkpoint could capture a torn
+                    # workspace: a failed barrier, retryable (D6, review F67).
+                    unfrozen = not attempt.frozen
         except (asyncio.CancelledError, Superseded):
             raise
         except Exception as error:
@@ -472,6 +476,8 @@ class DshRunner:
         )
         if failure is None and stop_reason == "aborted":
             failure = ("DshRuntimeFailure", True)
+        if failure is None and unfrozen:
+            failure = ("DshCheckpointFailure", True)
         if stuck_frozen and failure is not None and failure[0] in RETRYABLE_AFTER_FAILED_THAW:
             # D6: a failed barrier is a retryable infrastructure failure (review F60).
             failure = ("DshCheckpointFailure", True)
