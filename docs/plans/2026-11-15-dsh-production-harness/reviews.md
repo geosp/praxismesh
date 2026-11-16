@@ -349,3 +349,22 @@ Targeted follow-up (docs/reviews/README.md rule 6) on the decision changes from 
 | F146 | Nit | failure | A cancel during the step-limit stop leaves the row for `complete_task` instead of `cancelled` (R18). | accepted: narrow window; F98 and F134 keep the usage right |
 | F147 | Nit | failure | The refusal heartbeat is sent before `record_refusal`; a failed write leaves a counted refusal with no row. | fixed: record_refusal before the refusal heartbeat |
 | F148 | Nit | failure | Review metadata disagreed (impl passed, design changes-requested, Phases table); resolved by recording design review round 4. | fixed: design review round 4 recorded |
+
+## 2026-11-16 · impl-review · phase 02 · round 4 · passed
+
+- Targeted follow-up (docs/reviews/README.md rule 6) on 11bb0d6ced126c12f03ea7dade4b7d1381d0c99c..3239e2a436e0911cd6b71ca8cfbcf875853e1e95; one fresh `impl-reviewer` subagent (contract lens), run alone per the engineer's sequential-review direction. Raw report: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-02-round-4-contract.md.
+- Reviewer: Contract completed. No Blocker or Major; F132, F133, F134, F136, F137, F140, F143, F147 confirmed enforced.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F149 | Nit | contract | The template-version refusal still heartbeats before `record_refusal` (F147 on one path only). | fixed: the version refusal records its row before the heartbeat |
+| F150 | Nit | contract | A failed refusal write now counts the attempt and does not stop polling (F147 trade-off). | accepted: a failed refusal write counts the attempt; the trade-off keeps every subtracted refusal backed by a row |
+| F151 | Nit | contract | The F137 test passes on the old code; with the version gone the charge falls back to 32768 even if that version's window was larger. | fixed: with the version gone, the charge uses the larger of the default and the current window; the test fails on the old code and covers a missing name |
+| F152 | Nit | contract | `complete_task` counts ledger requests while the Activity counts logical steps (D11 unit). | accepted: requests equal logical steps unless DSH re-sends a body, which maxRetries 0 prevents (as F74) |
+| F153 | Nit | contract | The pre-flight can take 20 s without a heartbeat, past a short `heartbeat_timeout`. | accepted: local-dsh's heartbeat_timeout is 30 s; a shorter one with a hung launcher is a deployment error |
+| F154 | Nit | contract | The F133 test covers a missing socket only, not a hung or dropping launcher. | accepted: the timeout branches share the refusal path the missing-socket test covers |
+| F155 | Nit | contract | The F140 test does not observe the race it fixes. | accepted: the no-follow walk is structural; the race is not reproduced in a test |
+| F156 | Nit | contract | `list_files` changed for `openai_agents` too: a missing directory or a file path now errors, and a file deleted mid-walk raises. | accepted: errors are returned as tool text for both runners; recorded with F141 |
+| F157 | Nit | contract | Worker start-up messages for an unreachable launcher lost the template ref. | fixed: start-up errors name the template again |
+| F158 | Nit | contract | notes.md#d4 and phase 02 task 1.1 do not mention the IPC namespace, `/run` and `/dev/shm`. | fixed: notes.md#d4 and phase 02 task 1.1 name the IPC namespace, /run and /dev/shm |
+| F159 | Nit | contract | F134 is tested on the task-completion path only. | accepted: the same SQL is tested on the task-completion path |

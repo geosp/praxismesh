@@ -412,6 +412,13 @@ async def test_complete_task_survives_a_template_the_orchestrator_no_longer_has(
             instructions_ref=await acts.blobs.put(b"x", retention="task"),
         ),
     )
+    # Review F151: the orchestrator's current version has a larger window than the
+    # default; the charge for the task's lost version must not be smaller.
+    loaded = orchestrator.registry.templates["local-dsh"]
+    bigger = dataclasses.replace(
+        loaded, template=loaded.template.model_copy(update={"context_window": 65536})
+    )
+    orchestrator.registry.templates["local-dsh"] = bigger
     gone = resolved.model_copy(update={"template_hash": "sha256:" + "f" * 64})
     result = await ActivityEnvironment().run(
         orchestrator.complete_task,
@@ -420,4 +427,12 @@ async def test_complete_task_survives_a_template_the_orchestrator_no_longer_has(
             attempts=1, tokens_in=0, tokens_out=0, inner_turns=0,
         ),
     )  # fmt: skip
-    assert result.tokens_in == DEFAULT_CONTEXT_WINDOW and result.usage_known is False
+    assert result.tokens_in == 65536 > DEFAULT_CONTEXT_WINDOW and result.usage_known is False
+    del orchestrator.registry.templates["local-dsh"]  # the name gone too: no KeyError
+    await ActivityEnvironment().run(
+        orchestrator.complete_task,
+        CompleteTaskInput(
+            task_id=turn.task_id, status="failed", failure_reason="x", resolved=gone, turns=1,
+            attempts=1, tokens_in=0, tokens_out=0, inner_turns=0,
+        ),
+    )  # fmt: skip

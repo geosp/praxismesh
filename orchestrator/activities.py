@@ -47,15 +47,16 @@ class OrchestratorActivities:
         settled_in, settled_out, unknown, requests = await self.ledger.task_totals(payload.task_id)
         if not requests:
             return payload  # no ledger rows: openai_agents counts in the Activity
-        # The task's own template version; if this orchestrator no longer has it,
-        # the default window (F137).
+        # The task's own template version. If this orchestrator no longer has it,
+        # the larger of the default and the current version's window, so the
+        # charge stays conservative (F137, F151).
         loaded = self.registry.templates.get(payload.resolved.template)
-        window = (
-            loaded.template.context_window
-            if loaded is not None and loaded.hash == payload.resolved.template_hash
-            else None
-        )
-        charge_in, charge_out = unknown_charge(unknown, window or DEFAULT_CONTEXT_WINDOW)
+        current = (loaded.template.context_window if loaded is not None else None) or 0
+        if loaded is not None and loaded.hash == payload.resolved.template_hash and current:
+            window = current
+        else:
+            window = max(current, DEFAULT_CONTEXT_WINDOW)
+        charge_in, charge_out = unknown_charge(unknown, window)
         return payload.model_copy(
             update={
                 "tokens_in": max(payload.tokens_in, settled_in + charge_in),

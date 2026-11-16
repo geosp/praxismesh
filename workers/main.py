@@ -97,10 +97,8 @@ async def build_harness(
         dsh = DshRunner(control, UsageLedgerRepository(engine), blobs, pinned=pinned)
         try:
             await dsh.check()
-        except LauncherError as error:
+        except (LauncherError, Unserviceable) as error:
             raise CapabilityError(f"template {loaded.template.ref}: {error}") from error
-        except Unserviceable as error:
-            raise CapabilityError(str(error)) from error
         # The attempt trees live on the volume shared with the DSH container.
         return HarnessActivities(
             registry,

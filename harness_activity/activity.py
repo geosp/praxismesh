@@ -214,12 +214,13 @@ class HarnessActivities:
         prior = Progress.from_details(info.heartbeat_details[0] if info.heartbeat_details else {})
         loaded = self.registry.templates.get(turn.template)
         if loaded is None or loaded.hash != turn.template_hash:
+            # Not a real attempt, but newer than the ones before it (D10, review F27);
+            # the row first, so a refusal the next attempt subtracts exists (F149).
+            await self.attempts.record_refusal(turn.task_id, turn.turn, info.attempt, self.identity)
             # Retryable, and not counted as an attempt: the next attempt reads the
             # refusal count from this heartbeat (review F7).
             prior.refusals += 1
             activity.heartbeat(asdict(prior))
-            # Not a real attempt, but newer than the ones before it (D10, review F27).
-            await self.attempts.record_refusal(turn.task_id, turn.turn, info.attempt, self.identity)
             raise TemplateVersionUnavailable(
                 f"this worker runs {loaded.template.ref if loaded else 'no'} "
                 f"{turn.template}, not version {turn.template_version} of the task"

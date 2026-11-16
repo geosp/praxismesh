@@ -64,7 +64,8 @@ able to `setsid` (the separate UID and a seccomp profile enforce it).
 
 Commands run as UID 4242 with every capability dropped, `no_new_privs`, the seccomp
 filter blocking new user namespaces, and a private mount view that shows only their
-own workspace (as `/work`) and a per-attempt `/tmp` (impl-review F63). The image adds
+own workspace (as `/work`), a per-attempt `/tmp` (impl-review F63), private `/run` and
+`/dev/shm` (F102), and an IPC namespace of their own (F132). The image adds
 no packages beyond the granted `cli_tools` to its pinned base; the base's userland
 stays, and the command check reads only the first word, so the boundary is the UID,
 capabilities, seccomp and mount view, not the binary list (F89).
