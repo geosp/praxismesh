@@ -149,6 +149,7 @@ def test_closed_connection_kills_the_attempt(launcher: str) -> None:
     while attempt_state(launcher)[0] and time.monotonic() < until:
         time.sleep(0.2)
     assert attempt_state(launcher) == ("", False)
+    assert "task-1" not in docker("exec", launcher, "ls", "-A", "/attempts").stdout
     leftover = docker(
         "exec", launcher, "sh", "-c",
         "for c in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < $c; echo; done | grep -c '[s]leep 60'",

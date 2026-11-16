@@ -23,6 +23,7 @@ Standard library only, so the image needs no extra packages.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import json
 import os
@@ -263,8 +264,12 @@ def destroy(attempt: str) -> dict:
             cg.rmdir()
     else:
         left = 0
-    shutil.rmtree(ATTEMPTS / attempt, ignore_errors=True)
-    return {"processes_left": left, "tree_removed": not (ATTEMPTS / attempt).exists()}
+    tree = ATTEMPTS / attempt
+    shutil.rmtree(tree, ignore_errors=True)
+    for parent in (tree.parent, tree.parent.parent):
+        with contextlib.suppress(OSError):
+            parent.rmdir()
+    return {"processes_left": left, "tree_removed": not tree.exists()}
 
 
 def reap() -> list[str]:
