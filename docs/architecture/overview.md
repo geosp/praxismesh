@@ -121,7 +121,7 @@ Observed idle memory for the four long-running services (`docker stats`, sum of 
 
 ## DSH migration phase 01: harness seam and registry
 
-Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-production-harness/plan.md), phase 01. Production still runs only `openai_agents`; no DSH runner exists yet.
+Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-production-harness/plan.md), phase 01. As of phase 01 production ran only `openai_agents`; phase 02 (below) adds the DSH runner and supersedes the statements here about what phase 02 would add.
 
 ### Components
 
@@ -138,3 +138,32 @@ Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-pro
 - Unit: `uv run pytest` (registry, events, the conformance suite through a session store fixture).
 - Integration (Postgres, stack up): `uv run --env-file infra/.env pytest -m integration tests/integration/test_persistence_phase1.py tests/integration/test_harness_activity.py` (fence concurrency, refusal rows, Activity-level fencing, store contract).
 
+## DSH migration phase 02: DSH runner and worker pair
+
+Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-production-harness/plan.md), phase 02 (requirements R5-R18). `local-dsh` turns run on `DshRunner`; the `default` profile still runs `openai_agents` until phase 03.
+
+### Components
+
+| Component | Where | As built |
+|---|---|---|
+| Worker pair | `infra/docker-compose.yml` (Compose profile `dsh`: `dsh-a`, `worker-dsh-a`, volume `dsh-attempts-a`) | `dsh-a` has no network, a read-only root, no credentials, `cgroup: private`, `SYS_ADMIN` and `apparmor:unconfined`; `worker-dsh-a` serves `tpl.local-dsh` and reaches the launcher at `DSH_CONTROL` on the shared tmpfs volume. Start: `docker compose -p <project> --env-file infra/.env -f infra/docker-compose.yml --profile dsh up -d dsh-a worker-dsh-a`. |
+| Launcher | `infra/dsh/launcher.py` | Root in the DSH container. One control connection per attempt (newline JSON: `digests`, `open`, `start`, `exec`, `freeze`, `thaw`, `poll`, `stop`); a closed connection destroys the attempt. Each attempt gets a cgroup; its runtime (UID 1000) and commands (UID 4242, no capabilities, `no_new_privs`, seccomp blocking user namespaces) run in their own mount and IPC namespaces with private `/tmp`, `/run` and `/dev/shm`, seeing only their attempt. `stop` thaws, sends SIGTERM, kills the cgroup after the grace and removes the tree (`keep_tree` keeps it after a step-limit stop). Reaps leftovers at start; remembers attempts it could not clean (`dirty`, reported with `digests`). |
+| Runtime pin | `infra/dsh/pins.py`, `harness_activity/dsh/pins.py`, `registry/registry.lock` | The runtime digest covers the hash-pinned requirements and the launcher, driver, bridge and pins code; the launcher computes its report at start-up. The worker checks it at start and before every attempt (`DshRunner.check`). |
+| Runner | `harness_activity/dsh/runner.py` | Opens the attempt tree (`workspace`, `home`, `ipc`, `config`, `tmp`), starts the DSH driver through the launcher, polls it and stops it at the deadline, on cancel, on abort, or 2 s after a step-limit denial. Classifies the end (`harness_activity/dsh/policy.py`) into a result or a `RunnerFailure`. Refuses attempts (`Unserviceable`) when the pin differs or the container is dirty or unreachable. |
+| Gateway and ledger | `harness_activity/dsh/gateway.py`, `ledger.py`; `usage_ledger` table | A Unix-socket HTTP gateway in the attempt tree. Checks the attempt key, model and exact tool catalog; runs the barrier before every request after the first; writes a fenced `usage_ledger` row before dispatch and settles it with the response's usage; caps `max_tokens` at 2048; emits `token` events. |
+| Barrier | `harness_activity/dsh/barrier.py` | Before a request: the newest tool-call ID must be in the session files; freeze, capture workspace and session blobs, commit through the fence, thaw. |
+| Executor and tools | `harness_activity/dsh/executor.py`, `harness_activity/tools.py`, `infra/dsh/mcp_bridge.py` | The worker runs the granted file, shop and MCP tool bodies for DSH's MCP client; `run_command` runs in the attempt cgroup through the launcher. File tools never follow a symbolic link. Emits `tool_call`/`tool_result` events. |
+| Session store | `harness_activity/dsh/session.py` | The DSH home is a separate session blob (`session_ref`, `session_digest` on `checkpoints`); a restore replaces the whole home; `session_position` stays 0. |
+| Usage accounting | `harness_activity/activity.py`, `common/persistence/repositories.py`, `orchestrator/activities.py` | Turn usage is cumulative over attempts and rebuilt from the ledger. Each unsettled request is charged `context_window` + 2048 and makes usage unknown (`usage_known = false`), when the next attempt opens, when the turn fails or is cancelled, and in `complete_task`. Attempt rows never read 0 for unobserved usage (NULL instead). |
+| Worker start | `workers/main.py` | Chooses the runner from `template.harness`. A DSH worker that cannot serve (pin, dirty or unreachable container) refuses at start (exit 1, `CapabilityError`) or, during a turn, records an uncounted `refused` row and shuts down (exit 3). |
+| Workflow | `orchestrator/workflow.py` | A cancelled turn waits for its Activity to record the attempt (`WAIT_CANCELLATION_COMPLETED`); a turn that fails for good keeps `usage_known`. |
+
+### Tests
+
+- Unit: `uv run pytest`.
+- Integration (stack up, Docker, `infra/.env`): `uv run --env-file infra/.env pytest -m integration tests/integration/test_dsh_launcher.py tests/integration/test_dsh_activity.py tests/integration/test_dsh_usage.py tests/integration/test_dsh_capabilities.py tests/integration/test_dsh_outcomes.py`, and `tests/test_runner_conformance.py` with `-m integration` for the `dsh` runner. They build the DSH image and start their own DSH containers; the model is the deterministic fake.
+
+### Known limits
+
+- `default` still runs `openai_agents`; the switch, the `openai` profile and the second DSH pair are phase 03.
+- Deferred review items (plan notes.md#rollout): an `unresolved usage` denial starts no exit timer; a stale attempt's usage charge is unfenced; launcher `poll` replies have no timeout.
