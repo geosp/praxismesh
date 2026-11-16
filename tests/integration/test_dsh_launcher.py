@@ -87,7 +87,8 @@ def start_launcher(image: str, tmp_path: Path, *extra: str) -> str:
     name = f"dsh-launcher-test-{uuid.uuid4().hex[:8]}"
     docker(
         "run", "-d", "--rm", "--name", name, "--network", "none", "--read-only",
-        "--cgroupns=private", "--cap-add=SYS_ADMIN", "--security-opt", "no-new-privileges",
+        "--cgroupns=private", "--cap-add=SYS_ADMIN",
+        "--security-opt", "no-new-privileges", "--security-opt", "apparmor=unconfined",
         "--tmpfs", "/tmp", "--tmpfs", "/work", "--tmpfs", "/run",
         "--tmpfs", "/attempts:mode=1770,gid=4243",
         "-v", f"{tmp_path / 'client.py'}:/opt/dsh/client.py:ro,z", *extra, image,

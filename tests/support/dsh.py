@@ -174,7 +174,8 @@ def start_container(image: str) -> DshContainer:
     name = f"dsh-test-{uuid.uuid4().hex[:8]}"
     docker(
         "run", "-d", "--name", name, "--network", "none", "--read-only",
-        "--cgroupns=private", "--cap-add=SYS_ADMIN", "--security-opt", "no-new-privileges",
+        "--cgroupns=private", "--cap-add=SYS_ADMIN",
+        "--security-opt", "no-new-privileges", "--security-opt", "apparmor=unconfined",
         "--tmpfs", "/tmp", "--tmpfs", "/work", "--tmpfs", "/run",
         "-v", f"{attempts}:/attempts",
         "-e", f"DSH_WORKER_UID={os.getuid()}", "-e", f"DSH_SHARED_GID={os.getgid()}",

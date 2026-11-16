@@ -190,7 +190,7 @@ services:
     read_only: true
     cgroup: private
     cap_add: [SYS_ADMIN]
-    security_opt: ["no-new-privileges:true"]
+    security_opt: ["no-new-privileges:true", "apparmor:unconfined"]
     tmpfs: [/tmp, /work, /run]
     volumes: ["dsh-attempts-a:/attempts"]
     environment: { DSH_WORKER_UID: "10001", DSH_SHARED_GID: "4243" }

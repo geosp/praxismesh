@@ -25,7 +25,9 @@ expected behaviour for each ported case.
 | Docker-in-Docker | privileged container | privileged |
 
 Compose settings the pair needs: `cgroupns: private`, `cap_add: [SYS_ADMIN]` (for the
-launcher only), `no-new-privileges`, a tmpfs-backed attempt volume,
+launcher only), `no-new-privileges`, `apparmor:unconfined` (so AppArmor on Ubuntu hosts
+does not block the launcher's cgroupfs remount and private mount namespace; commands drop
+all capabilities and get the seccomp filter), a tmpfs-backed attempt volume,
 `network_mode: none` and a read-only root for the DSH container.
 
 ### Probe result (phase 01 task 0.1, 2026-11-15)

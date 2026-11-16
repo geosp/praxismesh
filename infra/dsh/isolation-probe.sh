@@ -4,6 +4,7 @@
 # Prints one JSON line per check. Run it as recorded in notes.md#d3:
 #   docker run --rm --network none --read-only --tmpfs /tmp --tmpfs /mnt \
 #     --cgroupns=private --cap-add=SYS_ADMIN --security-opt no-new-privileges \
+#     --security-opt apparmor=unconfined \
 #     -v "$PWD/infra/dsh/isolation-probe.sh:/probe.sh:ro" <pinned python image> sh /probe.sh
 set -u
 report() { printf '{"check":"%s","ok":%s,"detail":"%s"}\n' "$1" "$2" "$3"; }
