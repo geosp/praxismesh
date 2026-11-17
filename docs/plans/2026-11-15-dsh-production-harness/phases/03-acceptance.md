@@ -23,7 +23,7 @@ still selectable through its own profile.
 ### 1. Acceptance
 
 - [x] 1.1 Add `--profile` to `tests/benchmarks/run.py`: take the template from the profile instead of `TEMPLATE`, label the harness and name the results by profile, and for a `dsh` profile start a paired DSH container (a non-pytest helper shared with `tests/support/dsh.py`) and point `DSH_CONTROL` at it (D5). Verify: a one-task smoke run per profile, written outside `docs/benchmarks/` and not judged against the baseline, completes; its file name and `harness` label follow the profile.
-- [ ] 1.2 Run `make benchmark` on `dsh` and on `default` the same day (R19, R4). Verify: each fails at most one task; both results are recorded under `docs/benchmarks/`.
+- [x] 1.2 Run `make benchmark` on `dsh` and on `default` the same day (R19, R4). Verify: each fails at most one task; both results are recorded under `docs/benchmarks/`.
 - [x] 1.3 Record the licence notices of every distribution in `infra/dsh/requirements.txt` under `docs/licences/dsh/`, with a check in CI that each pinned distribution has one (R20). Verify: the check passes, and fails when a notice is removed.
 
 ### 2. Switch
