@@ -2,10 +2,10 @@
 title: Run production agents on DSH
 status: in-progress
 created: 2026-11-15
-updated: 2026-11-16
+updated: 2026-11-17
 design_review: { status: passed, rounds: 5, last: 2026-11-16 }
 approved: 2026-11-15
-adr_review: pending
+adr_review: null
 ---
 
 # Run production agents on DSH
@@ -230,7 +230,7 @@ A profile switch or its revert is an edit, `make registry-lock`, a worker image 
 | --- | --- | --- | --- |
 | 01 | [Harness seam and registry](phases/01-harness-seam.md) | done | 6/6 |
 | 02 | [DSH runner and worker pair](phases/02-dsh-runner.md) | done | 8/8 |
-| 03 | [Acceptance and default switch](phases/03-acceptance.md) | approved | 0/5 |
+| 03 | [Acceptance and default switch](phases/03-acceptance.md) | in-progress | 0/5 |
 
 ## Decision log
 

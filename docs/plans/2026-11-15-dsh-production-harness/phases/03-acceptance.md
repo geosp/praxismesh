@@ -1,9 +1,9 @@
 ---
 phase: 3
 title: Acceptance and default switch
-status: approved
-branch: null
-base: null
+status: in-progress
+branch: feat/62-dsh-acceptance
+base: 285dd44034aef6c2bd4e40d6ae14811e546b7048
 delivers: [R4, R19, R20]
 design_review: { status: passed, rounds: 4, last: 2026-11-16 }
 impl_review: { status: none, rounds: 0, last: null }
