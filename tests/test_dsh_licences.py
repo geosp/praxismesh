@@ -54,3 +54,32 @@ def test_pins_are_normalised() -> None:
     names = licences.pinned()
     assert any(n.startswith("pydantic-core-") for n in names)  # pinned as pydantic-core
     assert all(n == n.lower() and "_" not in n.rsplit("-", 1)[0] for n in names)
+
+
+def test_a_pin_not_written_name_equals_version_fails(tmp_path: Path) -> None:
+    """F179: a requirement the check cannot read is an error, not skipped."""
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text(
+        "pydantic==2.14.3 \\\n    --hash=sha256:aa\n    # via x\nother @ https://example.invalid/o.whl\n"
+    )
+    errors = licences.check(requirements, tmp_path / "notices")
+    assert any("other @ https" in e and "not a name==version pin" in e for e in errors)
+
+
+def test_export_keeps_notices_when_a_pin_has_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F190: export writes nothing unless every pin has licence files."""
+    site = tmp_path / "site"
+    (site / "pydantic-2.14.3.dist-info" / "licenses").mkdir(parents=True)
+    (site / "pydantic-2.14.3.dist-info" / "licenses" / "LICENSE").write_text("MIT")
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text("pydantic==2.14.3\nannotated-types==0.8.0\n")
+    notices = tmp_path / "notices"
+    (notices / "kept").mkdir(parents=True)
+    with pytest.raises(SystemExit, match=r"annotated-types-0\.8\.0"):
+        licences.replace_notices(site, requirements, notices)
+    assert [p.name for p in notices.iterdir()] == ["kept"]
+    requirements.write_text("pydantic==2.14.3\n")
+    licences.replace_notices(site, requirements, notices)
+    assert [p.name for p in notices.iterdir()] == ["pydantic-2.14.3"]

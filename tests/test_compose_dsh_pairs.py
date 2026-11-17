@@ -32,3 +32,13 @@ def test_each_dsh_pair_has_its_own_attempt_volume() -> None:
         others = [n for n, s in found.items() if n not in (dsh, f"worker-{dsh}")]
         assert not [n for n in others if volume in mounts(found[n])]
         assert found[dsh]["network_mode"] == "none" and found[dsh]["read_only"] is True
+
+
+def test_dsh_pairs_share_their_isolation_settings() -> None:
+    """F181: the second pair keeps the first pair's container settings (D3)."""
+    found = services()
+    keys = ("network_mode", "read_only", "cgroup", "cap_add", "security_opt", "tmpfs")
+    assert {k: found["dsh-a"].get(k) for k in keys} == {k: found["dsh-b"].get(k) for k in keys}
+    assert found["dsh-a"]["environment"] == found["dsh-b"]["environment"]
+    for worker in ("worker-dsh-a", "worker-dsh-b"):
+        assert found[worker]["group_add"] == ["4243"]

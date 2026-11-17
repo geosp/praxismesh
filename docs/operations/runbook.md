@@ -19,8 +19,9 @@ a running task to another harness.
 
 Each DSH pair is a worker and its DSH container sharing one attempt volume
 (`dsh-attempts-a`, `dsh-attempts-b`), which no other service mounts. A pair
-runs one attempt at a time. DSH tasks take about 1.9x the wall time of
-`openai_agents`, so `default` needs both pairs.
+runs one attempt at a time. DSH tasks took about 1.3x the wall time and input
+tokens of `openai_agents` in the same-day benchmarks of 2026-11-17, so `default`
+keeps two pairs, as it had two `openai_agents` workers.
 
 ## Deploy
 
@@ -52,15 +53,28 @@ deploy older code.
 A profile switch is a registry edit, not a code change. The same steps switch
 to DSH and revert to `openai_agents`.
 
-1. **Pause submissions.** A profile resolves twice: when the task is submitted
-   (from the submitter's checkout) and again in the orchestrator. Both must
-   have the new registry before a task is submitted on `default`.
+1. **Pause submissions, then let the last ones start.** A profile resolves
+   twice: when the task is submitted (from the submitter's checkout) and again
+   in the orchestrator, when the workflow starts. Both must have the new
+   registry before a task is submitted on `default`. A task submitted just
+   before the pause but not yet resolved by the orchestrator fails for good if
+   the new registry rejects its template, so wait until every recent task shows
+   its first attempt (`make task-status ID=...`) before step 4.
 2. **Edit** `registry/profiles/default.yaml`:
 
    | Target | `harness` | `allowed_templates` |
    | --- | --- | --- |
    | DSH (current) | `dsh` | `[local-dsh]` |
    | `openai_agents` (revert) | `openai_agents` | `[local-default]` |
+
+   In the same pull request (changes reach `main` only through one), update
+   what states which harness `default` runs on:
+   - `tests/test_registry.py::test_default_profile_runs_on_dsh`, which pins
+     the switch; CI fails until it matches;
+   - the header comment of `registry/profiles/default.yaml`;
+   - the profile table at the top of this runbook and the "Profiles" row in
+     `docs/architecture/overview.md`;
+   - a line in `docs/roadmap/decision-log.md` with the reason.
 
 3. **Lock:** `make registry-lock`. The lock records template hashes only, so a
    profile edit leaves it unchanged; it matters if a template changed too. CI
@@ -86,7 +100,8 @@ result reports `usage_known: false` (plan D9).
 A task's workflow checks its deadline only before a turn, so a task can run for
 its profile's wall time plus one last turn's `schedule_to_close`
 (6 × `turn_timeout`). For `local-dsh` today that is 30 min + 60 min = **90
-minutes** after the last task was submitted on it.
+minutes**, counted from the task's first turn; add the few seconds its first two
+Activities take after submission.
 
 Before stopping a harness's workers, check that no task resolved to its
 template is still open, in the Temporal UI or with `make task-status ID=...`.
@@ -114,12 +129,16 @@ Causes and fixes:
   files than the lock pins. Rebuild with `make workers-up` from the same commit
   as the registry, or relock after an intended DSH upgrade.
 - **Dirty container**: leftover attempt processes, cgroups or attempt trees.
-  Restart the DSH container (`dsh-a` or `dsh-b`); its attempt volume is tmpfs,
-  so nothing survives the restart.
+  Restart the DSH container (`dsh-a` or `dsh-b`). Its launcher removes leftover
+  attempt trees, cgroups and processes when it starts. (The attempt volume is
+  tmpfs, but restarting only the DSH container does not clear it, because its
+  worker keeps it mounted.)
 - **Unreachable launcher**: the DSH container is down or still starting. Start
   it; its worker recovers on the next restart.
 
-A refusing pair takes no tasks, so the other pair carries the load. With both
+A refusing pair takes no tasks, so the other pair carries the load. (`dsh-b`
+depends on `dsh-a` only so that Compose builds the shared image first; a
+running `dsh-b` does not need `dsh-a`.) With both
 refusing, `default` and `dsh` tasks wait on the queue until a pair recovers or
 `default` is switched back.
 

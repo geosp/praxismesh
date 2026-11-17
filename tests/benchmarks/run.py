@@ -4,15 +4,19 @@ model and record the results (plan §8 benchmark rule; spec quality/agent-benchm
     make benchmark                          # needs VLLM_BASE_URL in infra/.env
     make benchmark ARGS="--profile dsh"     # another profile (default: default)
     make benchmark ARGS="--baseline"        # record this run as the baseline
-    make benchmark ARGS="--only fizzbuzz --out /tmp/smoke"   # a smoke run
+    make benchmark ARGS="--only t01-order-total --out /tmp/smoke"   # a smoke run
 
 The template is the profile's first allowed template. A `dsh` template gets a
 paired DSH container of its own, started here (DSH migration plan D5). Each
 task's final workspace is read from its last checkpoint snapshot and checked
-deterministically. Results go to docs/benchmarks/<date>-<profile>.md and .json;
-a run written elsewhere (--out) is not judged against the baseline. A run that
+deterministically. Results go to docs/benchmarks/<date>-<profile>.md and .json,
+rewritten as each task finishes; a run written elsewhere (--out) is not judged
+against the baseline. A subset (--only) must be written elsewhere. A run that
 passes 2 or more fewer tasks than the baseline exceeds the regression limit
-(owner decision, 2026-11-11: at most 1 task lost out of 10).
+(owner decision, 2026-11-11: at most 1 task lost out of 10). The baseline is
+recorded from an openai_agents profile only. If the worker stops serving (a DSH
+worker refusing its queue), the run stops, unjudged, instead of each remaining
+task waiting out its turn timeout.
 """
 
 from __future__ import annotations
@@ -47,6 +51,7 @@ from registry.loader import LoadedTemplate, load_registry
 from tests.benchmarks.agent_tasks.tasks import TASKS, Task, setup
 from tests.support.dsh_container import build_image, start_container
 from tests.support.workers import running_workers
+from workers import main as worker_main
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "docs" / "benchmarks"
@@ -60,6 +65,27 @@ def profile_template(profile: str) -> LoadedTemplate:
     return load_registry().resolve(profile)[1]
 
 
+class WorkerStopped(Exception):
+    """The template worker stopped polling its queue (workers.main.UNSERVICEABLE)."""
+
+
+async def await_result(handle: Any, poll: float = 1.0) -> Any:
+    """The Workflow's result; if the worker stops serving first, terminate the
+    Workflow and raise `WorkerStopped` (impl review F170)."""
+    waiting = asyncio.ensure_future(handle.result())
+    try:
+        while True:
+            done, _ = await asyncio.wait({waiting}, timeout=poll)
+            if done:
+                return waiting.result()
+            if worker_main.UNSERVICEABLE:
+                reason = worker_main.UNSERVICEABLE[-1]
+                await handle.terminate(f"benchmark worker stopped serving: {reason}")
+                raise WorkerStopped(reason)
+    finally:
+        waiting.cancel()
+
+
 @contextmanager
 def paired_dsh(loaded: LoadedTemplate) -> Iterator[None]:
     """For a `dsh` template, a DSH container for the in-process worker to pair
@@ -69,11 +95,15 @@ def paired_dsh(loaded: LoadedTemplate) -> Iterator[None]:
         return
     print("building and starting a DSH container", flush=True)
     container = start_container(build_image())
+    earlier = os.environ.get("DSH_CONTROL")
     os.environ["DSH_CONTROL"] = str(container.control)
     try:
         yield
     finally:
-        os.environ.pop("DSH_CONTROL", None)
+        if earlier is None:
+            os.environ.pop("DSH_CONTROL", None)
+        else:
+            os.environ["DSH_CONTROL"] = earlier
         container.stop()
 
 
@@ -111,8 +141,11 @@ async def run_one(task: Task, client: Any, scratch: Path, profile: str) -> dict[
     status: str
     reason: str | None
     try:
-        result = TaskResult.model_validate(await handle.result())
+        result = TaskResult.model_validate(await await_result(handle))
         status, reason = result.status, result.failure_reason
+    except WorkerStopped:
+        await engine.dispose()
+        raise
     except Exception as e:  # a failed Workflow still has checkpoints to check
         result, status, reason = None, "error", f"{type(e).__name__}: {e}"[:300]
     seconds = round(time.monotonic() - began, 1)
@@ -144,6 +177,7 @@ async def run_one(task: Task, client: Any, scratch: Path, profile: str) -> dict[
         "tool_calls": int(tool_calls),
         "tokens_in": result.tokens_in if result else None,
         "tokens_out": result.tokens_out if result else None,
+        "usage_known": result.usage_known if result else None,
         "seconds": seconds,
     }
 
@@ -174,14 +208,15 @@ def markdown(env: dict[str, Any], rows: list[dict[str, Any]], verdict: str) -> s
         "| Model endpoint | the DGX Spark endpoint (vLLM) |",
         "",
         "| Task | Result | Check | Turns | Inner turns | Attempts | Tool calls | Tokens in "
-        "| Tokens out | Seconds |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| Tokens out | Usage known | Seconds |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         lines.append(
             f"| {r['task']} | {'pass' if r['passed'] else 'FAIL'} | {r['check']} | {r['turns']} "
             f"| {r.get('inner_turns')} | {r['attempts']} | {r['tool_calls']} "
-            f"| {r['tokens_in']} | {r['tokens_out']} | {r['seconds']} |"
+            f"| {r['tokens_in']} | {r['tokens_out']} | {r.get('usage_known')} "
+            f"| {r['seconds']} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -200,6 +235,18 @@ def verdict_for(passed: int, make_baseline: bool, judged: bool = True) -> str:
     return f"Within the regression limit (baseline {base})."
 
 
+def write_results(out: Path, env: dict[str, Any], rows: list[dict[str, Any]], verdict: str) -> Path:
+    """Write the results files; return their path without suffix."""
+    out.mkdir(parents=True, exist_ok=True)
+    stem = out / f"{env['date']}-{env['profile']}"
+    passed = sum(r["passed"] for r in rows)
+    stem.with_suffix(".md").write_text(markdown(env, rows, verdict))
+    stem.with_suffix(".json").write_text(
+        json.dumps({**env, "passed": passed, "rows": rows}, indent=2) + "\n"
+    )
+    return stem
+
+
 async def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="benchmark")
     parser.add_argument("--baseline", action="store_true", help="record as the baseline")
@@ -212,19 +259,38 @@ async def main(argv: list[str]) -> int:
     judged = args.out.resolve() == OUT.resolve()
     if args.baseline and not judged:
         parser.error("--baseline records into docs/benchmarks; drop --out")
+    unknown = sorted(set(args.only or []) - {t.id for t in TASKS})
+    if unknown:
+        parser.error(f"unknown task IDs: {', '.join(unknown)}")
+    if args.only and judged:
+        parser.error("--only runs a subset, which is never judged: write it elsewhere with --out")
     loaded = profile_template(args.profile)
+    if args.baseline and loaded.template.harness != "openai_agents":
+        parser.error(
+            f"--baseline: the baseline is an openai_agents run; profile {args.profile!r} "
+            f"runs {loaded.template.harness}"
+        )
     if not os.environ.get("VLLM_BASE_URL"):
         print("error: VLLM_BASE_URL is not set; the benchmark needs a real model", file=sys.stderr)
         return 2
     tasks = [t for t in TASKS if not args.only or t.id in args.only]
-    rows = []
+    env = environment(args.profile, loaded)
+    rows: list[dict[str, Any]] = []
+    stopped: str | None = None
     with tempfile.TemporaryDirectory() as tmp:
         scratch = Path(tmp)
         with paired_dsh(loaded):
             async with running_workers(scratch / "workers", loaded.template.name) as client:
                 for task in tasks:
-                    row = await run_one(task, client, scratch, args.profile)
+                    try:
+                        row = await run_one(task, client, scratch, args.profile)
+                    except WorkerStopped as e:
+                        stopped = str(e)
+                        break
                     rows.append(row)
+                    write_results(
+                        args.out, env, rows, f"Incomplete: {len(rows)} of {len(tasks)} tasks."
+                    )
                     mark = "pass" if row["passed"] else "FAIL"
                     print(
                         f"{row['task']:20} {mark}  turns={row['turns']} "
@@ -232,15 +298,17 @@ async def main(argv: list[str]) -> int:
                         f"in={row['tokens_in']} {row['seconds']}s  {row['check']}",
                         flush=True,
                     )
-    env = environment(args.profile, loaded)
     passed = sum(r["passed"] for r in rows)
+    if stopped is not None:
+        verdict = (
+            f"**Not judged:** the worker stopped serving after {len(rows)} of {len(tasks)} "
+            f"tasks ({stopped})."
+        )
+        write_results(args.out, env, rows, verdict)
+        print(verdict, file=sys.stderr)
+        return 1
     verdict = verdict_for(passed, args.baseline, judged)
-    args.out.mkdir(parents=True, exist_ok=True)
-    stem = args.out / f"{env['date']}-{args.profile}"
-    stem.with_suffix(".md").write_text(markdown(env, rows, verdict))
-    stem.with_suffix(".json").write_text(
-        json.dumps({**env, "passed": passed, "rows": rows}, indent=2) + "\n"
-    )
+    stem = write_results(args.out, env, rows, verdict)
     if args.baseline:
         BASELINE.write_text(
             json.dumps(

@@ -179,13 +179,14 @@ Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-pro
 |---|---|---|
 | Profiles | `registry/profiles/` | `default` and `dsh` resolve to `local-dsh` (`harness: dsh`); `openai` resolves to `local-default` (`harness: openai_agents`). The registry lock pins templates only, so a profile switch leaves it unchanged. |
 | Worker pairs | `infra/docker-compose.yml` (Compose profile `dsh`) | Two pairs, `dsh-a`/`worker-dsh-a` and `dsh-b`/`worker-dsh-b`, each with its own attempt volume (`dsh-attempts-a`, `dsh-attempts-b`) that no other service mounts. `make workers-up` builds and starts the orchestrator, `worker-a`, `worker-b` and both pairs; `make workers-check` submits on `openai` against the fake model. |
-| Benchmark | `tests/benchmarks/run.py`, `tests/support/dsh_container.py` | `--profile` (default `default`) takes the template from the profile; for a `dsh` template it builds the DSH image and starts its own paired container. Results go to `docs/benchmarks/<date>-<profile>.{md,json}`; `--out` writes elsewhere and is not judged against the baseline. Same-day results (2026-11-17): `dsh` and `default` (then `openai_agents`) each passed 10 of 10. |
+| Benchmark | `tests/benchmarks/run.py`, `tests/support/dsh_container.py` | `--profile` (default `default`) takes the template from the profile; for a `dsh` template it builds the DSH image and starts its own paired container. Results go to `docs/benchmarks/<date>-<profile>.{md,json}`, rewritten as each task finishes; `--out` writes elsewhere and is not judged against the baseline. An unknown `--only` ID is refused, and a subset must use `--out`; `--baseline` takes an `openai_agents` profile only. If the worker stops serving, the run terminates the waiting task and stops, unjudged. Containers it starts carry the label `praxismesh.dsh-test`. Same-day results (2026-11-17, [demo record](../demos/general-dsh-production-harness-03.md)): `dsh` and `default` (then `openai_agents`) each passed 10 of 10. |
 | Licence notices | `docs/licences/dsh/`, `.github/scripts/check_dsh_licences.py` | The licence files of each distribution pinned in `infra/dsh/requirements.txt`. The CI `lint` job fails on a pin with no notices, an empty notice directory, or notices for a distribution no longer pinned; `export` refreshes them from the DSH image. The offline link check skips `docs/licences`. |
 
 ### Tests
 
 - Unit: `uv run pytest` (profiles, the Compose pairs, the benchmark report, the licence check).
 - Benchmark (real model, Docker): `make benchmark ARGS="--profile dsh"` and `make benchmark ARGS="--profile openai"`.
+- `make demo-worker-loss` submits on `openai` (override with `PROFILE=`), so the Phase 1 demo still exercises `openai_agents`.
 
 ### Known limits
 

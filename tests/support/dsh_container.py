@@ -30,6 +30,9 @@ ROOT = Path(__file__).resolve().parents[2]
 # Never the caller's own UID: as in Compose, the worker reaches the runtime's files
 # only through the shared group.
 RUNTIME_UID = 4241 if os.getuid() != 4241 else 4240
+# Every container started here carries this label, so one left by a killed run
+# can be found: `docker ps -a --filter label=praxismesh.dsh-test`.
+LABEL = "praxismesh.dsh-test"
 
 
 # Every alive (non-zombie) process in the container that is not root's: the
@@ -159,13 +162,9 @@ class DshContainer:
         shutil.rmtree(self.attempts, ignore_errors=True)
 
 
-def start_container(image: str) -> DshContainer:
-    # A short path: Unix socket addresses are limited to about 100 bytes.
-    attempts = Path(tempfile.mkdtemp(prefix="dsh-", dir="/tmp"))
-    attempts.chmod(0o770)
-    name = f"dsh-test-{uuid.uuid4().hex[:8]}"
+def start(image: str, name: str, attempts: Path) -> None:
     docker(
-        "run", "-d", "--name", name, "--network", "none", "--read-only",
+        "run", "-d", "--label", LABEL, "--name", name, "--network", "none", "--read-only",
         "--cgroupns=private", "--cap-add=SYS_ADMIN",
         "--security-opt", "no-new-privileges", "--security-opt", "apparmor=unconfined",
         "--tmpfs", "/tmp", "--tmpfs", "/work", "--tmpfs", "/run",
@@ -174,6 +173,18 @@ def start_container(image: str) -> DshContainer:
         "-e", f"DSH_RUNTIME_UID={RUNTIME_UID}",
         image,
     )  # fmt: skip
+
+
+def start_container(image: str) -> DshContainer:
+    # A short path: Unix socket addresses are limited to about 100 bytes.
+    attempts = Path(tempfile.mkdtemp(prefix="dsh-", dir="/tmp"))
+    attempts.chmod(0o770)
+    name = f"dsh-test-{uuid.uuid4().hex[:8]}"
+    try:
+        start(image, name, attempts)
+    except BaseException:
+        shutil.rmtree(attempts, ignore_errors=True)
+        raise
     container = DshContainer(name, attempts)
     until = time.monotonic() + 30
     while not container.control.exists():
