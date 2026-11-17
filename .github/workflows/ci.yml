@@ -49,6 +49,8 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      # Each pinned DSH distribution has its licence notices (DSH migration plan R20).
+      - run: uv run .github/scripts/check_dsh_licences.py
 
   workflows:
     runs-on: ubuntu-latest
@@ -225,13 +227,15 @@ jobs:
       # Offline: internal links and anchors only, so external sites never block
       # a merge. External URLs are checked weekly (links-weekly.yml).
       # .claude/skills is a symlink to .agents/skills; checking it twice would
-      # resolve relative links from the wrong directory.
+      # resolve relative links from the wrong directory. docs/licences holds upstream
+      # notices verbatim, whose relative links point into their own repositories.
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           fail: true
           args: >-
             --offline --no-progress --include-fragments --hidden
             --exclude-path '\.claude/skills' --exclude-path '\.git/' --exclude-path '\.venv'
+            --exclude-path 'docs/licences'
             './**/*.md'
       # Canary: the same offline check must reject a broken internal link.
       - name: Write canary

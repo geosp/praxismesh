@@ -47,6 +47,7 @@ uv run mypy
 uv run pytest
 uv run .agents/sync_agents.py --check
 uv run .github/scripts/check_plans.py
+uv run .github/scripts/check_dsh_licences.py
 ```
 
 Before a phase's first review round, run the integration suite once from a clean worktree whose `infra/.env` comes from `infra/.env.example` (an informal `verify-phase`): it catches what only your own environment makes pass. During reviews, run the targeted tests for each fix and one full integration run per review commit.
