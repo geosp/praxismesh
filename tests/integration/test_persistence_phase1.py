@@ -53,7 +53,7 @@ def task_start() -> TaskStart:
     return TaskStart(
         task_id=f"task-test-{run_id()}",
         request_id="req-1",
-        profile="default",
+        profile="openai",
         template="local-default",
         instructions_ref=blob_ref(),
     )

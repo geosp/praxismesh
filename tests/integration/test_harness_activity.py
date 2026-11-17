@@ -155,7 +155,7 @@ async def harness(
     start = TaskStart(
         task_id=task_id,
         request_id="req-1",
-        profile="default",
+        profile="openai",
         template="local-default",
         instructions_ref=instructions,
         input_refs={"input.txt": data},
@@ -444,7 +444,7 @@ async def test_complete_task_closes_rows_left_open(engine: AsyncEngine, tmp_path
         TaskStart(
             task_id=h.task_id,
             request_id="req-1",
-            profile="default",
+            profile="openai",
             template="local-default",
             instructions_ref=(await h.blobs.put(b"x", retention="task")),
         ),
@@ -557,7 +557,7 @@ async def test_log_lines_carry_request_and_task_ids(
         TaskStart(
             task_id=h.task_id,
             request_id="req-activity-test",
-            profile="default",
+            profile="openai",
             template="local-default",
             instructions_ref=(await h.blobs.put(b"y", retention="task")),
         ),
