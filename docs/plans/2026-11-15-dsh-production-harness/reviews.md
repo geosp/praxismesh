@@ -393,3 +393,45 @@ docs/demos/general-dsh-production-harness-02.md; raw reports under that review f
 
 Shared done gate passed; all eight tasks checked; design review passed (5 rounds), impl review
 passed (4 rounds), verification and demo passed (code 86cfec8, docs 7b06ce6).
+
+## 2026-11-17 · impl-review · phase 03 · round 1 · changes-requested
+
+- Diff 285dd44034aef6c2bd4e40d6ae14811e546b7048..89ac455cf1474db179b04ff1b090b0447921fe4a (code_sha 89ac455). Three fresh `impl-reviewer` subagents, run one at a time; each report committed before the next. Raw reports: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-03-round-1-{contract,failure,scope}.md.
+- Before the round: unit and integration suites from a clean worktree with `infra/.env.example` (276 unit, 174 integration passed; 4 skipped, all `test_model_endpoints.py` for the unset `VLLM_BASE_URL`).
+- Reviewers: contract ✅ · failure ✅ · scope ✅
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F166 | Major | contract, failure, scope | Tasks 1.1, 2.1, 2.2 ticked with no recorded verification (smoke runs, a `default` task on DSH, each pair serving, the revert walkthrough). | open |
+| F167 | Major | contract, scope | D5 owner approval of the switch and its cost is not recorded in a decision log. | open |
+| F168 | Major | contract | Following the runbook's revert turns CI red: `test_default_profile_runs_on_dsh` and other "default is DSH" statements are not in the revert steps. | open |
+| F169 | Major | contract, failure | `make demo-worker-loss` submits on `default`, so the Phase 1 demo now silently runs on DSH. | open |
+| F170 | Major | failure | A DSH worker that stops serving mid-benchmark leaves every remaining task waiting up to 60 min, then judged as a regression. | open |
+| F171 | Major | scope | `--only` subsets are judged against the 10-task baseline and can overwrite R19 evidence; an unknown `--only` ID (the docstring's `fizzbuzz`) runs nothing and exits 0. | open |
+| F172 | Nit | contract, failure, scope | `--baseline` accepts any harness, so a DSH run can replace the openai-agents baseline. | open |
+| F173 | Nit | contract, failure, scope | Results named `<date>-<profile>`: `default` files mix harnesses over time and a same-day run overwrites. | open |
+| F174 | Nit | contract, scope | No test covers the results file name or `paired_dsh`. | open |
+| F175 | Nit | contract | Pass/fail comes from the last checkpoint's workspace, not task status (predates the phase). | open |
+| F176 | Nit | contract | `tool_calls` double-counts a retried turn (cumulative per turn, D11; predates the phase). | open |
+| F177 | Nit | contract | Benchmark rows omit `usage_known`. | open |
+| F178 | Nit | contract | `verdict_for` equals "at most one fails" only while the baseline is 10/10. | open |
+| F179 | Nit | contract | The licence check skips pins not written `name==version` (e.g. `pkg @ url`). | open |
+| F180 | Nit | contract, scope | Any non-empty file satisfies a pin's notices. | open |
+| F181 | Nit | contract, scope | The Compose pair test does not compare the pairs' security settings. | open |
+| F182 | Nit | contract, failure, scope | `dsh-b` depends on `dsh-a`, coupling the pairs. | open |
+| F183 | Nit | contract | `make workers-up` does not enforce the notes' orchestrator-before-workers order. | open |
+| F184 | Nit | contract | Prometheus does not scrape the DSH workers. | open |
+| F185 | Nit | contract | No integration test submits on `default` and checks `local-dsh` end to end. | open |
+| F186 | Nit | contract | The offline link check skips `docs/licences`. | open |
+| F187 | Nit | failure | Benchmark rows are written only at the end; an exception loses every finished row. | open |
+| F188 | Nit | failure | `start_container` leaks its temp directory if `docker run` fails; a killed benchmark leaves an unlabelled container. | open |
+| F189 | Nit | failure | `paired_dsh` pops a pre-existing `DSH_CONTROL` instead of restoring it. | open |
+| F190 | Nit | failure, scope | `check_dsh_licences.py export` deletes the notices before checking every pin has licences in the image. | open |
+| F191 | Nit | failure | "Pause submissions" does not cover a workflow submitted but not yet resolved when the orchestrator restarts. | open |
+| F192 | Nit | failure | The runbook says a DSH container restart clears the tmpfs volume; the worker keeps it mounted (the launcher's start-up reap is what cleans). | open |
+| F193 | Nit | failure, scope | `make workers-up` now fails on a host that cannot run the DSH container. | open |
+| F194 | Nit | scope | R20 does not cover the image's Debian `git` package or base image. | open |
+| F195 | Nit | scope | `check_dsh_licences.py` is not in mypy `files`. | open |
+| F196 | Nit | scope | The 90-minute drain bound starts after the first two workflow Activities, not at submission. | open |
+| F197 | Nit | scope | The runbook's "about 1.9x the wall time" is the spike's figure; R19 measured about 1.3x. | open |
+| F198 | Nit | scope | `adr_review` changed from `pending` to `null` outside any phase 03 task. | open |
