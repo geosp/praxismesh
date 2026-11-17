@@ -140,7 +140,7 @@ Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-pro
 
 ## DSH migration phase 02: DSH runner and worker pair
 
-Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-production-harness/plan.md), phase 02 (requirements R5-R18). `local-dsh` turns run on `DshRunner`; the `default` profile still runs `openai_agents` until phase 03.
+Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-production-harness/plan.md), phase 02 (requirements R5-R18). `local-dsh` turns run on `DshRunner`; the `default` profile still runs `openai_agents` until phase 03. Phase 03 (below) switches `default` and supersedes the statements here about what phase 03 would add.
 
 ### Components
 
@@ -168,3 +168,26 @@ Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-pro
 - `default` still runs `openai_agents`; the switch, the `openai` profile and the second DSH pair are phase 03.
 - `praxismesh-worker:dev` and `praxismesh-dsh:dev` are fixed tags: building in one checkout retags them for every other checkout on the host.
 - Deferred review items (plan notes.md#rollout): an `unresolved usage` denial starts no exit timer; a stale attempt's usage charge is unfenced; launcher `poll` replies have no timeout.
+
+## DSH migration phase 03: acceptance and default switch
+
+Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-production-harness/plan.md), phase 03 (requirements R4, R19, R20). `default` runs on DSH; `openai_agents` stays selectable through `openai`. Operations: [docs/operations/runbook.md](../operations/runbook.md).
+
+### Components
+
+| Component | Where | As built |
+|---|---|---|
+| Profiles | `registry/profiles/` | `default` and `dsh` resolve to `local-dsh` (`harness: dsh`); `openai` resolves to `local-default` (`harness: openai_agents`). The registry lock pins templates only, so a profile switch leaves it unchanged. |
+| Worker pairs | `infra/docker-compose.yml` (Compose profile `dsh`) | Two pairs, `dsh-a`/`worker-dsh-a` and `dsh-b`/`worker-dsh-b`, each with its own attempt volume (`dsh-attempts-a`, `dsh-attempts-b`) that no other service mounts. `make workers-up` builds and starts the orchestrator, `worker-a`, `worker-b` and both pairs; `make workers-check` submits on `openai` against the fake model. |
+| Benchmark | `tests/benchmarks/run.py`, `tests/support/dsh_container.py` | `--profile` (default `default`) takes the template from the profile; for a `dsh` template it builds the DSH image and starts its own paired container. Results go to `docs/benchmarks/<date>-<profile>.{md,json}`; `--out` writes elsewhere and is not judged against the baseline. Same-day results (2026-11-17): `dsh` and `default` (then `openai_agents`) each passed 10 of 10. |
+| Licence notices | `docs/licences/dsh/`, `.github/scripts/check_dsh_licences.py` | The licence files of each distribution pinned in `infra/dsh/requirements.txt`. The CI `lint` job fails on a pin with no notices, an empty notice directory, or notices for a distribution no longer pinned; `export` refreshes them from the DSH image. The offline link check skips `docs/licences`. |
+
+### Tests
+
+- Unit: `uv run pytest` (profiles, the Compose pairs, the benchmark report, the licence check).
+- Benchmark (real model, Docker): `make benchmark ARGS="--profile dsh"` and `make benchmark ARGS="--profile openai"`.
+
+### Known limits
+
+- Rebuilding the worker image restarts the DSH workers too: an attempt in flight is lost and retried, and that task reports `usage_known: false`.
+- The deferred review items of phase 02 remain (see above).
