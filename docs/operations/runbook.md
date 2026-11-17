@@ -75,6 +75,10 @@ to DSH and revert to `openai_agents`.
    - the profile table at the top of this runbook and the "Profiles" row in
      `docs/architecture/overview.md`;
    - a line in `docs/roadmap/decision-log.md` with the reason.
+   - comments that say which harness `default` runs on: find them with
+     `git grep -n "default" -- registry/profiles infra Makefile` (today: the
+     three profile files, `infra/docker-compose.yml`, `infra/demo/worker-loss.sh`
+     and the `Makefile` worker targets).
 
 3. **Lock:** `make registry-lock`. The lock records template hashes only, so a
    profile edit leaves it unchanged; it matters if a template changed too. CI

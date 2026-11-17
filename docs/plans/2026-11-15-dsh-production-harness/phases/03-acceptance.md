@@ -6,7 +6,7 @@ branch: feat/62-dsh-acceptance
 base: 285dd44034aef6c2bd4e40d6ae14811e546b7048
 delivers: [R4, R19, R20]
 design_review: { status: passed, rounds: 4, last: 2026-11-16 }
-impl_review: { status: changes-requested, rounds: 1, last: 2026-11-17 }
+impl_review: { status: passed, rounds: 2, last: 2026-11-17 }
 approved: 2026-11-15
 ---
 

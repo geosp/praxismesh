@@ -435,3 +435,18 @@ passed (4 rounds), verification and demo passed (code 86cfec8, docs 7b06ce6).
 | F196 | Nit | scope | The 90-minute drain bound starts after the first two workflow Activities, not at submission. | fixed: runbook states the bound is counted from the first turn |
 | F197 | Nit | scope | The runbook's "about 1.9x the wall time" is the spike's figure; R19 measured about 1.3x. | fixed: runbook gives the measured 1.3x |
 | F198 | Nit | scope | `adr_review` changed from `pending` to `null` outside any phase 03 task. | accepted: owner's instruction of 2026-11-17 (the `pending` marker was stale; set at close) |
+
+## 2026-11-17 · impl-review · phase 03 · round 2 · passed
+
+- Targeted follow-up (docs/reviews/README.md rule 6) on 89ac455cf1474db179b04ff1b090b0447921fe4a..d55f3ad (code_sha d55f3ad); one fresh `impl-reviewer` subagent (contract lens). Raw report: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-03-round-2-contract.md.
+- Before the round: full integration suite at d55f3ad, 178 passed.
+- Reviewer: Contract completed. No Blocker or Major; every round 1 fix confirmed enforced (F166-F172, F174, F177, F179, F181, F187-F192, F195-F197).
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F199 | Nit | contract | The runbook's revert checklist misses comments in the Makefile, Compose, the demo script and the profiles that say `default` is DSH. | fixed: runbook step 2 names them and how to find them (docs only) |
+| F200 | Nit | contract | Per-task writes let an interrupted same-day run replace committed results with an "Incomplete" file. | accepted: as F173; the partial file says "Incomplete" and git keeps the committed run |
+| F201 | Nit | contract | No test drives `main`'s per-task write or its `WorkerStopped` path. | accepted: both are short and covered by `write_results`/`await_result` tests; `main` needs a model and a worker to drive |
+| F202 | Nit | contract | No automated check keeps the Phase 1 demo on `openai`; its demo row has no commit. | accepted: a manual demo script; the rerun is recorded (at d55f3ad's script) |
+| F203 | Nit | contract | "A few seconds" for the first two Activities is not a bound while the orchestrator is down. | accepted: the runbook counts the bound from the first turn, which is correct |
+| F204 | Nit | contract | The plan's decision-log line for 2026-11-17 was out of date order. | fixed: moved to the end of the plan's Decision log (docs only) |
