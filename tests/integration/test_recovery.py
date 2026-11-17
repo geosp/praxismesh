@@ -59,7 +59,7 @@ async def submit(registry: Path, outputs: list[str], env: dict[str, str]) -> tup
     s3 = S3BlobStore.from_env()
     await s3.ensure_bucket()
     start = await prepare_task(
-        {"profile": "default", "instructions": INSTRUCTIONS, "outputs": outputs},
+        {"profile": "openai", "instructions": INSTRUCTIONS, "outputs": outputs},
         load_registry(registry),
         RecordingBlobStore(s3, engine),
         base_dir=Path.cwd(),

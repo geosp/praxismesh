@@ -1,0 +1,10 @@
+# The openai_agents agent profile (DSH migration plan phase 03): local-default
+# stays selectable here after `default` moves to DSH. Profiles carry identity
+# and task limits only; every capability comes from the template.
+name: openai
+tier: local
+harness: openai_agents
+allowed_templates: [local-default]
+max_turns: 6
+max_tokens: 1000000
+max_wall_time: PT30M

@@ -73,7 +73,7 @@ async def test_task_trace_reaches_model_and_tool_calls(
             s3 = S3BlobStore.from_env()
             await s3.ensure_bucket()
             start = await prepare_task(
-                {"profile": "default", "instructions": "Look up SKU-1."},
+                {"profile": "openai", "instructions": "Look up SKU-1."},
                 load_registry(),
                 RecordingBlobStore(s3, engine),
                 base_dir=tmp_path,

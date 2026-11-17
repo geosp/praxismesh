@@ -1,5 +1,5 @@
-# The DSH agent profile (DSH migration plan D5). The default profile stays on
-# openai_agents until that plan's phase 03 switch. Profiles carry identity and
+# The DSH agent profile (DSH migration plan D5). The default profile also runs
+# on DSH since that plan's phase 03 switch. Profiles carry identity and
 # task limits only; every capability comes from the template.
 name: dsh
 tier: local

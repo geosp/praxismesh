@@ -125,7 +125,7 @@ def _no_sdk_tracing() -> None:
 def config_for(fake: FakeModel, monkeypatch: pytest.MonkeyPatch) -> HarnessConfig:
     monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
     registry = load_registry()
-    _, loaded = registry.resolve("default")
+    _, loaded = registry.resolve("openai")
     return build_config(registry, loaded, "task-conformance-0001")
 
 
@@ -416,7 +416,7 @@ async def test_mcp_tools_allowed_filter(tmp_path: Path, monkeypatch: pytest.Monk
         )
     ) as fake:
         monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
-        _, loaded = registry.resolve("default")
+        _, loaded = registry.resolve("openai")
         config = build_config(registry, loaded, "task-filter-0001")
         workspace = make_workspace(tmp_path, "ws")
         await make_runner().run(
@@ -470,7 +470,7 @@ def test_mcp_server_env_is_exactly_what_is_granted(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("S3_SECRET_KEY", "not-granted")
     monkeypatch.setenv("CANARY_SECRET", "not-granted")
     registry = load_registry()
-    _, loaded = registry.resolve("default")
+    _, loaded = registry.resolve("openai")
     (server,) = build_config(registry, loaded, "task-env-00000001").mcp
     assert set(server.env) == {"PATH", "LANG", "PRAXIS_TASK_ID", "PRAXIS_SAMPLE_DB_URL"}
     assert server.env["PRAXIS_TASK_ID"] == "task-env-00000001"

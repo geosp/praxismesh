@@ -23,8 +23,8 @@ def registry_copy(tmp_path: Path) -> Path:
 
 def test_loaders() -> None:
     registry = load_registry()
-    profile, loaded = registry.resolve("default")
-    assert profile.name == "default"
+    profile, loaded = registry.resolve("openai")
+    assert profile.name == "openai"
     assert loaded.template.ref == "local-default@1"
     assert loaded.hash.startswith("sha256:")
     assert "sample-shop" in registry.mcp_servers
@@ -91,7 +91,7 @@ def test_request_rejects_unknown_and_unsafe_fields() -> None:
 
 
 def test_harness_mismatch_fails_at_load(registry_copy: Path) -> None:
-    profile = registry_copy / "profiles" / "default.yaml"
+    profile = registry_copy / "profiles" / "openai.yaml"
     profile.write_text(profile.read_text().replace("harness: openai_agents", "harness: claude_sdk"))
     with pytest.raises(RegistryError, match=r"claude_sdk.*openai_agents"):
         load_registry(registry_copy)
@@ -101,6 +101,15 @@ def test_dsh_profile_resolves_the_dsh_template() -> None:
     profile, loaded = load_registry().resolve("dsh")
     assert (profile.harness, loaded.template.name) == ("dsh", "local-dsh")
     assert loaded.template.concurrency_per_pod == 1 and loaded.template.context_window
+
+
+def test_default_profile_runs_on_dsh() -> None:
+    """`default` is on DSH after the phase 03 switch (DSH migration plan D5);
+    `openai_agents` stays selectable through `openai`."""
+    profile, loaded = load_registry().resolve("default")
+    assert (profile.harness, loaded.template.name) == ("dsh", "local-dsh")
+    profile, loaded = load_registry().resolve("openai")
+    assert (profile.harness, loaded.template.name) == ("openai_agents", "local-default")
 
 
 def test_dsh_profile_cannot_allow_an_openai_template(registry_copy: Path) -> None:

@@ -68,9 +68,9 @@ def test_profile_picks_template_and_harness_label() -> None:
     (DSH migration plan phase 03 task 1.1)."""
     from tests.benchmarks.run import harness_label, profile_template
 
-    default = profile_template("default")
-    assert default.template.harness == "openai_agents"
-    assert harness_label(default).startswith("openai-agents ")
+    openai = profile_template("openai")
+    assert openai.template.harness == "openai_agents"
+    assert harness_label(openai).startswith("openai-agents ")
     dsh = profile_template("dsh")
     assert dsh.template.name == "local-dsh"
     assert harness_label(dsh).startswith("deepseek-harness-sdk 0.")

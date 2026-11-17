@@ -44,7 +44,7 @@ help:
 	@echo "make unhealthy-check check that a stopped database is reported by name"
 	@echo "make logs            follow the stack's logs"
 	@echo "make registry-lock   record new template versions in registry/registry.lock"
-	@echo "make workers-up      build and start the orchestrator and two template workers"
+	@echo "make workers-up      build and start the orchestrator, two openai workers and two DSH pairs"
 	@echo "make workers-down    stop the workers"
 	@echo "make workers-check   run a scripted task through the worker containers (fake model)"
 	@echo "make recovery-check  kill the worker running a task; the other must finish it (fake model)"
@@ -117,10 +117,14 @@ logs: check
 registry-lock:
 	@uv run python -m registry.lock
 
+# openai_agents workers (profile `openai`) and DSH worker pairs (profiles
+# `default` and `dsh`; DSH migration plan D3, notes.md#rollout).
 WORKERS := orchestrator worker-a worker-b
+DSH_WORKERS := dsh-a worker-dsh-a dsh-b worker-dsh-b
 
 workers-up: check
-	@$(COMPOSE) --profile workers up -d --build --wait --wait-timeout 180 $(WORKERS)
+	@$(COMPOSE) --profile workers --profile dsh up -d --build --wait --wait-timeout 300 \
+		$(WORKERS) $(DSH_WORKERS)
 
 # A scripted task through the worker containers, against the deterministic fake
 # model (CI). Afterwards the workers still point at the fake model: run
@@ -128,7 +132,7 @@ workers-up: check
 workers-check: check
 	@VLLM_BASE_URL=http://fake-model:8765 $(COMPOSE) --profile workers --profile fake-model \
 		up -d --build --wait --wait-timeout 180 fake-model $(WORKERS)
-	@$(MAKE) --no-print-directory task \
+	@$(MAKE) --no-print-directory task PROFILE=openai \
 		PROMPT="Order 3 units of SKU-1 and write order-summary.md." OUTPUT=order-summary.md
 
 # Workers as host processes, one SIGKILLed mid-task: recovery after edits, no
@@ -147,7 +151,8 @@ observability-down: check
 	@$(COMPOSE) --profile observability rm -sf prometheus jaeger
 
 workers-down: check
-	@$(COMPOSE) --profile workers --profile fake-model rm -sf $(WORKERS) fake-model
+	@$(COMPOSE) --profile workers --profile dsh --profile fake-model \
+		rm -sf $(WORKERS) $(DSH_WORKERS) fake-model
 
 task: check
 	@test -n "$(PROMPT)" || { echo "error: set PROMPT=..." >&2; exit 1; }
