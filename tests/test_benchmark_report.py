@@ -7,6 +7,7 @@ from tests.benchmarks.run import markdown, verdict_for
 
 ENV = {
     "date": "2026-11-12",
+    "profile": "default",
     "template": "local-default@1",
     "template_hash": "sha256:x",
     "model": "spark",
@@ -46,7 +47,8 @@ def test_report_has_every_required_column() -> None:
         "Seconds",
     ]
     assert "| t01-order-total | pass | ok | 2 | 9 | 1 | 18 | 19717 | 900 | 48.4 |" in text
-    for key in ("template", "model", "harness", "prompt_hash"):
+    assert text.startswith("# Agent benchmark: default (local-default@1), 2026-11-12")
+    for key in ("profile", "template", "model", "harness", "prompt_hash"):
         assert ENV[key] in text
 
 
@@ -59,3 +61,20 @@ def test_regression_limit(tmp_path: object, monkeypatch: object) -> None:
     passed = json.loads(baseline.read_text())["passed"]
     assert "Within the regression limit" in verdict_for(passed - 1, make_baseline=False)
     assert "Regression limit exceeded" in verdict_for(passed - 2, make_baseline=False)
+
+
+def test_profile_picks_template_and_harness_label() -> None:
+    """--profile takes the template from the profile and labels its harness
+    (DSH migration plan phase 03 task 1.1)."""
+    from tests.benchmarks.run import harness_label, profile_template
+
+    default = profile_template("default")
+    assert default.template.harness == "openai_agents"
+    assert harness_label(default).startswith("openai-agents ")
+    dsh = profile_template("dsh")
+    assert dsh.template.name == "local-dsh"
+    assert harness_label(dsh).startswith("deepseek-harness-sdk 0.")
+
+
+def test_run_outside_docs_is_not_judged() -> None:
+    assert "Not judged" in verdict_for(0, make_baseline=False, judged=False)
