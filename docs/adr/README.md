@@ -15,3 +15,5 @@ One record per consequential architecture decision, written when the decision is
 | [0004](0004-use-implementation-plans-for-development.md) | Use implementation plans in docs/plans for development | proposed |
 | [0005](0005-adopt-dsh-as-primary-agent-harness.md) | Adopt DeepSeek Harness as the primary agent harness inside Temporal Activities | accepted |
 | [0006](0006-per-attempt-isolation-boundary-for-dsh.md) | Isolate each DSH attempt by cgroup, UID and mount namespace in a paired container (amends 0005 condition 3) | accepted |
+| [0007](0007-fence-harness-attempts-in-one-transaction.md) | Fence every harness attempt's writes in one locked transaction per task | proposed |
+| [0008](0008-record-unobserved-model-usage-as-unknown.md) | Record unobserved model usage as unknown and charge it conservatively, never as zero | proposed |

@@ -450,3 +450,14 @@ passed (4 rounds), verification and demo passed (code 86cfec8, docs 7b06ce6).
 | F202 | Nit | contract | No automated check keeps the Phase 1 demo on `openai`; its demo row has no commit. | accepted: a manual demo script; the rerun is recorded (at d55f3ad's script) |
 | F203 | Nit | contract | "A few seconds" for the first two Activities is not a bound while the orchestrator is down. | accepted: the runbook counts the bound from the first turn, which is correct |
 | F204 | Nit | contract | The plan's decision-log line for 2026-11-17 was out of date order. | fixed: moved to the end of the plan's Decision log (docs only) |
+
+## 2026-11-17 · approved · phase 03 closure
+
+Coordinator approval gate passed on PR #71 (merged as c015e0a): code_sha d55f3add6dcb9e2db2d4bf3047f3bb78be0cfdf7, docs_sha 06dd64737ee280d33574422982a2dcd37504ea31, head_sha 3598ab856d1330b809dc8c67b097727f63376af2 with `ci-ok` green; record: https://github.com/geosp/praxismesh/pull/71#issuecomment-6966523680.
+
+## 2026-11-17 · ADR review
+
+- In force, reviewed: ADR-0002, ADR-0003, ADR-0005, ADR-0006 (ADR-0001 and ADR-0004 are proposed).
+- Covered already: D3 (ADR-0006); D1, D4, D5, D6 (ADR-0005 conditions 2-5). Tactical: D2, D8 (replaced by Phase 2's transport).
+- Created, owner-confirmed, `proposed` pending independent review: ADR-0007 (D10, the attempt fence) and ADR-0008 (D7, D9, D11, unknown usage and conservative charging).
+- Verification Nit V1 (README `PRAXIS_SAMPLE_DB_URL`) fixed in the same change.
