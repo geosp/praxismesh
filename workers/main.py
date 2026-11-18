@@ -31,6 +31,7 @@ from temporalio.worker import Worker
 from common.blob_store import BlobStore
 from common.blob_store.s3 import S3BlobStore
 from common.errors import CapabilityError
+from common.events import TableTransport
 from common.observability import (
     configure_logging,
     configure_tracing,
@@ -109,6 +110,7 @@ async def build_harness(
             identity,
             open_attempt=dsh.open_attempt,
             preflight=dsh.check,
+            events=TableTransport(engine),
         )
     if harness == "openai_agents":
         return HarnessActivities(
@@ -118,6 +120,7 @@ async def build_harness(
             OpenAIAgentsRunner(provider.get_tracer("praxismesh.harness") if provider else None),
             Path(os.environ.get("PRAXIS_SCRATCH", "/tmp/praxis-scratch")),
             identity,
+            events=TableTransport(engine),
         )
     raise CapabilityError(
         f"template {loaded.template.ref} uses harness {harness!r}, which has no runner"

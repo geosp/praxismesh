@@ -17,6 +17,7 @@ from harness_activity.config import build_config
 from harness_activity.runner import Usage
 from registry.loader import load_registry
 from tests.support.dsh import DshContainer, build_image, start_container
+from tests.support.events import attempt_events
 from tests.support.fake_model import FakeModel
 from tests.support.session_stores import MemorySessionStore
 
@@ -95,6 +96,7 @@ async def test_only_template_capabilities_reach_dsh(
                 "danger-full-access.",
                 _no_op,
                 Usage(),
+                attempt_events(),
             )
             requests = fake.state.requests
     finally:

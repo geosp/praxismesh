@@ -17,8 +17,8 @@ DEFAULT_LIFETIME: dict[str, timedelta | None] = {
     "audit": None,  # kept until an operator policy says otherwise
 }
 
-# Phase 1 tables, all with `retention_class NOT NULL` (migration 0003).
-PHASE1_TABLES = (
+# Application tables, all with `retention_class NOT NULL` (migrations 0003-0005).
+APP_TABLES = (
     "tasks",
     "task_attempts",
     "checkpoints",
@@ -28,4 +28,7 @@ PHASE1_TABLES = (
     "agent_sessions",
     "agent_messages",
     "usage_ledger",  # migration 0004 (DSH migration plan D9)
+    "event_logs",  # migration 0005 (Phase 2 events plan D1)
+    "agent_events",
+    "event_batches",
 )

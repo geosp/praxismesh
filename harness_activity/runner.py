@@ -34,6 +34,7 @@ from opentelemetry.trace import Span, Tracer
 from common.observability.metrics import TOOL_CALLS, TOOL_ERRORS
 from harness_activity import skills
 from harness_activity.config import HarnessConfig
+from harness_activity.events import AttemptEvents
 from harness_activity.session_store import SessionStore
 from harness_activity.tools import FINISH_TOOL, TurnState, build_tools
 
@@ -129,8 +130,11 @@ class HarnessRunner(Protocol):
         input_text: str,
         before_model_call: BeforeModelCall,
         usage: Usage,
+        events: AttemptEvents,
     ) -> RunResult:
-        """Run once. `usage` is updated live, so the caller can heartbeat it."""
+        """Run once. `usage` is updated live, so the caller can heartbeat it. Tool
+        and token events go to `events`, the attempt's one event stream (Phase 2
+        events plan D2, D3)."""
         ...
 
 
@@ -152,8 +156,13 @@ class _Hooks(RunHooks[Any]):
         before: BeforeModelCall,
         tracer: Tracer,
         template: str,
+        events: AttemptEvents,
     ) -> None:
         self.usage, self.allowed, self.state, self.before = usage, allowed, state, before
+        self.events = events
+        # Tool name -> the call numbers of its open calls, oldest first, so parallel
+        # calls to one tool each report their own number.
+        self.calls: dict[str, list[int]] = {}
         self.tracer = tracer
         self.template = template
         self.model_span: Span | None = None
@@ -172,6 +181,11 @@ class _Hooks(RunHooks[Any]):
         self.state.failed_in_step.clear()  # a new step: track its own tool failures
         self.usage.tokens_in += response.usage.input_tokens
         self.usage.tokens_out += response.usage.output_tokens
+        self.events.emit(
+            "token",
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+        )
         if self.model_span is not None:
             self.model_span.set_attribute("praxis.tokens_in", response.usage.input_tokens)
             self.model_span.set_attribute("praxis.tokens_out", response.usage.output_tokens)
@@ -183,11 +197,16 @@ class _Hooks(RunHooks[Any]):
                 # No hook fires for a tool that does not exist, so refusals are
                 # logged here; the SDK returns the error to the model.
                 self.state.refused.append(str(name))
+                # As DSH reports a refused call (gateway); the name is capped (R6).
+                self.events.emit("tool_call", tool=str(name)[:64], call=None)
+                self.events.emit("tool_result", tool=str(name)[:64], call=None, status="refused")
                 TOOL_ERRORS.labels(template=self.template, tool=str(name)).inc()
                 log.warning("refused tool call", extra={"fields": {"tool": name}})
 
     async def on_tool_start(self, context: Any, agent: Any, tool: Tool) -> None:
         self.usage.tool_calls += 1
+        self.calls.setdefault(tool.name, []).append(self.usage.tool_calls)
+        self.events.emit("tool_call", tool=tool.name, call=self.usage.tool_calls)
         TOOL_CALLS.labels(template=self.template, tool=tool.name).inc()
         self.tool_spans[tool.name] = self.tracer.start_span(
             "tool call", attributes={"praxis.tool": tool.name}
@@ -199,6 +218,13 @@ class _Hooks(RunHooks[Any]):
             self.state.failed_in_step.append(tool.name)
         if failed or looks_failed(str(result)):
             TOOL_ERRORS.labels(template=self.template, tool=tool.name).inc()
+        open_calls = self.calls.get(tool.name)
+        self.events.emit(
+            "tool_result",
+            tool=tool.name,
+            call=open_calls.pop(0) if open_calls else None,
+            status="failed" if looks_failed(str(result)) else "ok",
+        )
         span = self.tool_spans.pop(tool.name, None)
         if span is not None:
             span.set_attribute("praxis.tool_failed", failed)
@@ -217,6 +243,7 @@ class OpenAIAgentsRunner:
         input_text: str,
         before_model_call: BeforeModelCall,
         usage: Usage,
+        events: AttemptEvents,
     ) -> RunResult:
         state = TurnState()
         instructions = config.instructions
@@ -254,7 +281,13 @@ class OpenAIAgentsRunner:
                     max_turns=config.inner_max_turns,
                     session=session,
                     hooks=_Hooks(
-                        usage, allowed, state, before_model_call, self.tracer, config.template_ref
+                        usage,
+                        allowed,
+                        state,
+                        before_model_call,
+                        self.tracer,
+                        config.template_ref,
+                        events,
                     ),
                     run_config=RunConfig(
                         tracing_disabled=True, tool_not_found_behavior="return_error_to_model"

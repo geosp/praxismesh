@@ -192,3 +192,48 @@ Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-pro
 
 - Rebuilding the worker image restarts the DSH workers too: an attempt in flight is lost and retried, and that task reports `usage_known: false`.
 - The deferred review items of phase 02 remain (see above).
+
+## Phase 2 events: the event table and `agentctl tail`
+
+Plan: [docs/plans/2026-11-18-phase-2-agent-events](../plans/2026-11-18-phase-2-agent-events/plan.md) (requirements R1-R9). Decision: [ADR-0009](../adr/0009-use-a-postgresql-event-table-for-agent-events.md). Operations: [runbook, Agent events](../operations/runbook.md#agent-events).
+
+### Components
+
+| Component | Where | As built |
+|---|---|---|
+| Event tables | `common/persistence/migrations/versions/0005_agent_events.py` | `event_logs` (per workflow: next offset, retained base), `agent_events` (keyed by workflow and offset; columns mirror `AgentEvent`), `event_batches` (batch IDs seen in the last 600 s). All carry retention class `task` and are listed in `APP_TABLES`. |
+| Fence | `common/persistence/fence.py` | ADR-0007's per-task advisory lock, newer-turn-or-attempt check and `FenceRejected`, used by every fenced write in `repositories.py` and by the event table. |
+| Transport | `common/events/` | The interface (`publish`, `read`, `latest`, `prune`), the reader rule (`Expired` before pruned offsets, on a jump during a read; a repeat raises), the in-memory reference and `TableTransport`. A publish takes the task lock and fence check, then the workflow's `event_logs` row lock, dedupes the batch ID, inserts, advances the offset and `NOTIFY`s `agent_events`. A following reader `LISTEN`s on its own autocommit connection and polls every 1 s. |
+| Publisher | `harness_activity/events.py` (`BatchingPublisher`) | One per attempt. Cuts batches of at most 64 when full, 200 ms after the oldest buffered event's emit time, or at close; one publish at a time in `seq` order; a cut batch is frozen and re-sent unchanged after a database error (backoff 0.25, 0.5, 1 s once per batch, then one try per trigger, also while closing); a refusal stops it. `close()` runs once, is shielded from its caller's cancellation, and bounds the final flush at 10 s (`CLOSE_TIMEOUT_S`) in a task of its own. |
+| Activity | `harness_activity/activity.py` | `run_harness_turn` creates the attempt's `AttemptEvents` over the publisher and passes it to `HarnessRunner.run`. It emits `reset` first, right after the checkpoint lookup and before opening the attempt (a failure before then still stores a `reset`), and `status` before the final flush. Both success paths, the normal one and the restore short-circuit, reach `_finish`, which flushes first: a refusal raises `Superseded` before the finish checkpoint, artifacts and outcome; a flush that fails for good raises the retryable `EventsUnavailable`. Failure and cancel paths store their events and re-raise the original error. Workers publish to `TableTransport`; without a transport (unit tests) events go nowhere. |
+| Runners | `harness_activity/runner.py`, `harness_activity/dsh/` | `openai_agents` emits `token`, `tool_call` and `tool_result` through its run hooks (parallel calls to one tool keep their own call numbers) and `refused` pairs for tools the template does not grant, as DSH does from its gateway and executor; `DshRunner` no longer takes a sink. Payloads hold counts, names (refused names capped at 64 characters), IDs and statuses only. |
+| CLI | `agentctl`, `orchestrator/cli.py` | `./agentctl tail TASK [--after N] [--no-follow]` and `./agentctl events prune --task T (--below N \| --older-than 7d)`. Each line is flushed. `tail --follow` stops after one more read once Temporal reports the Workflow closed or not found; other Temporal errors are logged and it keeps following. `--no-follow` reads the table only. |
+
+### Data flow
+
+```text
+runner (DSH / openai_agents) --emit--> AttemptEvents --> BatchingPublisher
+    --publish (fence, event_logs row lock, batch dedup, NOTIFY)--> agent_events
+agentctl tail --LISTEN agent_events + 1 s poll--> reads offsets above N (reader rule)
+```
+
+### Failure and recovery
+
+- A superseded attempt's publish is refused; the attempt stores nothing more and raises `Superseded` at its final flush (or earlier at its next model call).
+- A lost reply re-sends the same batch ID, which is stored once (within 600 s).
+- A worker killed mid-turn loses its buffered events (up to 64, or 200 ms worth); the retried attempt opens with a `reset` naming the checkpoint it restored from.
+- A reader asking below the retained base gets `Expired(base)` first, then continues from the base.
+
+### Tests
+
+- Unit: `uv run pytest` (`tests/test_event_publisher.py`, `tests/test_event_transport.py`, the CLI tail and prune tests, and the runner conformance event test for `openai_agents`; its `dsh` case is an integration test, `uv run pytest -m integration tests/test_runner_conformance.py`, which CI's stack job does not run).
+- Integration: `tests/integration/test_event_table.py` (the spike's shared suite on the table and the in-memory reference, the fence, lock order, the horizon, `older_than`, a notify during a fetch); `tests/integration/test_harness_activity.py` (reset and status, a retried attempt, refused final flushes on both success paths, a runner failure, a cancellation); `tests/integration/test_dsh_activity.py` (the DSH event stream).
+- Load: `python -m tests.benchmarks.event_load` (results in `docs/benchmarks/2026-11-18-event-load.json`: at 499eb63: display p95 0.209 s, publish p95 10 ms, database CPU 2.9-3.5% fenced against 3.4% unfenced, both at noise level).
+- Demo: `sh infra/demo/phase-2-events.sh` ([demo record](../demos/phase-2-events.md)).
+
+### Known limits
+
+- Pruning is manual (`events prune`) until Phase 3A's retention; a finished workflow keeps its last 600 s of batch rows until then.
+- A stale attempt still running after its task completed can publish after `tail`'s final read; the fence refuses only when a newer attempt exists.
+- `status` reports the runner's result, not the recorded outcome: an attempt refused at its finish writes may have stored `status: done`.
+- One global `NOTIFY` channel; every follower's connection receives every workflow's notification (ADR-0009).

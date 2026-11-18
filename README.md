@@ -66,6 +66,7 @@ uv run mypy
 uv run pytest
 uv run .agents/sync_agents.py --check
 uv run .github/scripts/check_plans.py
+uv run .github/scripts/check_dsh_licences.py
 gitleaks git --config .gitleaks.toml --redact .   # if gitleaks is installed
 ```
 

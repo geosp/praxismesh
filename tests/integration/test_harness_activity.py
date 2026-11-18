@@ -29,6 +29,7 @@ from temporalio.testing import ActivityEnvironment
 
 from common.blob_store import MemoryBlobStore
 from common.errors import TemplateVersionUnavailable
+from common.events import EventTransport, Expired, TableTransport, Writer
 from common.observability.logging import JsonFormatter
 from common.persistence.repositories import (
     AttemptRepository,
@@ -41,7 +42,15 @@ from common.schemas import BlobRef, CompleteTaskInput, TaskStart, TurnInput
 from harness_activity import workspace as ws
 from harness_activity.activity import CONTINUE_MESSAGE, HarnessActivities, HarnessInputError
 from harness_activity.config import HarnessConfig
-from harness_activity.runner import BeforeModelCall, RunResult, StopRun, Superseded, Usage
+from harness_activity.events import AttemptEvents
+from harness_activity.runner import (
+    BeforeModelCall,
+    RunnerFailure,
+    RunResult,
+    StopRun,
+    Superseded,
+    Usage,
+)
 from orchestrator.activities import OrchestratorActivities
 from registry.loader import load_registry
 from tests.support.stack import run_id
@@ -76,6 +85,7 @@ class ScriptedRunner:
         input_text: str,
         before_model_call: BeforeModelCall,
         usage: Usage,
+        events: AttemptEvents,
     ) -> RunResult:
         self.seen.calls += 1
         self.seen.started_at = time.monotonic()
@@ -146,7 +156,11 @@ class Harness:
 
 
 async def harness(
-    engine: AsyncEngine, tmp_path: Path, script: Script, blobs: Any = None
+    engine: AsyncEngine,
+    tmp_path: Path,
+    script: Script,
+    blobs: Any = None,
+    events: EventTransport | None = None,
 ) -> Harness:
     store = blobs or MemoryBlobStore()
     task_id = f"task-act-{run_id()}"
@@ -164,7 +178,9 @@ async def harness(
         start, workflow_id=task_id, run_id="run-1", template_version=1, template_hash="x"
     )
     runner = ScriptedRunner(script)
-    acts = HarnessActivities(load_registry(), engine, store, runner, tmp_path, "test-worker")
+    acts = HarnessActivities(
+        load_registry(), engine, store, runner, tmp_path, "test-worker", events=events
+    )
     return Harness(acts, runner, store, task_id, [])
 
 
@@ -640,3 +656,235 @@ async def test_session_store_contract(engine: AsyncEngine) -> None:
     from tests.support.session_stores import store_contract
 
     await store_contract(SQLAlchemySessionStore(f"task-store-{run_id()}", engine))
+
+
+# Phase 2 events plan task 2.2: the attempt's event stream (R5, R6, R8, R9).
+
+
+async def stored(t: EventTransport, task_id: str) -> list[Any]:
+    return [i[1] async for i in t.read(task_id, 0) if not isinstance(i, Expired)]
+
+
+class Superseding(TableTransport):
+    """Starts a newer attempt of the turn just before its first publish, so the
+    attempt's flush is refused."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        super().__init__(engine)
+        self.fired = False
+
+    async def publish(
+        self, workflow_id: str, writer: Writer, batch_id: str, events: list[Any]
+    ) -> None:
+        if not self.fired:
+            self.fired = True
+            await AttemptRepository(self.engine).start(
+                writer.task_id, writer.turn, writer.attempt + 1, "other-worker"
+            )
+        await super().publish(workflow_id, writer, batch_id, events)
+
+
+async def finish_writes(engine: AsyncEngine, task_id: str, attempt: int) -> tuple[int, str]:
+    checkpoints = await count(
+        engine, "SELECT count(*) FROM checkpoints WHERE task_id = :t AND attempt = :a",
+        t=task_id, a=attempt,
+    )  # fmt: skip
+    async with engine.connect() as conn:
+        outcome = (
+            await conn.execute(
+                text("SELECT outcome FROM task_attempts WHERE task_id = :t AND attempt = :a"),
+                {"t": task_id, "a": attempt},
+            )
+        ).scalar_one()
+    return checkpoints, outcome
+
+
+async def test_an_attempt_opens_with_reset_and_ends_with_status(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    t = TableTransport(engine)
+    h = await harness(engine, tmp_path, done, events=t)
+    outcome = await h.run()
+    assert outcome.status == "done"
+    events = await stored(t, h.task_id)
+    assert [(e.seq, e.type) for e in events] == [(0, "reset"), (1, "status")]
+    assert events[0].payload == {"restored_from": None}
+    assert events[1].payload == {"status": "done"}
+    assert {e.attempt_id for e in events} == {f"{h.task_id}:1:1"}
+
+
+async def test_a_retried_attempt_resets_from_its_checkpoint(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """R9: after a lost attempt 1, attempt 2's events start with a reset naming the
+    checkpoint it restored, and offsets follow seq within each attempt."""
+    t = TableTransport(engine)
+
+    async def emits(seen: Seen, before: BeforeModelCall, usage: Usage, w: Path, s: Session) -> Any:
+        await before(usage)
+        return RunResult("done", usage, summary="ok")
+
+    h = await harness(engine, tmp_path, emits, events=t)
+    await AttemptRepository(engine).start(h.task_id, 1, 1, "lost-worker")
+    cp_id = await add_checkpoint(h, engine, position=0, files={"a.txt": "x"})
+    await h.run(attempt=2)
+    events = await stored(t, h.task_id)
+    assert events[0].type == "reset" and events[0].payload == {"restored_from": cp_id}
+    assert [e.seq for e in events] == list(range(len(events)))
+    assert events[-1].payload == {"status": "done"}
+
+
+async def test_a_refused_final_flush_makes_no_finish_write(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """R5 on the normal path: no finish checkpoint, artifact or outcome row."""
+    t = Superseding(engine)
+
+    async def no_model_call(
+        seen: Seen, b: BeforeModelCall, usage: Usage, w: Path, s: Session
+    ) -> Any:
+        (w / "order-summary.md").write_text("summary")
+        return RunResult("done", usage, summary="ok")
+
+    h = await harness(engine, tmp_path, no_model_call, events=t)
+    with pytest.raises(Exception, match="newer attempt") as raised:
+        await h.run()
+    assert isinstance(raised.value, Superseded) or "Superseded" in repr(raised.value)
+    # The newer attempt marked this one lost; this attempt wrote no finish.
+    assert await finish_writes(engine, h.task_id, 1) == (0, "lost")
+    assert await stored(t, h.task_id) == []
+
+
+async def test_a_refused_flush_on_the_finish_shortcut_makes_no_finish_write(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """R5 on the restore short-circuit: a checkpoint already holds the finish."""
+    t = Superseding(engine)
+    h = await harness(engine, tmp_path, done, events=t)
+    await AttemptRepository(engine).start(h.task_id, 1, 1, "lost-worker")
+    await add_checkpoint(
+        h, engine, position=0, files={"order-summary.md": "x"},
+        finish={"status": "done", "summary": "already finished", "questions": []},
+    )  # fmt: skip
+    with pytest.raises(Exception, match="newer attempt"):
+        await h.run(attempt=2)
+    assert h.runner.seen.calls == 0
+    assert await finish_writes(engine, h.task_id, 2) == (0, "lost")
+
+
+async def test_a_runner_failure_stores_its_events_and_keeps_its_error(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """R8: a failing attempt's events, with a final status, are stored; the
+    runner's classified failure still reaches Temporal."""
+    t = TableTransport(engine)
+
+    async def fails(seen: Seen, b: BeforeModelCall, usage: Usage, w: Path, s: Session) -> Any:
+        raise RunnerFailure("DshTurnDeadline", True)
+
+    h = await harness(engine, tmp_path, fails, events=t)
+    with pytest.raises(ApplicationError) as raised:
+        await h.run()
+    assert raised.value.type == "DshTurnDeadline"
+    events = await stored(t, h.task_id)
+    assert [e.type for e in events] == ["reset", "status"]
+    assert events[-1].payload == {"status": "failed", "error": "DshTurnDeadline"}
+
+
+async def test_a_cancelled_attempt_stores_its_events(engine: AsyncEngine, tmp_path: Path) -> None:
+    """R8 under cancellation: the flush runs shielded and the cancel propagates."""
+    t = TableTransport(engine)
+    started = asyncio.Event()
+
+    async def waits(seen: Seen, b: BeforeModelCall, usage: Usage, w: Path, s: Session) -> Any:
+        started.set()
+        await asyncio.sleep(60)
+        raise AssertionError("not cancelled")
+
+    h = await harness(engine, tmp_path, waits, events=t)
+    env = h.env()
+    running = asyncio.create_task(env.run(h.acts.run_harness_turn, h.turn()))
+    await asyncio.wait_for(started.wait(), 10)
+    env.cancel()
+    with pytest.raises(BaseException) as raised:
+        await asyncio.wait_for(running, 20)
+    assert isinstance(raised.value, asyncio.CancelledError) or "Cancel" in repr(raised.value)
+    events = await stored(t, h.task_id)
+    assert [e.type for e in events] == ["reset", "status"]
+    assert events[-1].payload["status"] == "cancelled"
+
+
+async def test_an_attempt_that_fails_early_still_opens_with_reset(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """R9: a failure before the runner starts (here, opening the attempt) still
+    stores a reset first, then the failure status."""
+    t = TableTransport(engine)
+    h = await harness(engine, tmp_path, done, events=t)
+
+    async def cannot_open(context: Any) -> Any:
+        raise RuntimeError("launcher unreachable")
+
+    h.acts.open_attempt = cannot_open
+    with pytest.raises(Exception, match="launcher unreachable"):
+        await h.run()
+    events = await stored(t, h.task_id)
+    assert [e.type for e in events] == ["reset", "status"]
+    assert events[0].payload == {"restored_from": None}
+    assert events[1].payload == {"status": "failed", "error": "RuntimeError"}
+
+
+class HangsAlways(TableTransport):
+    """Every publish blocks, as a database that stopped answering; it records the
+    events it was asked to store."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        super().__init__(engine)
+        self.asked: list[Any] = []
+
+    async def publish(
+        self, workflow_id: str, writer: Writer, batch_id: str, events: list[Any]
+    ) -> None:
+        self.asked.extend(events)
+        await asyncio.sleep(3600)
+
+
+async def test_a_final_flush_that_times_out_raises_events_unavailable(
+    engine: AsyncEngine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R8, D2: the bounded final flush fails retryably with EventsUnavailable, makes
+    no finish write, and the failure path does not wait on it again."""
+    from harness_activity import events as events_module
+
+    monkeypatch.setattr(events_module, "CLOSE_TIMEOUT_S", 0.3)
+
+    async def finishes(seen: Seen, b: BeforeModelCall, u: Usage, w: Path, s: Session) -> Any:
+        return RunResult("done", u, summary="ok")  # no model call: no mid-turn checkpoint
+
+    hangs = HangsAlways(engine)
+    h = await harness(engine, tmp_path, finishes, events=hangs)
+    with pytest.raises(Exception) as raised:
+        await asyncio.wait_for(h.run(), 10)
+    assert "EventsUnavailable" in repr(raised.value) or type(raised.value).__name__ == (
+        "EventsUnavailable"
+    )
+    assert await finish_writes(engine, h.task_id, 1) == (0, "started")
+    assert [e.type for e in hangs.asked].count("status") == 1  # no second status
+
+
+async def test_a_failed_checkpoint_lookup_still_opens_with_reset(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """R9: the failure path emits the reset when the lookup itself failed."""
+    t = TableTransport(engine)
+    h = await harness(engine, tmp_path, done, events=t)
+
+    async def lookup_fails(task_id: str) -> Any:
+        raise ConnectionError("database unreachable")
+
+    h.acts.checkpoints.latest = lookup_fails  # type: ignore[method-assign]
+    with pytest.raises(Exception, match="database unreachable"):
+        await h.run()
+    events = await stored(t, h.task_id)
+    assert [e.type for e in events] == ["reset", "status"]
+    assert events[1].payload == {"status": "failed", "error": "ConnectionError"}

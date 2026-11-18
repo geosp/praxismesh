@@ -44,6 +44,7 @@ from temporalio.exceptions import ApplicationError
 
 from common.blob_store import BlobCorrupt, BlobNotFound, BlobStore
 from common.errors import NonRetryableError, TemplateVersionUnavailable
+from common.events import EventTransport, Writer
 from common.observability import log_context
 from common.observability.metrics import (
     ACTIVITY_SECONDS,
@@ -52,11 +53,11 @@ from common.observability.metrics import (
     HEARTBEAT_LAG_SECONDS,
     TOKENS,
 )
+from common.persistence.fence import FenceRejected
 from common.persistence.repositories import (
     AttemptRepository,
     Checkpoint,
     CheckpointRepository,
-    FenceRejected,
     TaskRepository,
     UsageLedgerRepository,
 )
@@ -65,6 +66,7 @@ from harness_activity import workspace as ws
 from harness_activity.config import build_config
 from harness_activity.dsh.composition import DEFAULT_CONTEXT_WINDOW
 from harness_activity.dsh.ledger import unknown_charge
+from harness_activity.events import AttemptEvents, BatchingPublisher, NoOpSink
 from harness_activity.runner import (
     AttemptContext,
     AttemptScope,
@@ -94,6 +96,11 @@ STOP_MARGIN_SECONDS = 20.0
 
 class AttemptsExhausted(NonRetryableError):
     """The turn was lost or failed MAX_REAL_ATTEMPTS times."""
+
+
+class EventsUnavailable(Exception):
+    """Retryable: the attempt's events could not be stored, so its finish is not
+    written either (they share the app database; Phase 2 events plan R8)."""
 
 
 class HarnessInputError(NonRetryableError):
@@ -190,6 +197,7 @@ class HarnessActivities:
         session_store: Callable[[str, AsyncEngine], SessionStore] = SQLAlchemySessionStore,
         open_attempt: Callable[[AttemptContext], Awaitable[AttemptScope]] | None = None,
         preflight: Callable[[], Awaitable[None]] | None = None,
+        events: EventTransport | None = None,
     ) -> None:
         self.registry = registry
         self.engine = engine
@@ -201,6 +209,8 @@ class HarnessActivities:
         self.open_attempt = open_attempt
         # Checked before an attempt is recorded; raises `Unserviceable` (F99).
         self.preflight = preflight
+        # Where attempts publish their events; None publishes nothing (unit tests).
+        self.events = events
         # Told when this worker must stop polling its queue.
         self.on_unserviceable: Callable[[str], None] | None = None
         self.ledger = UsageLedgerRepository(engine)
@@ -393,18 +403,60 @@ class HarnessActivities:
     ) -> TurnOutcome:
         workdir = self.scratch / turn.task_id / f"{turn.turn}-{attempt}-{uuid.uuid4().hex[:8]}"
         scope: AttemptScope | None = None
+        workflow_id = activity.info().workflow_id or turn.task_id
         try:
             async with heartbeat.running():
                 try:
                     await self.attempts.start(turn.task_id, turn.turn, attempt, self.identity)
                 except FenceRejected as e:  # started late: a newer attempt owns the turn
                     raise Superseded(str(e)) from e
-                if self.open_attempt is not None:
-                    scope = await self._open(turn, attempt, heartbeat)
-                    workdir = scope.workspace
-                return await self._run(
-                    turn, attempt, real_attempt, heartbeat, workdir, scope.store if scope else None
+                # The attempt's one event stream (Phase 2 events plan D2).
+                publisher = (
+                    BatchingPublisher(
+                        self.events,
+                        Writer(turn.task_id, turn.turn, attempt),
+                        workflow_id,
+                        f"{turn.task_id}:{turn.turn}:{attempt}",
+                    )
+                    if self.events is not None
+                    else None
                 )
+                events = AttemptEvents(
+                    publisher or NoOpSink(), workflow_id, turn.task_id, turn.turn, attempt
+                )
+                try:
+                    # The attempt's first event, before anything else can fail (R9).
+                    latest = await self.checkpoints.latest(turn.task_id)
+                    events.emit("reset", restored_from=latest.checkpoint_id if latest else None)
+                    if self.open_attempt is not None:
+                        scope = await self._open(turn, attempt, heartbeat)
+                        workdir = scope.workspace
+                    return await self._run(
+                        turn,
+                        attempt,
+                        real_attempt,
+                        heartbeat,
+                        workdir,
+                        events,
+                        publisher,
+                        latest,
+                        scope.store if scope else None,
+                    )
+                except BaseException as e:
+                    # Every other ending stores its events too; the original error
+                    # still propagates (R8; ADR-0007).
+                    if publisher is not None and not publisher.closed:
+                        if events.seq == 0:  # failed before the reset: still open with one
+                            events.emit("reset", restored_from=None)
+                        if not isinstance(e, Superseded):
+                            events.emit("status", **_failure_status(e))
+                        problem = await publisher.close()
+                        if problem is not None:
+                            log.warning(
+                                "attempt events not stored",
+                                extra={"fields": {"error": repr(problem)}},
+                            )
+                    raise
         except (BlobCorrupt, BlobNotFound) as e:
             raise HarnessInputError(f"checkpoint or input unreadable: {e}") from e
         except BadRequestError as e:
@@ -423,6 +475,9 @@ class HarnessActivities:
         real_attempt: int,
         heartbeat: _Heartbeat,
         workdir: Path,
+        events: AttemptEvents,
+        publisher: BatchingPublisher | None,
+        latest: Checkpoint | None,
         attempt_store: SessionStore | None = None,
     ) -> TurnOutcome:
         loaded = self.registry.templates[turn.template]
@@ -432,7 +487,6 @@ class HarnessActivities:
         session = store.session
         seq = 0
 
-        latest = await self.checkpoints.latest(turn.task_id)
         if latest is not None:
             data = await self.blobs.get(latest.workspace_ref)
             await asyncio.to_thread(ws.unpack, data, workdir)
@@ -446,7 +500,15 @@ class HarnessActivities:
                     questions=latest.finish.get("questions", []),
                 )
                 return await self._finish(
-                    turn, attempt, real_attempt, heartbeat, workdir, result, template_ref
+                    turn,
+                    attempt,
+                    real_attempt,
+                    heartbeat,
+                    workdir,
+                    result,
+                    template_ref,
+                    events,
+                    publisher,
                 )
             input_text = CONTINUE_MESSAGE
         else:
@@ -495,7 +557,7 @@ class HarnessActivities:
 
         try:
             result = await self.runner.run(
-                config, workdir, session, input_text, before_model_call, heartbeat.usage
+                config, workdir, session, input_text, before_model_call, heartbeat.usage, events
             )
         except Superseded:
             # A newer attempt owns the turn: write no checkpoint and no attempt
@@ -514,9 +576,17 @@ class HarnessActivities:
             if result.status in ("done", "needs_input")
             else None
         )
-        await checkpoint(finish)
         return await self._finish(
-            turn, attempt, real_attempt, heartbeat, workdir, result, template_ref
+            turn,
+            attempt,
+            real_attempt,
+            heartbeat,
+            workdir,
+            result,
+            template_ref,
+            events,
+            publisher,
+            finish_checkpoint=lambda: checkpoint(finish),
         )
 
     async def _fresh_start(self, task_id: str, workdir: Path) -> str:
@@ -538,7 +608,22 @@ class HarnessActivities:
         workdir: Path,
         result: RunResult,
         template_ref: str,
+        events: AttemptEvents,
+        publisher: BatchingPublisher | None,
+        finish_checkpoint: Callable[[], Awaitable[None]] | None = None,
     ) -> TurnOutcome:
+        """Every success path ends here. The attempt's events are flushed first: a
+        refused flush makes no finish write (R5), and a flush that fails for good
+        writes none either (R8). Then the finish checkpoint, artifacts and outcome."""
+        events.emit("status", status=result.status)
+        if publisher is not None:
+            problem = await publisher.close()
+            if isinstance(problem, FenceRejected):
+                raise Superseded(str(problem)) from problem
+            if problem is not None:
+                raise EventsUnavailable(f"attempt events not stored: {problem!r}") from problem
+        if finish_checkpoint is not None:
+            await finish_checkpoint()
         outputs: list[Artifact] = []
         if result.status == "done":
             try:  # a stale attempt publishes no artifact (D10, R7)
@@ -587,3 +672,12 @@ class HarnessActivities:
             error=result.error,
             usage_known=progress.usage_known,
         )
+
+
+def _failure_status(error: BaseException) -> dict[str, str]:
+    """The `status` event of an attempt that did not finish: no message text."""
+    if isinstance(error, asyncio.CancelledError):
+        return {"status": "cancelled", "error": "CancelledError"}
+    if isinstance(error, RunnerFailure):
+        return {"status": "cancelled" if error.cancelled else "failed", "error": error.category}
+    return {"status": "failed", "error": type(error).__name__}

@@ -14,6 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from common.blob_store import BlobStore
 from common.blob_store.base import RETENTION_ORDER
 from common.errors import TaskAlreadyExists
+from common.persistence.fence import NO_NEWER_ATTEMPT as _NO_NEWER_ATTEMPT
+from common.persistence.fence import TASK_LOCK as _TASK_LOCK
+from common.persistence.fence import FenceRejected
 from common.persistence.settings import app_database_url
 from common.schemas import BlobRef, RetentionClass, TaskStart
 
@@ -367,21 +370,6 @@ def _ledger_usage_sql(rows: str) -> str:
         ) s
         WHERE a.task_id = :t AND a.turn = s.turn AND a.attempt = s.attempt AND a.usage_known
     """
-
-
-class FenceRejected(RuntimeError):
-    """A newer (turn, attempt) exists for the task, so the fenced write was not made."""
-
-
-# Plan 2026-11-15-dsh-production-harness D10: a write by an attempt is valid only
-# while no newer turn or attempt of the same task has started. `start` and every
-# fenced write take this per-task transaction lock first, so under READ COMMITTED
-# the check sees any start that committed before it (review F1).
-_TASK_LOCK = text("SELECT pg_advisory_xact_lock(hashtext(:t))")
-_NO_NEWER_ATTEMPT = (
-    "NOT EXISTS (SELECT 1 FROM task_attempts n WHERE n.task_id = :t "
-    "AND (n.turn > :turn OR (n.turn = :turn AND n.attempt > :a)))"
-)
 
 
 class CheckpointRepository:

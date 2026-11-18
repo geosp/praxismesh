@@ -82,7 +82,7 @@ class StubRunner:
         return Scope(workspace, MemorySessionStore(context.task_id))
 
     async def run(self, config: Any, workspace: Path, session: Any, text_: str, before: Any,
-                  usage: Usage) -> RunResult:  # fmt: skip
+                  usage: Usage, events: Any) -> RunResult:  # fmt: skip
         assert self.context is not None
         c = self.context
         for n in range(self.settled + self.unsettled):
