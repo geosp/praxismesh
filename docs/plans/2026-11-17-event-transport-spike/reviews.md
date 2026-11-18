@@ -57,21 +57,21 @@ Approved by the owner after design review passed (2 rounds); phases 01 and 02 ap
 
 | ID | Sev | Lens | Finding | Resolution |
 | --- | --- | --- | --- | --- |
-| F31 | Major | contract, failure, scope | Streams never maps `TruncatedOffset` to `Expired`: a tailer behind a roll-over's truncation crashes; every option checks expiry only when a read starts, so mid-read truncation skips silently. | open |
-| F32 | Major | contract, failure | No publishing Activity for Streams, as D5 and task 2.2 name. | open |
-| F33 | Major | contract | Streams catch-up reads use the poll Query (no history, silent clamp to the base), not the poll Update D5 fixes. | open |
-| F34 | Major | contract, failure, scope | The R4 check passes with a no-op `roll_over` and never proves a reader crossed a run, or exercises the >500-event truncation and the carried base. | open |
-| F35 | Major | contract, failure, scope | R3 never crosses a roll-over, so carrying the batch-ID set across Continue-As-New is untested. | open |
-| F36 | Major | failure | `close()` terminates Streams Workflows and deletes NATS streams other instances use; a new Streams instance's random queue cannot serve an existing run. | open |
-| F37 | Major | contract, failure, scope | No Streams or NATS results files; results name a HEAD that lacks the code (no dirty-tree check); infrastructure errors read as `fail`; partial runs overwrite. | open |
-| F38 | Major | contract, scope | The table reader clears its NOTIFY flag after fetching, so a wake-up is lost and the 1 s poll becomes the delivery path (handicaps R6). | open |
-| F39 | Nit | contract, failure | R4 is `n/a` for a non-hosted option only when its check passes. | open |
-| F40 | Nit | failure, scope | A JetStream non-follow read loops forever if a purge removes everything through `last` mid-read. | open |
-| F41 | Nit | failure | `expire_below` past the end sets the table and memory base above the next offset, unlike Streams. | open |
-| F42 | Nit | failure | `capture.py` overwrites the fixture whatever the turn's status; probes use fixed IDs. | open |
-| F43 | Nit | contract, failure, scope | Unused `StreamInput.batches_this_run` and `ROLL_TIMEOUT`. | open |
-| F44 | Nit | contract, scope | Streams imports the private `_types._decode_payload` from a preview API. | open |
-| F45 | Nit | contract, failure, scope | Table pool `max_size=20` and JetStream `inactive_threshold=60` are not D5 parameters; follow readers pin pool connections. | open |
-| F46 | Nit | contract | The fixture scan checks payloads only; `blob_ref` is a plain dict and the copy is not `Strict`. | open |
-| F47 | Nit | failure | Temporal limits Updates per run (`TOO_MANY_UPDATES`), including poll Updates; not recorded. | open |
-| F48 | Nit | failure, scope | `_retry` swallows every `RPCError` for ~20 s; R7's fixture fits one batch; the R1 tailer is abandoned, not cancelled; task 1.1's "Compose overlay" is an env file. | open |
+| F31 | Major | contract, failure, scope | Streams never maps `TruncatedOffset` to `Expired`: a tailer behind a roll-over's truncation crashes; every option checks expiry only when a read starts, so mid-read truncation skips silently. | fixed: transport.guarded() reports any offset jump as Expired for every option; Streams maps TruncatedOffset to the retained base; test_r2_mid_read (failed on dfc16fd for all four) |
+| F32 | Major | contract, failure | No publishing Activity for Streams, as D5 and task 2.2 name. | fixed: notes.md#d5 clarifies that the long-running producing Activity calls the Update (no Activity per batch, so no extra round trip); phase 02's load runner publishes from inside an Activity |
+| F33 | Major | contract | Streams catch-up reads use the poll Query (no history, silent clamp to the base), not the poll Update D5 fixes. | fixed: Streams reads only through the poll Update |
+| F34 | Major | contract, failure, scope | The R4 check passes with a no-op `roll_over` and never proves a reader crossed a run, or exercises the >500-event truncation and the carried base. | fixed: roll_over returns once a new run started; check_r4_roll_over asserts it while the reader waits; check_r4_truncating_roll_over (600 events, Expired(106), no gap); validated against NeverRolls |
+| F35 | Major | contract, failure, scope | R3 never crosses a roll-over, so carrying the batch-ID set across Continue-As-New is untested. | fixed: check_r3_resend re-sends after a roll-over |
+| F36 | Major | failure | `close()` terminates Streams Workflows and deletes NATS streams other instances use; a new Streams instance's random queue cannot serve an existing run. | fixed: fixed Streams task queue; close() no longer terminates runs or deletes NATS streams; runs carry a 2 h execution timeout |
+| F37 | Major | contract, failure, scope | No Streams or NATS results files; results name a HEAD that lacks the code (no dirty-tree check); infrastructure errors read as `fail`; partial runs overwrite. | fixed: results record commit, dirty flag, horizon, partial runs and setup errors; full results for all four committed at bd6ea37 |
+| F38 | Major | contract, scope | The table reader clears its NOTIFY flag after fetching, so a wake-up is lost and the 1 s poll becomes the delivery path (handicaps R6). | fixed: the table reader clears its wake-up before fetching; test_table_notify (1.05 s before the fix) |
+| F39 | Nit | contract, failure | R4 is `n/a` for a non-hosted option only when its check passes. | fixed: R4 is n/a for any option without a Workflow |
+| F40 | Nit | failure, scope | A JetStream non-follow read loops forever if a purge removes everything through `last` mid-read. | fixed: a purged non-follow JetStream read ends |
+| F41 | Nit | failure | `expire_below` past the end sets the table and memory base above the next offset, unlike Streams. | fixed: expire_below caps the base at the next offset (table, memory) |
+| F42 | Nit | failure | `capture.py` overwrites the fixture whatever the turn's status; probes use fixed IDs. | fixed: capture.py keeps the fixture unless at least 10 events were captured and writes atomically; probes use unique names |
+| F43 | Nit | contract, failure, scope | Unused `StreamInput.batches_this_run` and `ROLL_TIMEOUT`. | fixed: removed |
+| F44 | Nit | contract, scope | Streams imports the private `_types._decode_payload` from a preview API. | accepted: recorded as a fragility in notes.md#d5 for the report |
+| F45 | Nit | contract, failure, scope | Table pool `max_size=20` and JetStream `inactive_threshold=60` are not D5 parameters; follow readers pin pool connections. | accepted: recorded in notes.md#d5; phase 02 reports them if the load reaches them |
+| F46 | Nit | contract | The fixture scan checks payloads only; `blob_ref` is a plain dict and the copy is not `Strict`. | accepted: the copy keeps the root schema's field names (tested); the spike never sets blob_ref |
+| F47 | Nit | failure | Temporal limits Updates per run (`TOO_MANY_UPDATES`), including poll Updates; not recorded. | accepted: recorded in notes.md#d5 for phase 02 to verify |
+| F48 | Nit | failure, scope | `_retry` swallows every `RPCError` for ~20 s; R7's fixture fits one batch; the R1 tailer is abandoned, not cancelled; task 1.1's "Compose overlay" is an env file. | accepted: spike-scope test and wording details; R1 multi-batch ordering covers R7's single batch |
