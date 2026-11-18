@@ -393,3 +393,60 @@ docs/demos/general-dsh-production-harness-02.md; raw reports under that review f
 
 Shared done gate passed; all eight tasks checked; design review passed (5 rounds), impl review
 passed (4 rounds), verification and demo passed (code 86cfec8, docs 7b06ce6).
+
+## 2026-11-17 · impl-review · phase 03 · round 1 · changes-requested
+
+- Diff 285dd44034aef6c2bd4e40d6ae14811e546b7048..89ac455cf1474db179b04ff1b090b0447921fe4a (code_sha 89ac455). Three fresh `impl-reviewer` subagents, run one at a time; each report committed before the next. Raw reports: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-03-round-1-{contract,failure,scope}.md.
+- Before the round: unit and integration suites from a clean worktree with `infra/.env.example` (276 unit, 174 integration passed; 4 skipped, all `test_model_endpoints.py` for the unset `VLLM_BASE_URL`).
+- Reviewers: contract ✅ · failure ✅ · scope ✅
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F166 | Major | contract, failure, scope | Tasks 1.1, 2.1, 2.2 ticked with no recorded verification (smoke runs, a `default` task on DSH, each pair serving, the revert walkthrough). | fixed: docs/demos/general-dsh-production-harness-03.md records the smoke runs, a `default` and an `openai` task, a task on each DSH pair, the CI path and the revert walkthrough |
+| F167 | Major | contract, scope | D5 owner approval of the switch and its cost is not recorded in a decision log. | fixed: docs/roadmap/decision-log.md 2026-11-17 entry and the plan's Decision log record the owner's approval and the measured cost |
+| F168 | Major | contract | Following the runbook's revert turns CI red: `test_default_profile_runs_on_dsh` and other "default is DSH" statements are not in the revert steps. | fixed: runbook step 2 lists the test, the profile comment, the runbook and overview rows and a decision-log line to change in the same PR |
+| F169 | Major | contract, failure | `make demo-worker-loss` submits on `default`, so the Phase 1 demo now silently runs on DSH. | fixed: infra/demo/worker-loss.sh submits on `openai` by default (PROFILE overrides); rerun recorded in the demo record |
+| F170 | Major | failure | A DSH worker that stops serving mid-benchmark leaves every remaining task waiting up to 60 min, then judged as a regression. | fixed: tests/benchmarks/run.py `await_result` terminates the task and stops the run, unjudged, when the worker stops serving; test_result_wait_stops_when_the_worker_stops_serving |
+| F171 | Major | scope | `--only` subsets are judged against the 10-task baseline and can overwrite R19 evidence; an unknown `--only` ID (the docstring's `fizzbuzz`) runs nothing and exits 0. | fixed: unknown `--only` IDs are refused and a subset must use `--out`; test_unknown_task_id_is_refused, test_subset_is_not_written_to_docs; docstring example uses t01-order-total |
+| F172 | Nit | contract, failure, scope | `--baseline` accepts any harness, so a DSH run can replace the openai-agents baseline. | fixed: `--baseline` takes an openai_agents profile only; test_baseline_only_from_openai_agents |
+| F173 | Nit | contract, failure, scope | Results named `<date>-<profile>`: `default` files mix harnesses over time and a same-day run overwrites. | accepted: task 1.1 names results by profile; each file records its template and harness, and git keeps earlier runs |
+| F174 | Nit | contract, scope | No test covers the results file name or `paired_dsh`. | fixed: test_paired_dsh_restores_dsh_control and test_results_are_written_as_tasks_finish (file name) |
+| F175 | Nit | contract | Pass/fail comes from the last checkpoint's workspace, not task status (predates the phase). | accepted: predates the phase; all 20 recorded rows are `succeeded` |
+| F176 | Nit | contract | `tool_calls` double-counts a retried turn (cumulative per turn, D11; predates the phase). | accepted: predates the phase; no recorded run retried a turn |
+| F177 | Nit | contract | Benchmark rows omit `usage_known`. | fixed: rows and the report carry `usage_known`; test_results_are_written_as_tasks_finish |
+| F178 | Nit | contract | `verdict_for` equals "at most one fails" only while the baseline is 10/10. | accepted: equivalent while the baseline is 10 of 10, as it is |
+| F179 | Nit | contract | The licence check skips pins not written `name==version` (e.g. `pkg @ url`). | fixed: check_dsh_licences.py reports a requirement line that is not a `name==version` pin; test_a_pin_not_written_name_equals_version_fails |
+| F180 | Nit | contract, scope | Any non-empty file satisfies a pin's notices. | accepted: the check proves presence; `export` copies the wheel's own licence files |
+| F181 | Nit | contract, scope | The Compose pair test does not compare the pairs' security settings. | fixed: test_dsh_pairs_share_their_isolation_settings (fails when dsh-b's AppArmor setting is changed) |
+| F182 | Nit | contract, failure, scope | `dsh-b` depends on `dsh-a`, coupling the pairs. | accepted: the dependency only orders the shared image build; runbook says a running dsh-b does not need dsh-a |
+| F183 | Nit | contract | `make workers-up` does not enforce the notes' orchestrator-before-workers order. | accepted: the orchestrator and workers share one image and `make workers-up` starts them together after `make migrate` |
+| F184 | Nit | contract | Prometheus does not scrape the DSH workers. | accepted: outside phase 03; observability of DSH workers belongs with Phase 2 event streaming |
+| F185 | Nit | contract | No integration test submits on `default` and checks `local-dsh` end to end. | accepted: covered by the recorded live runs (F166); an end-to-end DSH task test needs the real model or the DSH outcome suite's fake-model stack |
+| F186 | Nit | contract | The offline link check skips `docs/licences`. | accepted: intended; upstream notices stay verbatim |
+| F187 | Nit | failure | Benchmark rows are written only at the end; an exception loses every finished row. | fixed: results are rewritten after each task; test_results_are_written_as_tasks_finish |
+| F188 | Nit | failure | `start_container` leaks its temp directory if `docker run` fails; a killed benchmark leaves an unlabelled container. | fixed: tests/support/dsh_container.py removes its attempt directory when `docker run` fails and labels containers `praxismesh.dsh-test`; tests/test_dsh_container.py |
+| F189 | Nit | failure | `paired_dsh` pops a pre-existing `DSH_CONTROL` instead of restoring it. | fixed: `paired_dsh` restores an earlier DSH_CONTROL; test_paired_dsh_restores_dsh_control |
+| F190 | Nit | failure, scope | `check_dsh_licences.py export` deletes the notices before checking every pin has licences in the image. | fixed: `replace_notices` checks every pin before writing and swaps a staged tree in; test_export_keeps_notices_when_a_pin_has_none |
+| F191 | Nit | failure | "Pause submissions" does not cover a workflow submitted but not yet resolved when the orchestrator restarts. | fixed: runbook step 1 waits for recent tasks' first attempt before the restart |
+| F192 | Nit | failure | The runbook says a DSH container restart clears the tmpfs volume; the worker keeps it mounted (the launcher's start-up reap is what cleans). | fixed: runbook says the launcher's start-up reap cleans, not the tmpfs |
+| F193 | Nit | failure, scope | `make workers-up` now fails on a host that cannot run the DSH container. | accepted: intended by task 2.1 (`make workers-up` starts the DSH pairs) |
+| F194 | Nit | scope | R20 does not cover the image's Debian `git` package or base image. | accepted: R20 covers the pinned Python distributions; the image's Debian packages are outside it |
+| F195 | Nit | scope | `check_dsh_licences.py` is not in mypy `files`. | fixed: pyproject.toml mypy files include check_dsh_licences.py |
+| F196 | Nit | scope | The 90-minute drain bound starts after the first two workflow Activities, not at submission. | fixed: runbook states the bound is counted from the first turn |
+| F197 | Nit | scope | The runbook's "about 1.9x the wall time" is the spike's figure; R19 measured about 1.3x. | fixed: runbook gives the measured 1.3x |
+| F198 | Nit | scope | `adr_review` changed from `pending` to `null` outside any phase 03 task. | accepted: owner's instruction of 2026-11-17 (the `pending` marker was stale; set at close) |
+
+## 2026-11-17 · impl-review · phase 03 · round 2 · passed
+
+- Targeted follow-up (docs/reviews/README.md rule 6) on 89ac455cf1474db179b04ff1b090b0447921fe4a..d55f3ad (code_sha d55f3ad); one fresh `impl-reviewer` subagent (contract lens). Raw report: docs/reviews/general-dsh-production-harness/raw/impl-review-phase-03-round-2-contract.md.
+- Before the round: full integration suite at d55f3ad, 178 passed.
+- Reviewer: Contract completed. No Blocker or Major; every round 1 fix confirmed enforced (F166-F172, F174, F177, F179, F181, F187-F192, F195-F197).
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F199 | Nit | contract | The runbook's revert checklist misses comments in the Makefile, Compose, the demo script and the profiles that say `default` is DSH. | fixed: runbook step 2 names them and how to find them (docs only) |
+| F200 | Nit | contract | Per-task writes let an interrupted same-day run replace committed results with an "Incomplete" file. | accepted: as F173; the partial file says "Incomplete" and git keeps the committed run |
+| F201 | Nit | contract | No test drives `main`'s per-task write or its `WorkerStopped` path. | accepted: both are short and covered by `write_results`/`await_result` tests; `main` needs a model and a worker to drive |
+| F202 | Nit | contract | No automated check keeps the Phase 1 demo on `openai`; its demo row has no commit. | accepted: a manual demo script; the rerun is recorded (at d55f3ad's script) |
+| F203 | Nit | contract | "A few seconds" for the first two Activities is not a bound while the orchestrator is down. | accepted: the runbook counts the bound from the first turn, which is correct |
+| F204 | Nit | contract | The plan's decision-log line for 2026-11-17 was out of date order. | fixed: moved to the end of the plan's Decision log (docs only) |

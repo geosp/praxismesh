@@ -213,6 +213,40 @@ services:
       dsh-a: { condition: service_started }
     restart: unless-stopped
 
+  # The second DSH pair: `default` runs on DSH with two slots, as it had on
+  # openai_agents (DSH migration plan notes.md#rollout).
+  dsh-b:
+    profiles: [dsh]
+    image: praxismesh-dsh:dev
+    network_mode: none
+    read_only: true
+    cgroup: private
+    cap_add: [SYS_ADMIN]
+    security_opt: ["no-new-privileges:true", "apparmor:unconfined"]
+    tmpfs: [/tmp, /work, /run]
+    volumes: ["dsh-attempts-b:/attempts"]
+    environment: { DSH_WORKER_UID: "10001", DSH_SHARED_GID: "4243" }
+    depends_on:
+      dsh-a: { condition: service_started }  # dsh-a builds the shared image
+    restart: unless-stopped
+
+  worker-dsh-b:
+    profiles: [dsh]
+    image: praxismesh-worker:dev
+    command: ["template", "local-dsh"]
+    environment:
+      <<: *worker-env
+      DSH_CONTROL: /attempts/.control.sock
+    group_add: ["4243"]
+    volumes: ["dsh-attempts-b:/attempts"]
+    tmpfs:
+      - /scratch:uid=10001,gid=10001
+    healthcheck: *worker-health
+    depends_on:
+      <<: *worker-deps
+      dsh-b: { condition: service_started }
+    restart: unless-stopped
+
   worker-b:
     profiles: [workers]
     image: praxismesh-worker:dev
@@ -257,5 +291,8 @@ volumes:
   # DSH attempt trees and control sockets, shared by one DSH worker pair only
   # (DSH migration plan D3, ADR-0006). tmpfs: nothing survives a restart.
   dsh-attempts-a:
+    driver: local
+    driver_opts: { type: tmpfs, device: tmpfs, o: "size=2g,mode=1770,gid=4243" }
+  dsh-attempts-b:
     driver: local
     driver_opts: { type: tmpfs, device: tmpfs, o: "size=2g,mode=1770,gid=4243" }

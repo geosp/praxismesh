@@ -1,11 +1,11 @@
 ---
 title: Run production agents on DSH
-status: in-progress
+status: implemented
 created: 2026-11-15
-updated: 2026-11-16
+updated: 2026-11-17
 design_review: { status: passed, rounds: 5, last: 2026-11-16 }
 approved: 2026-11-15
-adr_review: pending
+adr_review: null
 ---
 
 # Run production agents on DSH
@@ -230,7 +230,7 @@ A profile switch or its revert is an edit, `make registry-lock`, a worker image 
 | --- | --- | --- | --- |
 | 01 | [Harness seam and registry](phases/01-harness-seam.md) | done | 6/6 |
 | 02 | [DSH runner and worker pair](phases/02-dsh-runner.md) | done | 8/8 |
-| 03 | [Acceptance and default switch](phases/03-acceptance.md) | approved | 0/5 |
+| 03 | [Acceptance and default switch](phases/03-acceptance.md) | done | 5/5 |
 
 ## Decision log
 
@@ -239,3 +239,4 @@ A profile switch or its revert is an edit, `make registry-lock`, a worker image 
 2026-11-16 · Phase 02 impl review rounds 1-3: D9 matches the code (2048-token cap enforced by the gateway; charged at the failure or task completion when no later attempt runs). D11 added (usage cumulative over attempts).
 2026-11-16 · D4 restated (UID, capabilities, seccomp, mount and IPC namespaces, private `/tmp`, `/run`, `/dev/shm`). R17: the pin covers control files, is re-checked before each attempt, and a worker that cannot serve refuses and stops polling.
 2026-11-16 · Design review round 4: R20 added (ADR-0005 licence notices); phase 03 adds an `openai` profile and a second DSH pair, and rollback is restated (notes.md#rollout).
+2026-11-17 · D5: the owner approved the R19 cost (DSH about 1.27x input tokens, 1.31x wall time; both 10 of 10) and `default` switched to `local-dsh` (docs/roadmap/decision-log.md).

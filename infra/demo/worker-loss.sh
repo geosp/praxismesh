@@ -14,11 +14,14 @@ set -eu
 ENV_FILE=${ENV_FILE:-infra/.env}
 UV="uv run --env-file $ENV_FILE"
 CHECKPOINTS=${CHECKPOINTS:-2}
+# The Phase 1 demo runs on openai_agents (`local-default` on worker-a/worker-b);
+# `default` runs on DSH since the DSH migration plan's phase 03 switch.
+PROFILE=${PROFILE:-openai}
 
 status() { $UV python -m orchestrator.cli task status "$1"; }
 field() { python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
 
-id=$($UV python -m orchestrator.cli task submit --output order-summary.md --instructions \
+id=$($UV python -m orchestrator.cli task submit --profile "$PROFILE" --output order-summary.md --instructions \
     "Use the order-desk skill. Order 2 units of SKU-4, 1 unit of SKU-5, 3 units of SKU-2 and 1 unit of SKU-1: look up each price and stock, record each order once, and write order-summary.md." \
     | field "d['task_id']")
 echo "task: $id"

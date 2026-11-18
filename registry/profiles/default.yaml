@@ -1,9 +1,11 @@
-# The default agent profile. Profiles carry identity and task limits only; every
-# capability (model, MCP servers, skills, tools) comes from the template.
+# The default agent profile: DSH since the DSH migration plan's phase 03 switch
+# (D5). `openai` keeps openai_agents selectable. Switching back: see
+# docs/operations/runbook.md. Profiles carry identity and task limits only;
+# every capability (model, MCP servers, skills, tools) comes from the template.
 name: default
 tier: local
-harness: openai_agents
-allowed_templates: [local-default]
+harness: dsh
+allowed_templates: [local-dsh]
 max_turns: 6
 max_tokens: 1000000
 max_wall_time: PT30M

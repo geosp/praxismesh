@@ -19,7 +19,7 @@ async def test_prepare_task(tmp_path: Path) -> None:
     blobs = MemoryBlobStore()
     start = await prepare_task(
         {
-            "profile": "default",
+            "profile": "openai",
             "instructions": "Order it.",
             "input_files": ["notes.txt"],
             "outputs": ["order-summary.md"],

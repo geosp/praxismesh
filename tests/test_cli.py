@@ -53,7 +53,7 @@ def test_submit_writes_contextual_json_log_to_stderr(monkeypatch: Any, capsys: A
     start = TaskStart(
         task_id="task-cli-00000001",
         request_id="req-cli-00000001",
-        profile="default",
+        profile="openai",
         template="local-default",
         instructions_ref=ref,
     )

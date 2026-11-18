@@ -67,7 +67,7 @@ def start(task_id: str = "task-wf-00000001") -> TaskStart:
     return TaskStart(
         task_id=task_id,
         request_id="req-1",
-        profile="default",
+        profile="openai",
         template="local-default",
         instructions_ref=REF,
     )

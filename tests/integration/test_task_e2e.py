@@ -48,7 +48,7 @@ async def submit(client: Client, task_id: str | None = None) -> tuple[str, Any]:
     s3 = S3BlobStore.from_env()
     await s3.ensure_bucket()
     data: dict[str, Any] = {
-        "profile": "default",
+        "profile": "openai",
         "instructions": "Order 3 units of SKU-1 and write order-summary.md.",
         "outputs": ["order-summary.md"],
     }
