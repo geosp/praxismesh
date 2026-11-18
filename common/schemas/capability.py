@@ -59,6 +59,8 @@ class WorkerTemplate(Strict):
     turn_timeout: timedelta
     heartbeat_timeout: timedelta
     max_turns_cap: int = Field(ge=1)
+    # Phase 2 messaging D14: the most woken turns a task may run on this template.
+    max_wakes_cap: int = Field(default=100, ge=1)
     max_tokens_cap: int = Field(ge=1)
     max_wall_time_cap: timedelta
     secret_refs: list[str] = []
@@ -97,5 +99,10 @@ class AgentProfile(Strict):
     max_turns: int = Field(ge=1)
     max_tokens: int = Field(ge=1)
     max_wall_time: timedelta
+    # Phase 2 messaging D7, D8, D14: how long a waiting task sleeps with nothing
+    # pending, the longest an ask may wait, and the most woken turns.
+    idle_timeout: timedelta = timedelta(minutes=10)
+    max_ask_wait: timedelta = timedelta(minutes=10)
+    max_wakes: int = Field(default=50, ge=1)
     new_repo_policy: Literal["never", "ask", "auto"] = "ask"
     repo: str | None = None

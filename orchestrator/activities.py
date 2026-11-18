@@ -86,6 +86,9 @@ class OrchestratorActivities:
             max_wall_time=min(profile.max_wall_time, t.max_wall_time_cap),
             turn_timeout=t.turn_timeout,
             heartbeat_timeout=t.heartbeat_timeout,
+            idle_timeout=profile.idle_timeout,
+            max_ask_wait=profile.max_ask_wait,
+            max_wakes=min(profile.max_wakes, t.max_wakes_cap),
         )
 
     @activity.defn(name="record_task")

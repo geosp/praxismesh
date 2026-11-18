@@ -68,6 +68,8 @@ class TurnInput(Strict):
     remaining_tokens: int = Field(ge=0)
     remaining_wall_time: timedelta
     request_id: str = ""
+    # Passed to comms_mcp, which caps an ask's deadline with it (Phase 2 messaging D14).
+    max_ask_wait: timedelta = timedelta(minutes=10)
 
 
 class TurnOutcome(Strict):
@@ -147,6 +149,10 @@ class ResolvedTask(Strict):
     max_wall_time: timedelta
     turn_timeout: timedelta
     heartbeat_timeout: timedelta
+    # Phase 2 messaging D14; defaults keep payloads recorded before them decoding.
+    idle_timeout: timedelta = timedelta(minutes=10)
+    max_ask_wait: timedelta = timedelta(minutes=10)
+    max_wakes: int = Field(default=50, ge=1)
 
 
 class RecordTaskInput(Strict):

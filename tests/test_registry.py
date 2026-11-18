@@ -160,3 +160,43 @@ def test_dsh_template_needs_one_attempt_and_a_context_window(
     template.write_text(template.read_text().replace(old, new))
     with pytest.raises(RegistryError, match="concurrency_per_pod: 1 and a context_window"):
         load_registry(registry_copy, check_lock=False)
+
+
+async def test_messaging_limits_resolve_to_the_smaller_of_profile_and_template() -> None:
+    """Phase 2 messaging D14: idle timeout, ask cap and wake budget reach the
+    resolved task; the wake budget is capped by the template."""
+    from datetime import timedelta
+    from types import SimpleNamespace
+
+    from temporalio.testing import ActivityEnvironment
+
+    from common.schemas import ResolvedTask, TaskStart
+    from orchestrator.activities import OrchestratorActivities
+
+    registry = load_registry()
+    profile = registry.profiles["dsh"]
+    registry.profiles["dsh"] = profile.model_copy(
+        update={"max_wakes": 500, "idle_timeout": timedelta(seconds=90)}
+    )
+    acts = OrchestratorActivities(registry, SimpleNamespace(engine=None))  # type: ignore[arg-type]
+    start = TaskStart.model_validate(
+        {
+            "task_id": "task-resolve-0001",
+            "request_id": "req-1",
+            "profile": "dsh",
+            "template": "local-dsh",
+            "instructions_ref": {
+                "id": "blob:" + "0" * 64, "key": "sha256/" + "0" * 64,
+                "checksum": "sha256:" + "0" * 64, "content_type": "text/plain", "bytes": 1,
+                "retention_class": "task", "created_at": "2026-11-18T00:00:00Z",
+            },
+        }
+    )  # fmt: skip
+    resolved: ResolvedTask = await ActivityEnvironment().run(acts.resolve_capabilities, start)
+    template = registry.templates["local-dsh"].template
+    assert resolved.max_wakes == template.max_wakes_cap == 100  # the cap wins over 500
+    assert resolved.idle_timeout == timedelta(seconds=90)
+    assert resolved.max_ask_wait == timedelta(minutes=10)
+    old = {k: v for k, v in resolved.model_dump(mode="json").items()
+           if k not in {"idle_timeout", "max_ask_wait", "max_wakes"}}  # fmt: skip
+    assert ResolvedTask.model_validate(old).max_wakes == 50  # Phase 1 payloads still decode
