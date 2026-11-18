@@ -226,7 +226,7 @@ agentctl tail --LISTEN agent_events + 1 s poll--> reads offsets above N (reader 
 
 ### Tests
 
-- Unit: `uv run pytest` (`tests/test_event_publisher.py`, the runner conformance event test, the CLI tail and prune tests).
+- Unit: `uv run pytest` (`tests/test_event_publisher.py`, `tests/test_event_transport.py`, the CLI tail and prune tests, and the runner conformance event test for `openai_agents`; its `dsh` case is an integration test, `uv run pytest -m integration tests/test_runner_conformance.py`, which CI's stack job does not run).
 - Integration: `tests/integration/test_event_table.py` (the spike's shared suite on the table and the in-memory reference, the fence, lock order, the horizon, `older_than`, a notify during a fetch); `tests/integration/test_harness_activity.py` (reset and status, a retried attempt, refused final flushes on both success paths, a runner failure, a cancellation); `tests/integration/test_dsh_activity.py` (the DSH event stream).
 - Load: `python -m tests.benchmarks.event_load` (results in `docs/benchmarks/2026-11-18-event-load.json`: at 499eb63: display p95 0.209 s, publish p95 10 ms, database CPU 2.9-3.5% fenced against 3.4% unfenced, both at noise level).
 - Demo: `sh infra/demo/phase-2-events.sh` ([demo record](../demos/phase-2-events.md)).

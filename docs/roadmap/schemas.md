@@ -44,11 +44,11 @@ statuses only; never model or tool text):
 
 | Type | Payload | Emitted by |
 | --- | --- | --- |
-| `reset` | `restored_from` (checkpoint ID, or null for a fresh start or a failure before the lookup) | the Activity, first event of every attempt |
+| `reset` | `restored_from` (checkpoint ID, or null for a fresh start or a failure before the lookup) | the Activity, first event of every attempt that records itself (an attempt refused by the fence at start, or past its attempt limit, stores no events) |
 | `token` | `input_tokens`, `output_tokens` (DSH adds `request_id`) | both runners, one per model response |
 | `tool_call` | `tool`, `call` | both runners |
 | `tool_result` | `tool`, `call`, `status` (`refused` for a tool the template does not grant; its name is capped at 64 characters) | both runners |
-| `status` | `status` (the runner's result, not the recorded outcome), `error` on failure | the Activity, last event of every attempt except a superseded one |
+| `status` | `status` (the runner's result, not the recorded outcome), `error` on failure | the Activity, last event of every attempt except a superseded one or one whose worker was killed |
 
 ### `BlobStore` contract
 
