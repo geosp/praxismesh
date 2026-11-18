@@ -4,24 +4,34 @@
         --profile default --instructions "..." [--input FILE] [--output PATH] [--task-id ID]
     uv run --env-file infra/.env python -m orchestrator.cli task status TASK_ID
     uv run --env-file infra/.env python -m orchestrator.cli task output TASK_ID PATH [--to FILE]
+
+`./agentctl` runs this module with `infra/.env` (Phase 2 events plan D5):
+
+    ./agentctl tail TASK_ID [--after N] [--no-follow]
+    ./agentctl events prune --task TASK_ID (--below N | --older-than 7d)
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import os
+import re
 import sys
+from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from temporalio.client import Client
+from temporalio.client import Client, WorkflowExecutionStatus
 from temporalio.contrib.pydantic import pydantic_data_converter
 
 from common.blob_store.s3 import S3BlobStore
 from common.errors import InvalidTaskInput, PraxisError
+from common.events import EventTransport, Expired, Item, TableTransport
 from common.observability import (
     configure_logging,
     configure_tracing,
@@ -165,6 +175,95 @@ async def status(args: argparse.Namespace) -> int:
     return 0
 
 
+POLL_CLOSED_S = 2.0
+DURATION = re.compile(r"^(\d+)([smhd])$")
+UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
+
+
+def parse_duration(value: str) -> timedelta:
+    match = DURATION.match(value)
+    if match is None:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a duration like 30m, 12h or 7d")
+    return timedelta(**{UNITS[match.group(2)]: int(match.group(1))})
+
+
+def event_line(item: Item) -> str:
+    if isinstance(item, Expired):
+        return f"expired: events before {item.retained_base} were pruned"
+    offset, e = item
+    return f"{offset}\t{e.attempt_id}\t{e.type}\t{json.dumps(e.payload, sort_keys=True)}"
+
+
+async def print_events(
+    transport: EventTransport,
+    workflow_id: str,
+    after: int,
+    *,
+    follow: bool,
+    closed: Callable[[], Awaitable[bool]],
+    write: Callable[[str], None] = print,
+) -> int:
+    """Print the events above `after`. With `follow`, keep printing until the
+    Workflow has closed, then read once more to the end, so the last batch is not
+    missed (R2, R3; D5). Returns the last offset printed."""
+    last = after
+
+    async def read(follow_: bool) -> None:
+        nonlocal last
+        async for item in transport.read(workflow_id, last, follow=follow_):
+            write(event_line(item))
+            if not isinstance(item, Expired):
+                last = item[0]
+
+    if not follow:
+        await read(False)
+        return last
+    reader = asyncio.create_task(read(True))
+    try:
+        while not reader.done() and not await closed():
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(reader), POLL_CLOSED_S)
+    finally:
+        reader.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await reader
+    await read(False)
+    return last
+
+
+async def tail(args: argparse.Namespace) -> int:
+    engine = make_engine()
+    client = await connect()
+
+    async def closed() -> bool:
+        try:
+            description = await client.get_workflow_handle(args.task_id).describe()
+        except Exception:  # unknown or beyond retention: nothing more will arrive
+            return True
+        return description.status != WorkflowExecutionStatus.RUNNING
+
+    try:
+        # The workflow ID is the task ID (orchestrator/submit.py).
+        await print_events(
+            TableTransport(engine), args.task_id, args.after, follow=args.follow, closed=closed
+        )
+    finally:
+        await engine.dispose()
+    return 0
+
+
+async def prune(args: argparse.Namespace) -> int:
+    engine = make_engine()
+    try:
+        base = await TableTransport(engine).prune(
+            args.task, below=args.below, older_than=args.older_than
+        )
+    finally:
+        await engine.dispose()
+    print(json.dumps({"task_id": args.task, "retained_base": base}))
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="praxis")
     commands = p.add_subparsers(dest="group", required=True)
@@ -185,13 +284,30 @@ def parser() -> argparse.ArgumentParser:
     o.add_argument("task_id")
     o.add_argument("path")
     o.add_argument("--to", help="write to this file instead of stdout")
+    t = commands.add_parser("tail", help="print a task's events, following them live")
+    t.add_argument("task_id")
+    t.add_argument("--after", type=int, default=0, help="resume after this offset")
+    t.add_argument("--no-follow", dest="follow", action="store_false", help="print and exit")
+    events = commands.add_parser("events").add_subparsers(dest="command", required=True)
+    pr = events.add_parser("prune", help="delete a task's oldest events")
+    pr.add_argument("--task", required=True)
+    which = pr.add_mutually_exclusive_group(required=True)
+    which.add_argument("--below", type=int, help="delete offsets below this one")
+    which.add_argument("--older-than", type=parse_duration, help="for example 7d, 12h, 30m")
     return p
 
 
 def main(argv: list[str]) -> int:
     args = parser().parse_args(argv)
     configure_logging(os.environ.get("LOG_LEVEL", "INFO"), stream=sys.stderr)
-    handler = {"submit": submit, "status": status, "output": output}[args.command]
+    command = "tail" if args.group == "tail" else args.command
+    handler = {
+        "submit": submit,
+        "status": status,
+        "output": output,
+        "tail": tail,
+        "prune": prune,
+    }[command]
     try:
         return asyncio.run(handler(args))
     except PraxisError as e:

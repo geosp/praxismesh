@@ -85,3 +85,95 @@ def test_submit_writes_contextual_json_log_to_stderr(monkeypatch: Any, capsys: A
     assert line["task_id"] == "task-cli-00000001"
     assert line["request_id"] == "req-cli-00000001"
     assert line["workflow_id"] == "task-cli-00000001"
+
+
+# `agentctl tail` and `events prune` (Phase 2 events plan tasks 3.1, 3.2).
+
+
+def _events(n: int, start: int = 0) -> list[Any]:
+    from common.schemas.events import AgentEvent
+
+    return [
+        AgentEvent(
+            seq=start + i,
+            timestamp=datetime.now(UTC),
+            workflow_id="wf",
+            task_id="wf",
+            attempt_id="wf:1:1",
+            type="token",
+            payload={"input_tokens": start + i},
+        )
+        for i in range(n)
+    ]
+
+
+async def _published(n: int) -> Any:
+    from common.events import MemoryTransport, Writer
+
+    t = MemoryTransport()
+    await t.publish("wf", Writer("wf", 1, 1), "b0", _events(n))
+    return t
+
+
+async def _never_closed() -> bool:
+    return False
+
+
+async def test_tail_resumes_after_an_offset() -> None:
+    t, lines = await _published(30), list[str]()
+    last = await cli.print_events(
+        t, "wf", 20, follow=False, closed=_never_closed, write=lines.append
+    )
+    assert [int(line.split("\t")[0]) for line in lines] == list(range(21, 31))
+    assert last == 30
+    assert lines[0].split("\t")[1:3] == ["wf:1:1", "token"]
+
+
+async def test_tail_reports_pruned_events_first() -> None:
+    t, lines = await _published(20), list[str]()
+    assert await t.prune("wf", below=15) == 15
+    await cli.print_events(t, "wf", 5, follow=False, closed=_never_closed, write=lines.append)
+    assert lines[0] == "expired: events before 15 were pruned"
+    assert [int(line.split("\t")[0]) for line in lines[1:]] == list(range(15, 21))
+
+
+async def test_tail_follows_until_the_workflow_closes_then_reads_to_the_end(
+    monkeypatch: Any,
+) -> None:
+    import asyncio
+
+    from common.events import Writer
+
+    t, lines, state = await _published(2), list[str](), {"closed": False}
+
+    async def closed() -> bool:
+        return state["closed"]
+
+    monkeypatch.setattr(cli, "POLL_CLOSED_S", 0.05)
+    following = asyncio.create_task(
+        cli.print_events(t, "wf", 0, follow=True, closed=closed, write=lines.append)
+    )
+    await asyncio.sleep(0.1)
+    await t.publish("wf", Writer("wf", 1, 1), "b1", _events(3, 2))
+    state["closed"] = True  # the last batch may land as the Workflow closes
+    await t.publish("wf", Writer("wf", 1, 1), "b2", _events(1, 5))
+    assert await asyncio.wait_for(following, 5) == 6
+    assert [int(line.split("\t")[0]) for line in lines] == list(range(1, 7))
+
+
+def test_durations_parse() -> None:
+    from datetime import timedelta
+
+    import pytest
+
+    assert cli.parse_duration("7d") == timedelta(days=7)
+    assert cli.parse_duration("30m") == timedelta(minutes=30)
+    with pytest.raises(Exception, match="duration"):
+        cli.parse_duration("7 days")
+
+
+def test_tail_and_prune_parse() -> None:
+    args = cli.parser().parse_args(["tail", "task-1", "--after", "4", "--no-follow"])
+    assert (args.group, args.task_id, args.after, args.follow) == ("tail", "task-1", 4, False)
+    args = cli.parser().parse_args(["events", "prune", "--task", "task-1", "--below", "15"])
+    assert (args.command, args.task, args.below, args.older_than) == ("prune", "task-1", 15, None)
