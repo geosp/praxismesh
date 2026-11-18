@@ -41,10 +41,20 @@ concurrently (R6, R7).
 
 - The lock is `pg_advisory_xact_lock(hashtext(task_id))`.
 - Attempt start, the checkpoint insert, the usage-ledger dispatch and the attempt finish
-  each take it and check that no newer (turn, attempt) row exists; a stale write raises
-  `FenceRejected` and the Activity raises `Superseded`, writing nothing.
-- A template-version refusal inserts an uncounted `refused` row under the same lock, so
-  it fences older attempts too.
+  each take it and check that no newer (turn, attempt) row exists. A stale start,
+  checkpoint or finish raises `FenceRejected`; a stale ledger dispatch is refused (the
+  gateway denies the request as superseded). On the success path the Activity then raises
+  `Superseded` and writes nothing more.
+- A refusal (a template-version mismatch, or a DSH worker that cannot serve) inserts an
+  uncounted `refused` row under the same lock, without the newer-attempt check, so it
+  fences older attempts too.
+- Two writes skip the newer-attempt check, and must stay bounded as they are:
+  - closing unfinished rows (`close_unfinished`) touches only rows at or below the writer's
+    attempt (`through_attempt`), or the whole task at task completion;
+  - charging unsettled requests on a failure (`close_unknown`) is unfenced (a known
+    deviation, migration plan F106).
+  When a runner fails, the attempt's own fenced finish may be refused (and is then
+  skipped); the failure still propagates to Temporal.
 - Artifact references leave the Activity only in the result of a successful fenced
   finish. A pre-upload currency check is an early exit, not the guarantee.
 - The fence applies to every runner through the shared `run_harness_turn` seam, not to
@@ -61,11 +71,15 @@ whether the Workflow uses its result.
 - Good, because the rule is one lock and one check, the same at every write.
 - Bad, because writes for one task serialize on its lock; a long transaction would delay
   that task's other attempts (not observed at the current scale; Unknown at larger scale).
-- Bad, because a stale attempt can still upload artifact blobs that nothing references;
-  they stay until retention removes them.
+  The lock key is a 32-bit hash, so two tasks can occasionally share a lock.
+- Bad, because a stale attempt can still upload artifact blobs that nothing references.
+  They are stored with the `audit` retention class, which is kept indefinitely: retention
+  records lifetimes only, and deletion arrives in Phase 3A.
 - Follow-up: any new write path for attempts (Phase 2 events, a new runner) must take the
-  fence or justify why it need not; known unfenced paths are recorded as deviations
-  (migration plan notes.md#rollout, F106).
+  fence or justify why it need not. The repository still offers unfenced writers
+  (`CheckpointRepository.insert`, and `AttemptRepository.finish` with `fenced=False`, its
+  default); new attempt code uses the fenced forms.
+- Follow-up: Phase 3A garbage collection should remove unreferenced audit blobs.
 
 ### Confirmation
 
