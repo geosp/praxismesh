@@ -34,7 +34,7 @@ NOW = sa.text("CURRENT_TIMESTAMP")
 GRANTS = {
     "task_messages": "SELECT, INSERT, UPDATE",
     "task_inbox": "SELECT",
-    "message_wakes": "INSERT",
+    "message_wakes": "SELECT, INSERT",  # ON CONFLICT needs SELECT on its target
     "tasks": "SELECT",
     "task_attempts": "SELECT",
 }

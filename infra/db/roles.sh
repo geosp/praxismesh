@@ -28,7 +28,7 @@ DO $$ BEGIN
     IF to_regclass('public.task_messages') IS NOT NULL THEN
         GRANT SELECT, INSERT, UPDATE ON task_messages TO praxis_comms;
         GRANT SELECT ON task_inbox, tasks, task_attempts TO praxis_comms;
-        GRANT INSERT ON message_wakes TO praxis_comms;
+        GRANT SELECT, INSERT ON message_wakes TO praxis_comms;
     END IF;
 END $$;
 EOSQL

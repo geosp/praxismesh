@@ -53,7 +53,7 @@ Migration 0006. The inbox table is `task_messages`: `agent_messages` already exi
   from `PRAXIS_COMMS_DB_PASSWORD`), and grants it `CONNECT` on `praxismesh` and `USAGE` on `public`
   (`init.sh` revokes `CONNECT` from `PUBLIC`). `init.sh` calls it on a fresh volume; operators run it
   once on an existing one (`make db-roles`). Migration 0006, run as the app role that owns the
-  tables, grants `SELECT, INSERT, UPDATE` on `task_messages`, `INSERT` on `message_wakes`, `SELECT` on
+  tables, grants `SELECT, INSERT, UPDATE` on `task_messages`, `SELECT, INSERT` on `message_wakes` (`ON CONFLICT` reads its target), `SELECT` on
   `tasks` and `task_attempts`, `SELECT, INSERT, UPDATE` on `task_inbox`, and revokes them on downgrade.
   `roles.sh` is mounted into the `db` service as `/docker-entrypoint-initdb.d/21_roles.sh` (it runs
   after `20_praxismesh.sh`) and gets `PRAXIS_COMMS_DB_PASSWORD` from the service env; `make db-roles`

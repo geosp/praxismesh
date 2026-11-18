@@ -496,15 +496,16 @@ class MessageRepository:
 
     async def _wake_if_sleeping(self, conn: AsyncConnection, recipient: str) -> None:
         """One pending wake per sleeping recipient (D6); its workflow ID is its task ID."""
+        # No RETURNING: the comms role may insert wake rows but not read them.
         woken = await conn.execute(
             text(
                 "INSERT INTO message_wakes (recipient_workflow) "
                 "SELECT task_id FROM task_inbox WHERE task_id = :r AND sleeping "
-                "ON CONFLICT (recipient_workflow) DO NOTHING RETURNING id"
+                "ON CONFLICT (recipient_workflow) DO NOTHING"
             ),
             {"r": recipient},
         )
-        if woken.first() is not None:
+        if woken.rowcount:
             await conn.execute(text("SELECT pg_notify('message_wakes', :r)"), {"r": recipient})
 
 

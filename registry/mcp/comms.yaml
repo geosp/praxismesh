@@ -1,0 +1,9 @@
+# The comms MCP server (comms_mcp/; Phase 2 messaging D13), run as a stdio
+# subprocess per harness attempt. It connects as the praxis_comms role.
+name: comms
+transport: stdio
+command: python
+args: ["-m", "comms_mcp"]
+secret_env: [PRAXIS_COMMS_DB_URL]
+tools_allowed: [send_to_agent, ask_agent, post_status, get_task_context]
+capabilities: [comms]
