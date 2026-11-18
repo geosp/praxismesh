@@ -29,7 +29,7 @@ closes its messages and wakes its waiters.
 
 - [x] 2.1 Add `infra/db/roles.sh` (creates `praxis_comms` with `CONNECT` and schema `USAGE`, safe to rerun), mounted into the `db` service as a second init script and run by a new `make db-roles` target; migration 0006 (`task_messages`, `task_inbox`, `message_wakes`, grants, revokes on downgrade); `PRAXIS_COMMS_DB_PASSWORD` in the `db` service env, and it and `PRAXIS_COMMS_DB_URL` in `infra/.env.example`, `infra/check-prereqs.sh` and the harness workers' Compose env (D6, D13, notes.md#d6). Verify: a fresh volume creates the role; on a copy of the dev volume `make db-roles` twice, then upgrade and downgrade; a test as `praxis_comms` is refused a write to `tasks`.
 - [x] 2.2 Add `MessageRepository`: the fenced attempt writes `send`, `ask` (self-ask and cycle checks), `reply` and `read_claimed`; the unfenced orchestrator steps `claim` (expiry, sleeping flag) and `end_task` (`cancel_for` with the task's status change); and `blocking_finish` (open questions and unread replies), all under D10's request lock (D6, D10, D17, R10-R13, R17-R19, R23, R25, R27, R30). Verify: an integration test for each scenario of those requirements.
-- [ ] 2.3 Add `MessageEnvelope` to `common/schemas/` and `schemas.md` (D6). Verify: schema unit tests.
+- [x] 2.3 Add `MessageEnvelope` to `common/schemas/` and `schemas.md` (D6). Verify: schema unit tests.
 
 ### 3. comms_mcp
 
