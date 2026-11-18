@@ -7,13 +7,13 @@ Runners emit `AgentEvent`s through an `AttemptEvents`, which hands them to a sin
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import threading
 import time
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from common.events import EventTransport, Writer
+from common.events.transport import wait_set
 from common.persistence.fence import FenceRejected
 from common.schemas.events import AgentEvent, EventType
 
@@ -125,7 +125,9 @@ class BatchingPublisher:
         self.closing = True
         self.wake.set()
         try:
-            await asyncio.shield(asyncio.wait_for(asyncio.shield(self.task), timeout_s))
+            # The caller's cancellation reaches the caller only; the flush goes on.
+            async with asyncio.timeout(timeout_s):
+                await asyncio.shield(self.task)
         except TimeoutError as e:
             self.task.cancel()
             return self.refused or self.error or e
@@ -141,8 +143,7 @@ class BatchingPublisher:
 
     async def _run(self) -> None:
         while True:
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(self.wake.wait(), self._next_wait())
+            await wait_set(self.wake, self._next_wait())
             self.wake.clear()
             await self._drain()
             if self.refused is not None:

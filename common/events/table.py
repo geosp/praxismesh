@@ -16,7 +16,6 @@ delivered only between transactions) and also polls every second.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 from collections.abc import AsyncGenerator, AsyncIterator
 from datetime import timedelta
@@ -25,7 +24,14 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from common.events.transport import RESEND_HORIZON_S, Item, Writer, expiry_for, guarded
+from common.events.transport import (
+    RESEND_HORIZON_S,
+    Item,
+    Writer,
+    expiry_for,
+    guarded,
+    wait_set,
+)
 from common.persistence.fence import NO_NEWER_ATTEMPT, TASK_LOCK, FenceRejected
 from common.schemas.blob import BlobRef
 from common.schemas.events import AgentEvent
@@ -131,8 +137,7 @@ class TableTransport:
                         continue
                     if not follow:
                         return
-                    with contextlib.suppress(TimeoutError):  # the 1 s poll fallback
-                        await asyncio.wait_for(woken.wait(), POLL_S)
+                    await wait_set(woken, POLL_S)  # or the 1 s poll fallback
             finally:
                 if follow:
                     await driver.remove_listener(CHANNEL, notified)

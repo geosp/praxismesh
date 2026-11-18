@@ -8,12 +8,28 @@ one `Expired` naming the retained base. Ported from the event-transport spike
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Protocol
 
 from common.schemas.events import AgentEvent
+
+
+async def wait_set(event: asyncio.Event, timeout: float | None) -> bool:
+    """Wait until `event` is set or `timeout` passes; True if it was set.
+
+    Use this, not `asyncio.wait_for(event.wait(), ...)`: on Python 3.11, `wait_for`
+    loses a cancellation that arrives in the same step the event is set, so a
+    cancelled follower keeps running (found by the Phase 2 load benchmark)."""
+    try:
+        async with asyncio.timeout(timeout):
+            await event.wait()
+    except TimeoutError:
+        return False
+    return True
+
 
 # A re-sent batch ID is recognised for this long (the spike's re-send horizon).
 RESEND_HORIZON_S = 600.0

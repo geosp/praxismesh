@@ -221,8 +221,7 @@ async def print_events(
     reader = asyncio.create_task(read(True))
     try:
         while not reader.done() and not await closed():
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(asyncio.shield(reader), POLL_CLOSED_S)
+            await asyncio.wait({reader}, timeout=POLL_CLOSED_S)
     finally:
         reader.cancel()
         with contextlib.suppress(asyncio.CancelledError):

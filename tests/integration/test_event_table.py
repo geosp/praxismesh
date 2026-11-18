@@ -316,3 +316,35 @@ async def test_a_notify_during_a_fetch_is_not_lost(engine: AsyncEngine) -> None:
         if len(got) == 2:
             break
     assert got[1] - t.published_at < POLL_S / 2, got[1] - t.published_at
+
+
+async def test_followers_stop_when_cancelled_under_a_stream_of_publishes(
+    engine: AsyncEngine,
+) -> None:
+    """A follower cancelled while notifications keep arriving always stops (the
+    load benchmark found one that did not, with `asyncio.wait_for` on Python 3.11)."""
+    t, wf = TableTransport(engine), new_workflow()
+    stop = asyncio.Event()
+
+    async def publisher() -> None:
+        n = 0
+        while not stop.is_set():
+            await publish(t, wf, f"{wf}-b{n}", make_events(wf, 1, n))
+            n += 1
+            await asyncio.sleep(0.005)
+
+    async def follow() -> None:
+        async for _item in t.read(wf, 0, follow=True):
+            pass
+
+    publishing = asyncio.create_task(publisher())
+    try:
+        for _ in range(40):
+            reader = asyncio.create_task(follow())
+            await asyncio.sleep(0.02)
+            reader.cancel()
+            done, _ = await asyncio.wait({reader}, timeout=3)
+            assert reader in done, "a cancelled follower kept running"
+    finally:
+        stop.set()
+        await publishing
