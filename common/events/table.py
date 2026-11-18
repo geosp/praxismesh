@@ -42,19 +42,24 @@ _INSERT = text(
 
 
 class TableTransport:
-    def __init__(self, engine: AsyncEngine, horizon_s: float = RESEND_HORIZON_S) -> None:
-        self.engine, self.horizon_s = engine, horizon_s
+    def __init__(
+        self, engine: AsyncEngine, horizon_s: float = RESEND_HORIZON_S, *, fenced: bool = True
+    ) -> None:
+        # `fenced=False` exists only for the load benchmark's unfenced baseline
+        # (Phase 2 events plan task 2.3); production always fences (ADR-0007).
+        self.engine, self.horizon_s, self.fenced = engine, horizon_s, fenced
 
     async def publish(
         self, workflow_id: str, writer: Writer, batch_id: str, events: list[AgentEvent]
     ) -> None:
         fence = {"t": writer.task_id, "turn": writer.turn, "a": writer.attempt}
         async with self.engine.begin() as conn:
-            await conn.execute(TASK_LOCK, {"t": writer.task_id})
-            if (
-                await conn.execute(text("SELECT 1 WHERE " + NO_NEWER_ATTEMPT), fence)
-            ).first() is None:
-                raise FenceRejected("a newer attempt owns this task")
+            if self.fenced:
+                await conn.execute(TASK_LOCK, {"t": writer.task_id})
+                if (
+                    await conn.execute(text("SELECT 1 WHERE " + NO_NEWER_ATTEMPT), fence)
+                ).first() is None:
+                    raise FenceRejected("a newer attempt owns this task")
             await conn.execute(
                 text("INSERT INTO event_logs (workflow_id) VALUES (:w) ON CONFLICT DO NOTHING"),
                 {"w": workflow_id},
