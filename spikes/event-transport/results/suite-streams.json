@@ -1,0 +1,15 @@
+{
+  "transport": "streams",
+  "commit": "bd6ea37183ed115818b636e39947f593e5a8ccd8",
+  "dirty": false,
+  "command": "SPIKE_TRANSPORTS=streams SUITE_HORIZON_S=60 pytest tests/test_suite.py",
+  "partial": false,
+  "finished": "2026-11-18T04:42:21+00:00",
+  "requirements": {
+    "R1": "pass",
+    "R2": "pass",
+    "R3": "pass",
+    "R4": "pass",
+    "R7": "pass"
+  }
+}
