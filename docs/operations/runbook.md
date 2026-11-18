@@ -150,6 +150,35 @@ a waiting turn fails its task after `schedule_to_close` (60 minutes for
 `local-dsh`). Switching `default` back helps only tasks submitted after the
 switch.
 
+## Agent events
+
+Every harness attempt, on either runner, publishes its events to the event table
+(migration 0005; [ADR-0009](../adr/0009-use-a-postgresql-event-table-for-agent-events.md),
+[Phase 2 events plan](../plans/2026-11-18-phase-2-agent-events/plan.md)). Offsets are
+per task (the workflow ID is the task ID), start at 1 and have no gaps.
+
+```bash
+./agentctl tail TASK_ID                 # follow live; stops once the Workflow has closed
+./agentctl tail TASK_ID --after 120     # resume after offset 120
+./agentctl tail TASK_ID --no-follow     # print what is stored and exit
+./agentctl events prune --task TASK_ID --below 500       # delete offsets below 500
+./agentctl events prune --task TASK_ID --older-than 7d   # delete the oldest week
+```
+
+`agentctl` runs the CLI with `infra/.env` (`ENV_FILE=...` selects another file).
+Each line is `offset<TAB>attempt<TAB>type<TAB>payload`. A line
+`expired: events before N were pruned` means the reader asked for events that
+`prune` removed; reading continues at N. Each attempt starts with a `reset`
+naming the checkpoint it restored from, so the events after an earlier
+attempt's last checkpoint are superseded by the new attempt's.
+
+Pruning is manual until Phase 3A's retention. Event rows carry retention class
+`task`. Deploy: `make migrate` (0005) before restarting the harness workers;
+running tasks need no drain, because `TaskWorkflow` did not change.
+
+If the database cannot store an attempt's last events, the attempt fails with
+the retryable `EventsUnavailable` and writes no finish; Temporal retries the turn.
+
 ## Known deviations
 
 Deferred on purpose; none blocks operation (plan notes.md#rollout):

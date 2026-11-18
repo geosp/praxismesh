@@ -35,7 +35,7 @@ batching publisher, and `agentctl tail` follows a task live, resumes from an off
 
 - [x] 3.1 Add `./agentctl` and `tail TASK [--after N] [--no-follow]` (D5, R2, R3). Verify: `tests/test_cli.py` cases for resume after N, an `Expired` line, `--no-follow`, and the final read after the Workflow closes.
 - [x] 3.2 Add `events prune` (D4, R3). Verify: prune below 15, then `tail --after 5` prints `Expired(15)` first.
-- [ ] 3.3 Update `schemas.md` (event tables, offsets, event types and payloads, `status` as the runner's result), the decision log and `docs/operations/runbook.md` (tail, prune). Verify: `check_plans.py` and the link check pass.
+- [x] 3.3 Update `schemas.md` (event tables, offsets, event types and payloads, `status` as the runner's result), the decision log and `docs/operations/runbook.md` (tail, prune). Verify: `check_plans.py` and the link check pass.
 
 ### 4. Demo and as-built
 

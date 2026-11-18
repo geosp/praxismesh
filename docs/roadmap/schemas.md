@@ -34,6 +34,22 @@ dispatch and its settled usage; checkpoints may carry a session blob
 (`session_ref`, `session_digest`). `TurnOutcome`, `TaskResult` and
 `ExecutionAttempt` carry `usage_known` (default true).
 
+As built for the Phase 2 events plan (migration 0005, plan D1-D3): `AgentEvent`s
+are stored in `agent_events` at a gap-free `offset` per workflow (the task's
+workflow ID), with `event_logs` holding each workflow's next offset and retained
+base and `event_batches` the batch IDs (`<workflow>:<attempt_id>:<n>`) seen in the
+last 600 s, so a re-sent batch is stored once. All three carry retention class
+`task`. `seq` stays per attempt. Event types and payloads (counts, names, IDs and
+statuses only; never model or tool text):
+
+| Type | Payload | Emitted by |
+| --- | --- | --- |
+| `reset` | `restored_from` (checkpoint ID or null) | the Activity, first event of every attempt |
+| `token` | `input_tokens`, `output_tokens` (DSH adds `request_id`) | both runners, one per model response |
+| `tool_call` | `tool`, `call` | both runners |
+| `tool_result` | `tool`, `call`, `status` | both runners |
+| `status` | `status` (the runner's result, not the recorded outcome), `error` on failure | the Activity, last event of every attempt |
+
 ### `BlobStore` contract
 
 Provide a narrow async Python interface with `put`, `get/stream`, `delete`, `stat`, optional presigned/access-controlled URL operation, and typed error handling. The default adapter targets **SeaweedFS via S3-compatible API**. Ceph RGW uses the S3 adapter with configuration changes; GCS uses a dedicated adapter when enabled. Verify backend semantics for multipart uploads, versioning, conditional writes, signed URLs and integrity instead of assuming perfect interchangeability.
