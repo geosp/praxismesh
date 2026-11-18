@@ -165,7 +165,7 @@ Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-pro
 
 ### Known limits
 
-- `default` still runs `openai_agents`; the switch, the `openai` profile and the second DSH pair are phase 03.
+- At phase 02, `default` still ran `openai_agents`; phase 03 (below) added the switch, the `openai` profile and the second DSH pair.
 - `praxismesh-worker:dev` and `praxismesh-dsh:dev` are fixed tags: building in one checkout retags them for every other checkout on the host.
 - Deferred review items (plan notes.md#rollout): an `unresolved usage` denial starts no exit timer; a stale attempt's usage charge is unfenced; launcher `poll` replies have no timeout.
 
@@ -177,7 +177,7 @@ Plan: [docs/plans/2026-11-15-dsh-production-harness](../plans/2026-11-15-dsh-pro
 
 | Component | Where | As built |
 |---|---|---|
-| Profiles | `registry/profiles/` | `default` and `dsh` resolve to `local-dsh` (`harness: dsh`); `openai` resolves to `local-default` (`harness: openai_agents`). The registry lock pins templates only, so a profile switch leaves it unchanged. |
+| Profiles | `registry/profiles/` | `default` and `dsh` resolve to `local-dsh` (`harness: dsh`); `openai` resolves to `local-default` (`harness: openai_agents`). The registry lock pins templates and the DSH runtime digest, not profiles, so a profile switch leaves it unchanged. |
 | Worker pairs | `infra/docker-compose.yml` (Compose profile `dsh`) | Two pairs, `dsh-a`/`worker-dsh-a` and `dsh-b`/`worker-dsh-b`, each with its own attempt volume (`dsh-attempts-a`, `dsh-attempts-b`) that no other service mounts. `make workers-up` builds and starts the orchestrator, `worker-a`, `worker-b` and both pairs; `make workers-check` submits on `openai` against the fake model. |
 | Benchmark | `tests/benchmarks/run.py`, `tests/support/dsh_container.py` | `--profile` (default `default`) takes the template from the profile; for a `dsh` template it builds the DSH image and starts its own paired container. Results go to `docs/benchmarks/<date>-<profile>.{md,json}`, rewritten as each task finishes; `--out` writes elsewhere and is not judged against the baseline. An unknown `--only` ID is refused, and a subset must use `--out`; `--baseline` takes an `openai_agents` profile only. If the worker stops serving, the run terminates the waiting task and stops, unjudged. Containers it starts carry the label `praxismesh.dsh-test`. Same-day results (2026-11-17, [demo record](../demos/general-dsh-production-harness-03.md)): `dsh` and `default` (then `openai_agents`) each passed 10 of 10. |
 | Licence notices | `docs/licences/dsh/`, `.github/scripts/check_dsh_licences.py` | The licence files of each distribution pinned in `infra/dsh/requirements.txt`. The CI `lint` job fails on a pin with no notices, an empty notice directory, or notices for a distribution no longer pinned; `export` refreshes them from the DSH image. The offline link check skips `docs/licences`. |

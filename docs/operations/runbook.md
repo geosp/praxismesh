@@ -80,9 +80,9 @@ to DSH and revert to `openai_agents`.
      three profile files, `infra/docker-compose.yml`, `infra/demo/worker-loss.sh`
      and the `Makefile` worker targets).
 
-3. **Lock:** `make registry-lock`. The lock records template hashes only, so a
-   profile edit leaves it unchanged; it matters if a template changed too. CI
-   fails on a stale lock.
+3. **Lock:** `make registry-lock`. The lock records template hashes and the
+   DSH runtime digest, not profiles, so a profile edit leaves it unchanged; it
+   matters if a template changed too. CI fails on a stale lock.
 4. **Rebuild and restart:** `make workers-up`. The registry ships in the worker
    image, so this rebuilds it and restarts the orchestrator and the workers
    whose image changed.
@@ -109,8 +109,10 @@ Activities take after submission.
 
 Before stopping a harness's workers, check that no task resolved to its
 template is still open, in the Temporal UI or with `make task-status ID=...`.
-Stopping the DSH pairs early leaves those tasks waiting on `tpl.local-dsh`
-until the pairs return.
+Stopping the DSH pairs early leaves those tasks waiting on `tpl.local-dsh`.
+A waiting turn fails its task after `schedule_to_close` (6 × `turn_timeout`,
+60 minutes for `local-dsh`) unless a pair returns first. Switching `default`
+back does not move them: their template was fixed when they were submitted.
 
 ## A DSH worker that refuses to serve
 
@@ -143,8 +145,10 @@ Causes and fixes:
 A refusing pair takes no tasks, so the other pair carries the load. (`dsh-b`
 depends on `dsh-a` only so that Compose builds the shared image first; a
 running `dsh-b` does not need `dsh-a`.) With both
-refusing, `default` and `dsh` tasks wait on the queue until a pair recovers or
-`default` is switched back.
+refusing, `default` and `dsh` tasks wait on the queue until a pair recovers, and
+a waiting turn fails its task after `schedule_to_close` (60 minutes for
+`local-dsh`). Switching `default` back helps only tasks submitted after the
+switch.
 
 ## Known deviations
 
