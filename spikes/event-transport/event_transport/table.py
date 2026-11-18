@@ -13,6 +13,7 @@ batch sends one `NOTIFY`; a following reader `LISTEN`s and also polls every 1 s.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from collections.abc import AsyncIterator
 
@@ -143,10 +144,8 @@ class TableTransport:
                     if not follow:
                         return
                     woken.clear()
-                    try:
+                    with contextlib.suppress(TimeoutError):  # the 1 s poll fallback
                         await asyncio.wait_for(woken.wait(), POLL_S)
-                    except TimeoutError:
-                        pass
             finally:
                 if follow:
                     await conn.remove_listener(CHANNEL, notified)
