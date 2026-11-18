@@ -206,7 +206,7 @@ the previous workers; events stop being written and the tables stay, unused.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | Event table and agentctl tail | in-progress | 0/11 |
+| 01 | Event table and agentctl tail | in-progress | 9/11 |
 
 ## Decision log
 

@@ -812,3 +812,53 @@ async def test_a_cancelled_attempt_stores_its_events(engine: AsyncEngine, tmp_pa
     events = await stored(t, h.task_id)
     assert [e.type for e in events] == ["reset", "status"]
     assert events[-1].payload["status"] == "cancelled"
+
+
+async def test_an_attempt_that_fails_early_still_opens_with_reset(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """R9: a failure before the runner starts (here, opening the attempt) still
+    stores a reset first, then the failure status."""
+    t = TableTransport(engine)
+    h = await harness(engine, tmp_path, done, events=t)
+
+    async def cannot_open(context: Any) -> Any:
+        raise RuntimeError("launcher unreachable")
+
+    h.acts.open_attempt = cannot_open
+    with pytest.raises(Exception, match="launcher unreachable"):
+        await h.run()
+    events = await stored(t, h.task_id)
+    assert [e.type for e in events] == ["reset", "status"]
+    assert events[0].payload == {"restored_from": None}
+    assert events[1].payload == {"status": "failed", "error": "RuntimeError"}
+
+
+class HangsAfterFirst(TableTransport):
+    """Every publish blocks, as a database that stopped answering."""
+
+    async def publish(
+        self, workflow_id: str, writer: Writer, batch_id: str, events: list[Any]
+    ) -> None:
+        await asyncio.sleep(3600)
+
+
+async def test_a_final_flush_that_times_out_raises_events_unavailable(
+    engine: AsyncEngine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R8, D2: the bounded final flush fails retryably with EventsUnavailable, makes
+    no finish write, and the failure path does not wait on it again."""
+    from harness_activity import events as events_module
+
+    monkeypatch.setattr(events_module, "CLOSE_TIMEOUT_S", 0.3)
+
+    async def finishes(seen: Seen, b: BeforeModelCall, u: Usage, w: Path, s: Session) -> Any:
+        return RunResult("done", u, summary="ok")  # no model call: no mid-turn checkpoint
+
+    h = await harness(engine, tmp_path, finishes, events=HangsAfterFirst(engine))
+    with pytest.raises(Exception) as raised:
+        await asyncio.wait_for(h.run(), 10)
+    assert "EventsUnavailable" in repr(raised.value) or type(raised.value).__name__ == (
+        "EventsUnavailable"
+    )
+    assert await finish_writes(engine, h.task_id, 1) == (0, "started")

@@ -64,3 +64,32 @@ Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out ✅ (plan at 910be44
 | E49 | Nit | fresh reader | Smaller terms, rereads and multi-rule requirements (`before_model_call` unused, shielded, Why vs front matter, outcome and artifact) | fixed: Terms, Why |
 
 ## 2026-11-18 · approved · plan (phase 01)
+
+## 2026-11-18 · impl-review · phase 01 · round 1 · passed
+Diff base 41c0bcf; review commit c7dcbcd. Reviewers: contract ✅ · failure and retry ✅ · scope ✅ (the first scope subagent returned without reviewing; retried, not counted). Raw: docs/reviews/phase-2/raw/events-impl-review-round-1-*.md. Recorded changes-requested; every Major below was fixed with a test that fails without the fix.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| I1 | Major | contract, scope | A timed-out final flush: the failure path saw the publisher open, emitted a second status and closed again, and the cancelled task's `CancelledError` replaced `EventsUnavailable` | fixed: `close()` runs once and `closed` is true from its first call (`harness_activity/events.py`); tests `test_close_is_bounded_and_runs_once`, `test_a_final_flush_that_times_out_raises_events_unavailable` |
+| I2 | Major | contract, failure, scope | An attempt failing before `_run` (opening the attempt, config, checkpoint lookup) stored `status` with no `reset` (R9) | fixed: `reset` is emitted right after the checkpoint lookup, before `_open`; the failure path emits one if none was; test `test_an_attempt_that_fails_early_still_opens_with_reset` |
+| I3 | Major | scope | The 10 s close bound and its timeout path were untested | fixed: the I1 tests (bound set through `CLOSE_TIMEOUT_S`) |
+| I4 | Nit | failure, scope | Every later trigger re-ran the full backoff | fixed: the backoff runs once per batch, then one try per trigger; test `test_the_backoff_runs_once_per_batch` |
+| I5 | Nit | contract, failure, scope | Leftover events after a 64-cut got a fresh 200 ms timer | fixed: the buffer keeps each event's emit time |
+| I6 | Nit | scope | A close during a backoff gave up after one cycle | fixed: while closing it keeps trying once per trigger until the close bound; test `test_a_database_that_stays_down_is_returned_from_close` |
+| I7 | Nit | failure | A cancel during the final flush stored a second status | fixed: by I1 (`closed` from the first call) |
+| I8 | Nit | failure | An emit after close was dropped silently | fixed: logged |
+| I9 | Nit | contract, failure, scope | `tail` ended on any Temporal describe error | fixed: only not-found ends it; other errors are logged and following continues |
+| I10 | Nit | contract, failure | `tail --no-follow` connected to Temporal; the engine leaked if connect failed | fixed: `--no-follow` reads the table only; the engine is disposed in `finally` |
+| I11 | Nit | contract, scope | `tail` could print an `Expired` line twice | fixed: the position moves to the expiry's base |
+| I12 | Nit | failure, scope | Parallel calls to one tool reported the wrong call number (`openai_agents`) | fixed: open calls are kept per tool, oldest first |
+| I13 | Nit | failure, scope | `openai_agents` emitted no events for refused tools, unlike DSH | fixed: `tool_call`/`tool_result` `refused`, as DSH |
+| I14 | Nit | contract | DSH refused-tool events stored a model-chosen name of any length (R6) | fixed: names capped at 64 characters in both runners |
+| I15 | Nit | contract, scope | No table test for two attempts each emitting; prune tested only in memory | fixed: `test_two_attempts_publishing_get_gap_free_offsets`, `test_tail_on_the_table_reports_pruning_first` |
+| I16 | Nit | contract | schemas.md said every attempt ends with `status`; runbook misdescribed `--older-than`; Phases table counts | fixed |
+| I17 | Nit | contract | A non-database error (for example an unserialisable payload) is retried as a database error | accepted: payloads are built by our code from counts and names; the attempt then fails retryably with `EventsUnavailable`, which surfaces the bug |
+| I18 | Nit | contract, failure | A re-run of the same Temporal attempt number within 600 s (a Workflow reset) reuses batch IDs | accepted: rare; a Workflow reset is an operator action |
+| I19 | Nit | contract, failure, scope | A lost-reply commit followed by over 600 s of database errors is stored twice | accepted: outside R1's 600 s horizon, as the plan states |
+| I20 | Nit | contract | A deduplicated re-send sends no NOTIFY | accepted: nothing new to notify |
+| I21 | Nit | failure | An emit after the worker's loop closed raises in the emitting thread | accepted: shutdown only |
+| I22 | Nit | failure | `status: done` can precede a finish checkpoint that then fails | accepted: D3 (`status` is the runner's result) |
+| I23 | Nit | scope | The benchmark has no concurrent same-task fenced writers | accepted: lock order under concurrency is pinned by `test_publish_and_fenced_checkpoint_never_deadlock` (200 pairs) |

@@ -425,6 +425,9 @@ class HarnessActivities:
                     publisher or NoOpSink(), workflow_id, turn.task_id, turn.turn, attempt
                 )
                 try:
+                    # The attempt's first event, before anything else can fail (R9).
+                    latest = await self.checkpoints.latest(turn.task_id)
+                    events.emit("reset", restored_from=latest.checkpoint_id if latest else None)
                     if self.open_attempt is not None:
                         scope = await self._open(turn, attempt, heartbeat)
                         workdir = scope.workspace
@@ -436,12 +439,15 @@ class HarnessActivities:
                         workdir,
                         events,
                         publisher,
+                        latest,
                         scope.store if scope else None,
                     )
                 except BaseException as e:
                     # Every other ending stores its events too; the original error
                     # still propagates (R8; ADR-0007).
                     if publisher is not None and not publisher.closed:
+                        if events.seq == 0:  # failed before the reset: still open with one
+                            events.emit("reset", restored_from=None)
                         if not isinstance(e, Superseded):
                             events.emit("status", **_failure_status(e))
                         problem = await publisher.close()
@@ -471,6 +477,7 @@ class HarnessActivities:
         workdir: Path,
         events: AttemptEvents,
         publisher: BatchingPublisher | None,
+        latest: Checkpoint | None,
         attempt_store: SessionStore | None = None,
     ) -> TurnOutcome:
         loaded = self.registry.templates[turn.template]
@@ -480,8 +487,6 @@ class HarnessActivities:
         session = store.session
         seq = 0
 
-        latest = await self.checkpoints.latest(turn.task_id)
-        events.emit("reset", restored_from=latest.checkpoint_id if latest else None)  # R9
         if latest is not None:
             data = await self.blobs.get(latest.workspace_ref)
             await asyncio.to_thread(ws.unpack, data, workdir)

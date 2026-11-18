@@ -7,6 +7,7 @@ Runners emit `AgentEvent`s through an `AttemptEvents`, which hands them to a sin
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import time
 from datetime import UTC, datetime
@@ -16,6 +17,9 @@ from common.events import EventTransport, Writer
 from common.events.transport import wait_set
 from common.persistence.fence import FenceRejected
 from common.schemas.events import AgentEvent, EventType
+
+log = logging.getLogger("praxis.events")
+CLOSE_TIMEOUT_S = 10.0  # the bound on an attempt's final flush (Phase 2 events plan D2)
 
 
 class EventSink(Protocol):
@@ -68,10 +72,11 @@ class BatchingPublisher:
       buffered, `delay_s` after the oldest unpublished event, or at `close()`.
     - One publish runs at a time, in `seq` order. A cut batch is frozen: its ID
       (`<workflow>:<attempt_id>:<n>`) and events never change. A database error
-      re-sends it unchanged after each backoff and then at each later trigger, so a
-      commit whose reply was lost is deduplicated by its ID; new events wait for
-      later batches.
+      re-sends it unchanged after each backoff (once per batch), then once at each
+      later trigger, also while closing, so a commit whose reply was lost is
+      deduplicated by its ID; new events wait for later batches.
     - A refused publish (`FenceRejected`) stops publishing; `close()` returns it.
+    - `close()` runs once: later calls return its result without waiting again.
 
     `emit` may be called from any thread; publishing runs on the event loop that
     created the publisher.
@@ -93,13 +98,14 @@ class BatchingPublisher:
         self.max_batch, self.delay_s, self.backoff_s = max_batch, delay_s, backoff_s
         self.loop = asyncio.get_running_loop()
         self.lock = threading.Lock()
-        self.buffer: list[AgentEvent] = []
-        self.oldest = 0.0  # monotonic time of the oldest buffered event
+        self.buffer: list[tuple[float, AgentEvent]] = []  # (monotonic emit time, event)
         self.pending: tuple[str, list[AgentEvent]] | None = None
+        self.backed_off = False  # the pending batch has used its backoff tries
         self.batches = 0
         self.refused: FenceRejected | None = None
         self.error: Exception | None = None
         self.closing = False
+        self.result: Exception | None = None
         self.wake = asyncio.Event()
         self.task = self.loop.create_task(self._run())
 
@@ -107,39 +113,45 @@ class BatchingPublisher:
         with self.lock:
             if self.refused is not None:
                 return  # a superseded attempt stores nothing more
-            if not self.buffer:
-                self.oldest = time.monotonic()
-            self.buffer.append(event)
+            if self.closing and self.task.done():
+                log.warning("event emitted after its attempt closed; not stored",
+                            extra={"fields": {"type": event.type, "seq": event.seq}})  # fmt: skip
+                return
+            self.buffer.append((time.monotonic(), event))
         self.loop.call_soon_threadsafe(self.wake.set)
 
     @property
     def closed(self) -> bool:
-        return self.task.done()
+        """True once `close()` has been called, whether or not it has finished."""
+        return self.closing
 
-    async def close(self, timeout_s: float = 10.0) -> Exception | None:
+    async def close(self, timeout_s: float | None = None) -> Exception | None:
         """Publish everything buffered and stop. Shielded from the caller's
         cancellation and bounded by `timeout_s`. Returns the refusal, the last
-        database error (or a timeout), or None when every event was stored."""
-        if self.task.done():
-            return self.refused or self.error
+        database error (or a timeout), or None when every event was stored. Only
+        the first call waits; later calls return its result."""
+        if self.closing:
+            return self.result
         self.closing = True
         self.wake.set()
         try:
             # The caller's cancellation reaches the caller only; the flush goes on.
-            async with asyncio.timeout(timeout_s):
+            async with asyncio.timeout(CLOSE_TIMEOUT_S if timeout_s is None else timeout_s):
                 await asyncio.shield(self.task)
         except TimeoutError as e:
             self.task.cancel()
-            return self.refused or self.error or e
-        return self.refused or self.error
+            self.result = self.refused or self.error or e
+            return self.result
+        self.result = self.refused or self.error
+        return self.result
 
     def _next_wait(self) -> float | None:
         if self.pending is not None:
-            return self.delay_s  # a failed batch: retry at the next trigger
+            return self.delay_s  # a failed batch: one more try at the next trigger
         with self.lock:
             if not self.buffer:
                 return None
-            return max(0.0, self.oldest + self.delay_s - time.monotonic())
+            return max(0.0, self.buffer[0][0] + self.delay_s - time.monotonic())
 
     async def _run(self) -> None:
         while True:
@@ -148,8 +160,8 @@ class BatchingPublisher:
             await self._drain()
             if self.refused is not None:
                 return
-            if self.closing and (self.error is not None or self._empty()):
-                return
+            if self.closing and self._empty():
+                return  # a failing database keeps it trying until close() times out
 
     def _empty(self) -> bool:
         with self.lock:
@@ -160,13 +172,13 @@ class BatchingPublisher:
             due = (
                 self.closing
                 or len(self.buffer) >= self.max_batch
-                or (bool(self.buffer) and time.monotonic() - self.oldest >= self.delay_s)
+                or (bool(self.buffer) and time.monotonic() - self.buffer[0][0] >= self.delay_s)
             )
             if not self.buffer or not due:
                 return False
-            events, self.buffer = self.buffer[: self.max_batch], self.buffer[self.max_batch :]
-            self.oldest = time.monotonic() if self.buffer else 0.0
-        self.pending = (f"{self.workflow_id}:{self.attempt_id}:{self.batches}", events)
+            cut, self.buffer = self.buffer[: self.max_batch], self.buffer[self.max_batch :]
+        self.pending = (f"{self.workflow_id}:{self.attempt_id}:{self.batches}", [e for _, e in cut])
+        self.backed_off = False
         self.batches += 1
         return True
 
@@ -174,7 +186,8 @@ class BatchingPublisher:
         while self.pending is not None or self._cut():
             assert self.pending is not None
             batch_id, events = self.pending
-            for wait in (*self.backoff_s, None):
+            waits = (None,) if self.backed_off else (*self.backoff_s, None)
+            for wait in waits:
                 try:
                     await self.transport.publish(self.workflow_id, self.writer, batch_id, events)
                 except FenceRejected as e:
@@ -185,7 +198,8 @@ class BatchingPublisher:
                 except Exception as e:  # database errors: re-send the same batch
                     self.error = e
                     if wait is None:
-                        return  # keep the batch; retry at the next trigger
+                        self.backed_off = True
+                        return  # keep the batch; one more try at the next trigger
                     await asyncio.sleep(wait)
                 else:
                     self.error, self.pending = None, None

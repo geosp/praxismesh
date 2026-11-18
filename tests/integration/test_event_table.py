@@ -348,3 +348,42 @@ async def test_followers_stop_when_cancelled_under_a_stream_of_publishes(
     finally:
         stop.set()
         await publishing
+
+
+async def test_two_attempts_publishing_get_gap_free_offsets(engine: AsyncEngine) -> None:
+    """R1: two attempts of one task, each publishing several batches through its own
+    publisher, store every event once at offsets 1..N."""
+    from harness_activity.events import AttemptEvents, BatchingPublisher
+
+    t, task = TableTransport(engine), await recorded_task(engine)
+    attempts = AttemptRepository(engine)
+    emitted = 0
+    for attempt in (1, 2):
+        await attempts.start(task, 1, attempt, "worker")
+        p = BatchingPublisher(t, Writer(task, 1, attempt), task, f"{task}:1:{attempt}")
+        events = AttemptEvents(p, task, task, 1, attempt)
+        for _ in range(150):
+            events.emit("token", input_tokens=1, output_tokens=1)
+        emitted += 150
+        assert await p.close() is None
+    items = await collect(t, task, 0)
+    assert offsets(items) == list(range(1, emitted + 1))
+    stored = [i[1] for i in items if not isinstance(i, Expired)]
+    assert [e.attempt_id for e in stored] == [f"{task}:1:1"] * 150 + [f"{task}:1:2"] * 150
+
+
+async def test_tail_on_the_table_reports_pruning_first(engine: AsyncEngine) -> None:
+    """Task 3.2 on the table: prune below 15, then tail after 5 prints the expiry."""
+    from orchestrator import cli
+
+    t, wf = TableTransport(engine), new_workflow()
+    await publish(t, wf, f"{wf}-b0", make_events(wf, 20))
+    assert await t.prune(wf, below=15) == 15
+    lines: list[str] = []
+
+    async def closed() -> bool:
+        return True
+
+    await cli.print_events(t, wf, 5, follow=False, closed=closed, write=lines.append)
+    assert lines[0] == "expired: events before 15 were pruned"
+    assert [int(x.split("\t")[0]) for x in lines[1:]] == list(range(15, 21))

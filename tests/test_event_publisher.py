@@ -166,10 +166,43 @@ async def test_a_refusal_stops_publishing_and_is_returned() -> None:
 
 
 async def test_a_database_that_stays_down_is_returned_from_close() -> None:
+    """Closing keeps re-sending once per trigger until its bound, then returns the
+    database error (the Activity turns it into EventsUnavailable)."""
     t = LostReplies(fails=1000)
-    p = publisher(t, backoff_s=(0.01,))
+    p = publisher(t, backoff_s=(0.01,), delay_s=0.05)
     p.emit(event(0))
-    assert isinstance(await p.close(), ConnectionError)
+    assert isinstance(await p.close(timeout_s=0.5), ConnectionError)
+    assert len(t.calls) >= 4  # the backoff try, then one try per trigger
+
+
+class Hangs(Recording):
+    async def publish(
+        self, workflow_id: str, writer: Writer, batch_id: str, events: list[AgentEvent]
+    ) -> None:
+        await asyncio.sleep(3600)
+
+
+async def test_close_is_bounded_and_runs_once() -> None:
+    t = Hangs()
+    p = publisher(t)
+    p.emit(event(0))
+    first = await p.close(timeout_s=0.1)
+    assert isinstance(first, TimeoutError)
+    assert p.closed
+    assert await asyncio.wait_for(p.close(), 0.1) is first  # no second wait, no cancel error
+    await asyncio.sleep(0)
+    assert p.task.done()
+
+
+async def test_the_backoff_runs_once_per_batch() -> None:
+    t = LostReplies(fails=1000)
+    p = publisher(t, backoff_s=(0.01, 0.01), delay_s=0.2)
+    p.emit(event(0))
+    await asyncio.sleep(0.35)  # the cut at 0.2 s, then three tries over ~0.02 s
+    assert len(t.calls) == 3
+    await asyncio.sleep(0.2)  # the next trigger: one try, not another backoff series
+    assert len(t.calls) == 4
+    p.task.cancel()
 
 
 async def test_close_completes_when_its_caller_is_cancelled() -> None:

@@ -28,6 +28,7 @@ from typing import Any
 
 from temporalio.client import Client, WorkflowExecutionStatus
 from temporalio.contrib.pydantic import pydantic_data_converter
+from temporalio.service import RPCError, RPCStatusCode
 
 from common.blob_store.s3 import S3BlobStore
 from common.errors import InvalidTaskInput, PraxisError
@@ -212,8 +213,8 @@ async def print_events(
         nonlocal last
         async for item in transport.read(workflow_id, last, follow=follow_):
             write(event_line(item))
-            if not isinstance(item, Expired):
-                last = item[0]
+            # After an expiry, resume at its base, so a reread never prints it again.
+            last = item.retained_base - 1 if isinstance(item, Expired) else item[0]
 
     if not follow:
         await read(False)
@@ -232,23 +233,36 @@ async def print_events(
 
 async def tail(args: argparse.Namespace) -> int:
     engine = make_engine()
-    client = await connect()
-
-    async def closed() -> bool:
-        try:
-            description = await client.get_workflow_handle(args.task_id).describe()
-        except Exception:  # unknown or beyond retention: nothing more will arrive
-            return True
-        return description.status != WorkflowExecutionStatus.RUNNING
-
     try:
+        if not args.follow:
+            await print_events(
+                TableTransport(engine), args.task_id, args.after, follow=False, closed=_closed
+            )
+            return 0
+        client = await connect()
+
+        async def closed() -> bool:
+            try:
+                description = await client.get_workflow_handle(args.task_id).describe()
+            except RPCError as e:
+                if e.status == RPCStatusCode.NOT_FOUND:
+                    return True  # unknown or beyond retention: nothing more will arrive
+                log.warning("cannot read the Workflow status; still following",
+                            extra={"fields": {"error": str(e)}})  # fmt: skip
+                return False
+            return description.status != WorkflowExecutionStatus.RUNNING
+
         # The workflow ID is the task ID (orchestrator/submit.py).
         await print_events(
-            TableTransport(engine), args.task_id, args.after, follow=args.follow, closed=closed
+            TableTransport(engine), args.task_id, args.after, follow=True, closed=closed
         )
     finally:
         await engine.dispose()
     return 0
+
+
+async def _closed() -> bool:
+    return True
 
 
 async def prune(args: argparse.Namespace) -> int:

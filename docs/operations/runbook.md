@@ -162,7 +162,7 @@ per task (the workflow ID is the task ID), start at 1 and have no gaps.
 ./agentctl tail TASK_ID --after 120     # resume after offset 120
 ./agentctl tail TASK_ID --no-follow     # print what is stored and exit
 ./agentctl events prune --task TASK_ID --below 500       # delete offsets below 500
-./agentctl events prune --task TASK_ID --older-than 7d   # delete the oldest week
+./agentctl events prune --task TASK_ID --older-than 7d   # delete the oldest events, up to the first newer than 7 days
 ```
 
 `agentctl` runs the CLI with `infra/.env` (`ENV_FILE=...` selects another file).

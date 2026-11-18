@@ -1,12 +1,12 @@
 ---
 phase: 1
 title: Event table and agentctl tail
-status: in-progress
+status: impl-reviewed
 branch: feat/79-agent-events
 base: 41c0bcfbb192e7211ff1100d0849856215aef7a3
 delivers: [R1, R2, R3, R4, R5, R6, R7, R8, R9]
 design_review: { status: passed, rounds: 2, last: 2026-11-18 }
-impl_review: { status: none, rounds: 0, last: null }
+impl_review: { status: passed, rounds: 1, last: 2026-11-18 }
 approved: 2026-11-18
 ---
 

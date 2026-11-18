@@ -334,8 +334,9 @@ class Gateway:
                 TOOL_ERRORS.labels(template=self.template_ref, tool=name).inc()
                 log.warning("refused tool call", extra={"fields": {"tool": name}})
                 if self.events is not None:  # never reaches the executor (R16, F91)
-                    self.events.emit("tool_call", tool=name, call=None)
-                    self.events.emit("tool_result", tool=name, call=None, status="refused")
+                    # The model chose this name: capped, as events hold no model text.
+                    self.events.emit("tool_call", tool=name[:64], call=None)
+                    self.events.emit("tool_result", tool=name[:64], call=None, status="refused")
         if request.get("stream"):
             return 200, "text/event-stream", as_stream(completion)
         return json_reply(200, completion)

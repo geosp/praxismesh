@@ -160,7 +160,9 @@ class _Hooks(RunHooks[Any]):
     ) -> None:
         self.usage, self.allowed, self.state, self.before = usage, allowed, state, before
         self.events = events
-        self.calls: dict[str, int] = {}  # tool name -> the call number of its open call
+        # Tool name -> the call numbers of its open calls, oldest first, so parallel
+        # calls to one tool each report their own number.
+        self.calls: dict[str, list[int]] = {}
         self.tracer = tracer
         self.template = template
         self.model_span: Span | None = None
@@ -195,12 +197,15 @@ class _Hooks(RunHooks[Any]):
                 # No hook fires for a tool that does not exist, so refusals are
                 # logged here; the SDK returns the error to the model.
                 self.state.refused.append(str(name))
+                # As DSH reports a refused call (gateway); the name is capped (R6).
+                self.events.emit("tool_call", tool=str(name)[:64], call=None)
+                self.events.emit("tool_result", tool=str(name)[:64], call=None, status="refused")
                 TOOL_ERRORS.labels(template=self.template, tool=str(name)).inc()
                 log.warning("refused tool call", extra={"fields": {"tool": name}})
 
     async def on_tool_start(self, context: Any, agent: Any, tool: Tool) -> None:
         self.usage.tool_calls += 1
-        self.calls[tool.name] = self.usage.tool_calls
+        self.calls.setdefault(tool.name, []).append(self.usage.tool_calls)
         self.events.emit("tool_call", tool=tool.name, call=self.usage.tool_calls)
         TOOL_CALLS.labels(template=self.template, tool=tool.name).inc()
         self.tool_spans[tool.name] = self.tracer.start_span(
@@ -213,10 +218,11 @@ class _Hooks(RunHooks[Any]):
             self.state.failed_in_step.append(tool.name)
         if failed or looks_failed(str(result)):
             TOOL_ERRORS.labels(template=self.template, tool=tool.name).inc()
+        open_calls = self.calls.get(tool.name)
         self.events.emit(
             "tool_result",
             tool=tool.name,
-            call=self.calls.pop(tool.name, None),
+            call=open_calls.pop(0) if open_calls else None,
             status="failed" if looks_failed(str(result)) else "ok",
         )
         span = self.tool_spans.pop(tool.name, None)
