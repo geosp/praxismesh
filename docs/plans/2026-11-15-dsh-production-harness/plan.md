@@ -1,11 +1,11 @@
 ---
 title: Run production agents on DSH
-status: implemented
+status: closed
 created: 2026-11-15
 updated: 2026-11-17
 design_review: { status: passed, rounds: 5, last: 2026-11-16 }
 approved: 2026-11-15
-adr_review: null
+adr_review: 2026-11-17
 ---
 
 # Run production agents on DSH
