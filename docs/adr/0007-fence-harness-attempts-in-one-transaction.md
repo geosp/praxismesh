@@ -43,16 +43,21 @@ concurrently (R6, R7).
 - Attempt start, the checkpoint insert, the usage-ledger dispatch and the attempt finish
   each take it and check that no newer (turn, attempt) row exists. A stale start,
   checkpoint or finish raises `FenceRejected`; a stale ledger dispatch is refused (the
-  gateway denies the request as superseded). On the success path the Activity then raises
-  `Superseded` and writes nothing more.
+  gateway denies the request as superseded). When the runner has not failed, the Activity
+  then raises `Superseded` and writes nothing more.
 - A refusal (a template-version mismatch, or a DSH worker that cannot serve) inserts an
   uncounted `refused` row under the same lock, without the newer-attempt check, so it
   fences older attempts too.
-- Two writes skip the newer-attempt check, and must stay bounded as they are:
+- Three writes skip the newer-attempt check, and must stay bounded as they are:
   - closing unfinished rows (`close_unfinished`) touches only rows at or below the writer's
     attempt (`through_attempt`), or the whole task at task completion;
-  - charging unsettled requests on a failure (`close_unknown`) is unfenced (a known
-    deviation, migration plan F106).
+  - charging unsettled requests (`close_unknown`), which runs when a DSH attempt opens and
+    when it fails, takes the lock but touches only earlier attempts of the same turn (below
+    the writer's attempt at open, through it on a failure); a stale attempt's charge can
+    still rewrite those usage columns (a known deviation, migration plan F106);
+  - settling a ledger row with a response's usage (`settle`) updates only the writer's own
+    row while it is still unsettled, so a request that a newer attempt has already closed
+    stays closed.
   When a runner fails, the attempt's own fenced finish may be refused (and is then
   skipped); the failure still propagates to Temporal.
 - Artifact references leave the Activity only in the result of a successful fenced
@@ -95,5 +100,5 @@ Integration tests in `tests/integration/test_persistence_phase1.py`
 
 ## Links
 
-- [Migration plan](../plans/2026-11-15-dsh-production-harness/plan.md), D10, R6, R7; notes.md#d10.
+- [Migration plan](../plans/2026-11-15-dsh-production-harness/plan.md), D10, R6, R7; notes.md#d10; notes.md#rollout (deferred deviations, F106).
 - [ADR-0005](0005-adopt-dsh-as-primary-agent-harness.md): existing recovery contracts are preserved.

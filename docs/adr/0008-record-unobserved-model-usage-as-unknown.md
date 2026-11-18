@@ -70,9 +70,10 @@ fatal; the last attempt only, because retried and lost attempts' spend would dis
 - Bad, because the charge overstates spend: a lost request costs `context_window` + 2048
   tokens and can exhaust a budget sooner than the real use would.
 - Bad, because the guarantee covers ledgered runners only. `openai_agents` reports usage from
-  its SDK's responses, carried in heartbeats, and has no ledger rows: a lost `openai_agents`
-  attempt keeps what its last heartbeat reported (0 when it never reported), with
-  `usage_known` still true, and usage after its last heartbeat is not recorded. This is an
+  its SDK's responses, carried in heartbeats, and has no ledger rows. When an
+  `openai_agents` attempt is lost, the turn's total keeps what its last heartbeat reported
+  (0 when it never reported) with `usage_known` still true, the lost attempt's own row stays
+  at 0 tokens, and usage after its last heartbeat is not recorded. This is an
   accepted limit of the fallback runner, not a case of this rule.
 - Follow-up: a new runner that should meet these rules must send its model calls through a
   ledgered gateway; bringing `openai_agents` under them would be a new decision.
