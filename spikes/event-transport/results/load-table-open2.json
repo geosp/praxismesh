@@ -1,0 +1,472 @@
+{
+  "option": "table",
+  "label": "open2",
+  "commit": "5854ca281bde6ab014f60d5d4c9e81dbf1ab7e81",
+  "dirty": false,
+  "command": "uv run python load.py table --label open2",
+  "finished": "2026-11-18T07:52:14+00:00",
+  "params": {
+    "seconds": 300,
+    "agents": 4,
+    "tailers": 3,
+    "rate_per_s": 50,
+    "batch_s": 0.2,
+    "batch_max": 64
+  },
+  "elapsed_s": 300.1,
+  "requirements": {
+    "R5": "n/a",
+    "R6": "pass",
+    "R11": "n/a"
+  },
+  "agent_errors": [],
+  "published": 60232,
+  "batches": 5704,
+  "publish_ms": {
+    "p50": 4.2536010150797665,
+    "p95": 5.6569279986433685
+  },
+  "latency_ms": {
+    "p50": 109.79008674621582,
+    "p95": 204.44798469543457,
+    "p99": 213.83905410766602,
+    "max": 227.3557186126709,
+    "mean": 109.82041142928087
+  },
+  "tailers": [
+    {
+      "workflow": "load-e59ea3ee-a0",
+      "killable": true,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 5,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-e59ea3ee-a0",
+      "killable": false,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-e59ea3ee-a0",
+      "killable": false,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-e59ea3ee-a1",
+      "killable": true,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 5,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-e59ea3ee-a1",
+      "killable": false,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-e59ea3ee-a1",
+      "killable": false,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-e59ea3ee-a2",
+      "killable": true,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 5,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-e59ea3ee-a2",
+      "killable": false,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-e59ea3ee-a2",
+      "killable": false,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-e59ea3ee-a3",
+      "killable": true,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 5,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-e59ea3ee-a3",
+      "killable": false,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-e59ea3ee-a3",
+      "killable": false,
+      "shown": 15058,
+      "last": 15058,
+      "latest": 15058,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    }
+  ],
+  "complete": true,
+  "history": {
+    "limits": {
+      "events": 51200,
+      "bytes": 52428800,
+      "payload": 2097152
+    },
+    "max_run_events": null,
+    "max_run_bytes": null,
+    "max_carried_bytes": null,
+    "runs": {}
+  },
+  "containers": [
+    {
+      "t": 1794988036.2,
+      "name": "pmspike76-db-1",
+      "cpu": 9.06,
+      "mem": "154.8MiB"
+    },
+    {
+      "t": 1794988036.2,
+      "name": "pmspike76-temporal-1",
+      "cpu": 12.96,
+      "mem": "91.04MiB"
+    },
+    {
+      "t": 1794988048.2,
+      "name": "pmspike76-db-1",
+      "cpu": 1.94,
+      "mem": "154MiB"
+    },
+    {
+      "t": 1794988048.2,
+      "name": "pmspike76-temporal-1",
+      "cpu": 0.75,
+      "mem": "89.39MiB"
+    },
+    {
+      "t": 1794988060.3,
+      "name": "pmspike76-db-1",
+      "cpu": 2.44,
+      "mem": "156.1MiB"
+    },
+    {
+      "t": 1794988060.3,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.81,
+      "mem": "92.25MiB"
+    },
+    {
+      "t": 1794988072.3,
+      "name": "pmspike76-db-1",
+      "cpu": 2.42,
+      "mem": "157.6MiB"
+    },
+    {
+      "t": 1794988072.3,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.15,
+      "mem": "92.28MiB"
+    },
+    {
+      "t": 1794988084.3,
+      "name": "pmspike76-db-1",
+      "cpu": 3.29,
+      "mem": "158.9MiB"
+    },
+    {
+      "t": 1794988084.3,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.96,
+      "mem": "91.95MiB"
+    },
+    {
+      "t": 1794988096.3,
+      "name": "pmspike76-db-1",
+      "cpu": 3.17,
+      "mem": "161.3MiB"
+    },
+    {
+      "t": 1794988096.3,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.01,
+      "mem": "101.5MiB"
+    },
+    {
+      "t": 1794988108.3,
+      "name": "pmspike76-db-1",
+      "cpu": 8.09,
+      "mem": "162.6MiB"
+    },
+    {
+      "t": 1794988108.3,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.26,
+      "mem": "106.2MiB"
+    },
+    {
+      "t": 1794988120.4,
+      "name": "pmspike76-db-1",
+      "cpu": 2.88,
+      "mem": "163MiB"
+    },
+    {
+      "t": 1794988120.4,
+      "name": "pmspike76-temporal-1",
+      "cpu": 0.68,
+      "mem": "106.3MiB"
+    },
+    {
+      "t": 1794988132.4,
+      "name": "pmspike76-db-1",
+      "cpu": 3.12,
+      "mem": "163.4MiB"
+    },
+    {
+      "t": 1794988132.4,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.84,
+      "mem": "106.6MiB"
+    },
+    {
+      "t": 1794988144.4,
+      "name": "pmspike76-db-1",
+      "cpu": 7.77,
+      "mem": "165.1MiB"
+    },
+    {
+      "t": 1794988144.4,
+      "name": "pmspike76-temporal-1",
+      "cpu": 0.98,
+      "mem": "108.2MiB"
+    },
+    {
+      "t": 1794988156.4,
+      "name": "pmspike76-db-1",
+      "cpu": 3.33,
+      "mem": "167.2MiB"
+    },
+    {
+      "t": 1794988156.4,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.18,
+      "mem": "108.9MiB"
+    },
+    {
+      "t": 1794988168.4,
+      "name": "pmspike76-db-1",
+      "cpu": 3.01,
+      "mem": "167.6MiB"
+    },
+    {
+      "t": 1794988168.4,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.19,
+      "mem": "109.9MiB"
+    },
+    {
+      "t": 1794988180.5,
+      "name": "pmspike76-db-1",
+      "cpu": 7.52,
+      "mem": "168.7MiB"
+    },
+    {
+      "t": 1794988180.5,
+      "name": "pmspike76-temporal-1",
+      "cpu": 0.81,
+      "mem": "109.8MiB"
+    },
+    {
+      "t": 1794988192.5,
+      "name": "pmspike76-db-1",
+      "cpu": 3.17,
+      "mem": "169.3MiB"
+    },
+    {
+      "t": 1794988192.5,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.68,
+      "mem": "109.6MiB"
+    },
+    {
+      "t": 1794988204.5,
+      "name": "pmspike76-db-1",
+      "cpu": 7.94,
+      "mem": "172.1MiB"
+    },
+    {
+      "t": 1794988204.5,
+      "name": "pmspike76-temporal-1",
+      "cpu": 0.9,
+      "mem": "109.7MiB"
+    },
+    {
+      "t": 1794988216.5,
+      "name": "pmspike76-db-1",
+      "cpu": 3.08,
+      "mem": "173MiB"
+    },
+    {
+      "t": 1794988216.5,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.02,
+      "mem": "110MiB"
+    },
+    {
+      "t": 1794988228.5,
+      "name": "pmspike76-db-1",
+      "cpu": 3.65,
+      "mem": "175.3MiB"
+    },
+    {
+      "t": 1794988228.5,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.04,
+      "mem": "111.5MiB"
+    },
+    {
+      "t": 1794988240.6,
+      "name": "pmspike76-db-1",
+      "cpu": 3.14,
+      "mem": "176.2MiB"
+    },
+    {
+      "t": 1794988240.6,
+      "name": "pmspike76-temporal-1",
+      "cpu": 2.9,
+      "mem": "111.1MiB"
+    },
+    {
+      "t": 1794988251.6,
+      "name": "pmspike76-db-1",
+      "cpu": 3.39,
+      "mem": "177.6MiB"
+    },
+    {
+      "t": 1794988251.6,
+      "name": "pmspike76-temporal-1",
+      "cpu": 2.95,
+      "mem": "110.1MiB"
+    },
+    {
+      "t": 1794988263.6,
+      "name": "pmspike76-db-1",
+      "cpu": 3.08,
+      "mem": "177.7MiB"
+    },
+    {
+      "t": 1794988263.6,
+      "name": "pmspike76-temporal-1",
+      "cpu": 9.3,
+      "mem": "110.8MiB"
+    },
+    {
+      "t": 1794988275.6,
+      "name": "pmspike76-db-1",
+      "cpu": 3.46,
+      "mem": "181.6MiB"
+    },
+    {
+      "t": 1794988275.6,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.76,
+      "mem": "111.6MiB"
+    },
+    {
+      "t": 1794988287.6,
+      "name": "pmspike76-db-1",
+      "cpu": 8.96,
+      "mem": "182.1MiB"
+    },
+    {
+      "t": 1794988287.6,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.52,
+      "mem": "111.6MiB"
+    },
+    {
+      "t": 1794988299.7,
+      "name": "pmspike76-db-1",
+      "cpu": 8.74,
+      "mem": "182.1MiB"
+    },
+    {
+      "t": 1794988299.7,
+      "name": "pmspike76-temporal-1",
+      "cpu": 2.42,
+      "mem": "114.5MiB"
+    },
+    {
+      "t": 1794988311.7,
+      "name": "pmspike76-db-1",
+      "cpu": 8.2,
+      "mem": "183.2MiB"
+    },
+    {
+      "t": 1794988311.7,
+      "name": "pmspike76-temporal-1",
+      "cpu": 0.94,
+      "mem": "112.7MiB"
+    },
+    {
+      "t": 1794988323.7,
+      "name": "pmspike76-db-1",
+      "cpu": 8.06,
+      "mem": "184MiB"
+    },
+    {
+      "t": 1794988323.7,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.24,
+      "mem": "112.9MiB"
+    }
+  ]
+}

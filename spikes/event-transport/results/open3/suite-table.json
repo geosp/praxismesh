@@ -1,0 +1,15 @@
+{
+  "transport": "table",
+  "commit": "5854ca281bde6ab014f60d5d4c9e81dbf1ab7e81",
+  "dirty": false,
+  "command": "SPIKE_TRANSPORTS=table SUITE_HORIZON_S=60 pytest -q -p no:cacheprovider tests/test_suite.py",
+  "partial": false,
+  "finished": "2026-11-18T07:53:38+00:00",
+  "requirements": {
+    "R1": "pass",
+    "R2": "pass",
+    "R3": "pass",
+    "R4": "n/a",
+    "R7": "pass"
+  }
+}

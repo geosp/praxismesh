@@ -45,7 +45,9 @@ weigh:
 - A stable API and ~183 lines of code, against a Public Preview API with a private import and
   ~314 lines of workarounds (batch-ID dedup, expiry reporting, cancellation).
 - Event writes can take ADR-0007's fence in the same transaction as the attempt rows.
-- p95 latency of 187 ms against 199 ms.
+- p95 latency of 187 ms against 199 ms. The spike's original load generator was closed-loop, so
+  Streams received ~5% less load than the table; an open-loop rerun of the table confirms its
+  figures at the full offered load (spike report).
 
 How it is used (from the spike):
 - One event table keyed by workflow and offset, a per-workflow counter row locked on publish, so
@@ -66,8 +68,10 @@ outgrows PostgreSQL; the interface keeps that switch contained.
 - Bad, because the table grows with every event and retention means `DELETE` churn: Phase 3A's
   retention work needs time-based partitioning or equivalent for it.
 - Bad, because each following reader holds a database connection while it follows (the spike's
-  pool allowed 20); fan-out to many observers (Phase 4 gateway, Phase 8 UI) needs a reader that
-  fans out in memory, or a pooler.
+  pool allowed 20, so 17 or more followers in one process would block publishers), and the spike
+  uses one global `NOTIFY` channel, so every follower wakes for every workflow's batch. Fan-out to
+  many observers (Phase 4 gateway, Phase 8 UI) needs a per-workflow channel or a reader that fans
+  out in memory, or a pooler.
 - Bad, because it departs from the §4.4 preference; the decision log records why.
 - Follow-up: Phase 2 decides where token text lives (`AgentEvent` payloads hold no model text);
   revisit this ADR if event writes become a visible share of database load or connection counts

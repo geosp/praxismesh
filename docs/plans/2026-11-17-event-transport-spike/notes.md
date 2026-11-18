@@ -41,6 +41,8 @@ Checked 2026-11-17 against live docs and package indexes.
     expected sequence after a gap in delivery.
   - `Nats-Msg-Id` deduplication within a duplicate window (default 2 min).
   - File storage survives restart; a single-replica stream is lost with its server.
+  - The documented Kubernetes deployment is the Helm chart's 3-replica StatefulSet with
+    JetStream file storage on PVCs (docs.nats.io/learn/deployment/kubernetes).
   - Starting before the first retained sequence: behaviour not documented.
   - `nats-py` has no first-class async publish or fast batch publish.
 - **This repository**:
@@ -121,13 +123,17 @@ Clarifications from phase 01 impl review round 1:
 - **Parameters the implementations add (F45):** table connection pool up to 20 (each following
   reader holds one connection); JetStream consumers expire after 60 s idle. Phase 02 reports
   both if the load reaches them.
-  Streams adds a fixed task queue and a 2 h execution timeout per hosting run (round 2); the
-  report lists them with the others.
+  Streams adds a fixed task queue and a 2 h execution timeout, which covers the whole
+  Continue-As-New chain, not each run (round 2; F81); the report lists them with the others.
 - **Checked in phase 02 (F47):** Temporal limits each run to 2,000 distinct Updates (server message:
   "The limit on the total number of distinct updates in this workflow has been reached (2000)").
   Poll Updates count. In the roll-over-off growth run, each hosting run reached the cap after
   ~1.85 min: ~500 publish and ~1,500 poll Updates (3 tailers), ~8,500 history events and ~10.2 MB,
   ~4,600 events and ~5.5 MB per minute (`results/streams-growth-norollover.json`,
-  `probes/streams_update_limit.py`). A run therefore holds at most 2,000 / (1 + tailers) batches;
-  the judged runs stayed bounded because Temporal suggested Continue-As-New in time.
+  `probes/streams_update_limit.py`; provenance in `results/streams-growth-norollover.provenance.json`).
+  With 3 tailers each batch costs 4 Updates, so the cap arrives at ~500 batches and D5's
+  2,000-batch trigger can never fire first. In the judged runs every hosting run rolled over after
+  ~194-207 batches (~40 s), at ~4.45-4.50 MB and ~775-827 Updates, when Temporal suggested
+  Continue-As-New, apparently on history size. Behaviour at other event sizes or tailer counts was
+  not measured (impl review F65).
 - **Fragility (F44):** Streams decoding uses the preview package's private `_decode_payload`.
