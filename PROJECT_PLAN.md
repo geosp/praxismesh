@@ -72,7 +72,7 @@ This file is the core plan. Detail lives in `docs/roadmap/`. Section numbers are
 - **Keep histories bounded:** Workflow and Activity parameters/results carry small references plus necessary deterministic decisions; large payloads are stored in the application database and `BlobStore`. Also bound the number of events, Signals, Updates and children; use Continue-As-New deliberately. Offloading bytes does not eliminate history events.
 - **Treat shared state as versioned:** a Workflow may consume immutable/versioned records returned by an Activity; it must not consult mutable PostgreSQL state directly during replay. All write Activities are idempotent and use stable operation IDs.
 - **No implicit privilege escalation:** agent profiles and requests cannot inject MCP servers, skills, secrets, or arbitrary templates; policy checks still apply when a client forces `delivery` or selects a repository.
-- **Verify live APIs before implementing:** `temporalio`, Temporal Workflow Streams, SDK session persistence/resume behavior, `claude-agent-sdk`, `temporalio-mcp`, vLLM Anthropic endpoint/tool parser, `github/github-mcp-server`, Temporal Worker Controller (including currently named CRDs and KEDA integration), KEDA Temporal scaler, and `kopf`. Record verified versions, references, limitations and any interfaces/fallbacks in §10. Do not claim an untested SDK capability works.
+- **Verify live APIs before implementing:** `temporalio`, SDK session persistence/resume behavior, `claude-agent-sdk`, `temporalio-mcp`, vLLM Anthropic endpoint/tool parser, `github/github-mcp-server`, Temporal Worker Controller (including currently named CRDs and KEDA integration), KEDA Temporal scaler, and `kopf`. Record verified versions, references, limitations and any interfaces/fallbacks in §10. Do not claim an untested SDK capability works.
 - **Do not commit secrets**. Restrict credentials, resource access, egress, execution budgets, and untrusted repository code.
 - **Named models, tiers and hardware:** The local model for each tier, the meaning of each tier and the development GPU are required inputs (Pre-0.2). Do not start Phase 1 with an unnamed model or Phase 3A with undefined tiers.
 - **Named sandbox for untrusted code:** Before Phase 5, select by ADR the mechanism that runs untrusted repository code and tests (for example a sandboxed container runtime class on Kubernetes, and a rootless, credential-free, egress-restricted container under Compose). The mechanism, its limits and its test are part of the Phase 5 gate.
@@ -103,7 +103,7 @@ Temporal Server (OSS, PostgreSQL persistence)
   |      +--> Claude SDK/CLI or OpenAI agent framework, skills, CLI, MCP
   |      +--> comms_mcp on worker nodes -> scoped Temporal interaction
   |
-  +--> Workflow Streams -> gateway SSE / agentctl / UI
+  +--> PostgreSQL event table (event interface) -> gateway SSE / agentctl / UI
   |
   +--> Signals/Updates -> durable correlated agent messaging
   |
@@ -219,7 +219,7 @@ Each phase implementation plan restates the risks it meets and the measurable si
 | A local model cannot drive the Claude harness reliably | Pre-0.1, Phase 1 | Spike or benchmark pass rate below the owner's threshold | `openai_agents` harness as default; adapter; optional hosted tier |
 | Harness licensing does not permit the intended use or distribution | §0, Phase 1 | Owner or counsel says no | `openai_agents` harness as default; harness installed by the user, never shipped |
 | SDK session state cannot be restored on a different worker | Phase 1 | Pod-loss recovery test cannot pass with the SDK's own interface | Adapter that stores transcripts; restart the task from the last workspace checkpoint |
-| Workflow Streams (preview) changes or bloats history | Phase 2 | Breaking API change, or history per busy run above the set bound | Offset-based transport behind the event interface |
+| The PostgreSQL event table outgrows event volume or observer fan-out (ADR-0009) | Phase 2, Phase 4, Phase 8 | Event writes a visible share of database load, or follower connections near the limit | Per-workflow `NOTIFY` channel or in-memory fan-out; NATS JetStream behind the event interface |
 | Planner output is too poor at the local tier | Phase 3A | Plan validity or routing accuracy on the evaluation set below threshold | Simpler linear plans; stronger planner tier |
 | One GPU cannot serve two tiers at once | Phase 3A | Two models cannot be served concurrently within memory | One model with two profiles; hosted top tier |
 | Entity-workflow history or Continue-As-New proves fragile | Phase 3B | History bound exceeded, or an orphaned child found in tests | More child workflows; fewer Signals; shorter runs |

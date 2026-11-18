@@ -1,11 +1,11 @@
 ---
 title: Choose Phase 2's event transport
-status: implemented
+status: closed
 created: 2026-11-17
-updated: 2026-11-17
+updated: 2026-11-18
 design_review: { status: passed, rounds: 2, last: 2026-11-17 }
 approved: 2026-11-17
-adr_review: null
+adr_review: 2026-11-18
 ---
 
 # Choose Phase 2's event transport

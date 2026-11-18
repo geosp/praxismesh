@@ -156,3 +156,12 @@ Owner decision: phase 01 stays in-progress (impl review passed) and one `verify-
 ## 2026-11-18 · verification · phases 01 and 02 · pass
 
 One verification for both phases (owner decision of 2026-11-18): code_sha 8153e7b8dd534da06fb4a16f9a7dd8c78ff4829a, docs_sha 1f2871d739412ec8847252c324b774d6bb8c0f70. Report: docs/reviews/general-event-transport-spike/verification.md; demo: docs/demos/general-event-transport-spike.md. The remote revision check follows the push with the PR.
+
+## 2026-11-18 · ADR review
+
+- In force, reviewed: ADR-0002, ADR-0003, ADR-0005, ADR-0006, ADR-0007, ADR-0008 (ADR-0001 and ADR-0004 are proposed).
+- Covered by ADR-0009: D1 (the interface) and D2's outcome (the owner's choice of the table, departing from §4.4). Tactical to the spike: D3, D4, D5, D6.
+- ADR-0009 was written during phase 02 (task 2.2) at the owner's decision. Independent review by fresh `design-reviewer` subagents, one at a time (raw: docs/reviews/general-event-transport-spike/raw/adr-review-0009-round-*.md):
+  - round 1 at bfa210b: changes-requested (the §4.4 departure not reconciled in the plan documents; Phase 2 obligations missing from the ADR); fixed in 6a9f073, which also updated design §4.3 and §4.4, PROJECT_PLAN.md and phase-2.md;
+  - round 2 at 6a9f073: pass; its 8 Nits fixed (NATS ran the recorded turn; the suite's 60 s horizon; a refused publish raises as in ADR-0007; the notify test in Confirmation; §4.4's second bullet; the live-API list; the decision log's derived figure; status wording).
+- ADR-0009 `accepted`.

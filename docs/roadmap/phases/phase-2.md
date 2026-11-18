@@ -6,7 +6,7 @@ Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [P
 
 **Read first:** `PROJECT_PLAN.md`, then §4.3, §4.4; schemas.
 
-- [ ] Verify and adopt Temporal Python Workflow Streams if suitable; otherwise add a minimal offset-based transport behind an interface. Implement event state rollover across Continue-As-New.
+- [ ] Implement the PostgreSQL event table behind the event-transport interface, as ADR-0009 decides (owner decision after the issue #76 spike; it replaces the earlier Workflow Streams preference). Port the spike's shared suite and load runner. Events live outside Temporal history, so Continue-As-New carries no event state; settle the open items ADR-0009 lists (fence lock order, tenant scoping, keying, token text).
 - [ ] Batch status/tool/token deltas; assign monotonic `seq` and `attempt_id`; document retention/truncation and retry/reset semantics.
 - [ ] Implement `comms_mcp`: `post_status`, `send_to_agent`, `ask_agent`, `get_task_context`, worker-only and authorization-scoped.
 - [ ] Add application-DB migrations for the message inbox/outbox and the event index on top of the Phase 0 baseline. *(Moved forward in rev 2.9: this phase's inbox depends on it.)*
