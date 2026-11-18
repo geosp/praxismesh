@@ -81,3 +81,37 @@ Round 1's Majors are resolved. Round 2's new Majors (F36-F44) are all in the mes
 
 ## 2026-11-18 · split
 Owner decision: the event part (R1-R9, D1-D5, phase 01) moved to `docs/plans/2026-11-18-phase-2-agent-events`, with the same IDs. This plan keeps messaging (phases 02 and 03) and is to be revised against round 2 before a fresh design review.
+
+## 2026-11-18 · design-review · plan · round 3 · passed
+After the split and rework, a fresh round (owner decision when splitting). Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out ✅ (plan at 88ea037; raw: docs/reviews/phase-2/raw/design-review-round-3-*.md). No earlier finding came back. Recorded changes-requested; every Major below was then fixed.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F66 | Major | codebase fit, zoom out, fresh reader | Continue-As-New ran only before a sleep, so a task woken back to back never continued (R33) | fixed: D11 checks after every `waiting` outcome; R33 scenario "back to back"; task 4.3 test |
+| F67 | Major | zoom out | One wake row and Signal per message grows history during a long turn | fixed: D6, a wake only for a sleeping recipient, one per recipient (`task_inbox`, unique `message_wakes`); R33 second scenario; phase 03 task 1.5 |
+| F68 | Major | zoom out | A failed or cancelled claim ended the Workflow without `complete_task` (R24, R30) | fixed: D7 (claim retried until the wall-time deadline), D17 (every ending), R24, Risks; task 4.3 test |
+| F69 | Major | zoom out | R19 let a task finish with an unread reply, which was then discarded; an ask in the same step escaped the check | fixed: R19 and D8 add unread replies and run the check under the request lock (extends the owner decision; flagged to the owner) |
+| F70 | Major | codebase fit | `max_ask_wait` had no path to the Activity | fixed: D14, `TurnInput.max_ask_wait` with a default; task 1.1; Impact |
+| F71 | Major | codebase fit, zoom out | `praxis_comms` wiring: the `db` service lacks the password, `roles.sh` is not mounted, `make db-roles` does not exist | fixed: task 2.1, notes.md#d6, Rollout |
+| F72 | Major | fresh reader | R23's rule pointed the wrong way | fixed: R23 rewritten; self-ask refused |
+| F73 | Major | fresh reader | No expiry mechanism or read marker in plan.md | fixed: Terms (Claim, Unread reply), D7 (expiry, `read` marking as a fenced write) |
+| F74 | Major | fresh reader | `max_wakes` outcome and cap undefined | fixed: R22 (fails "wake budget exhausted"), D14 (cap default 100, the smaller applies; which turns count) |
+| F75 | Major | fresh reader | Idle-timeout start undefined | fixed: R20, D7 (restarted at each sleep) |
+| F76 | Major | fresh reader | Summary risks, R21/R31 outcomes and the rollback drain missing | fixed: Summary |
+| F77 | Major | fresh reader | Forward rollout drained `waiting` tasks that cannot exist yet | fixed: Rollout & rollback (forward drains running tasks; rollback cancels waiting ones) |
+| F78 | Major | fresh reader | `complete_task` and the wall-time budget undefined | fixed: Terms |
+| F79 | Major | fresh reader | Phases: no task content, phase 01 missing | fixed: Phases note (phase 01 is the events plan's; tasks in `phases/`) |
+| F80 | Nit | codebase fit | Which message writes are fenced | fixed: D10, task 2.2 |
+| F81 | Nit | codebase fit | Marking rows read is an attempt write | fixed: D7, D10 (fenced) |
+| F82 | Nit | codebase fit | v2 prompt must be a new file | fixed: D13, task 3.3 |
+| F83 | Nit | codebase fit, zoom out | Sequence grant for `message_wakes` | fixed: identity column (notes.md#d6) |
+| F84 | Nit | codebase fit | A stale attempt of an ended task could open a question | fixed: R25, notes.md#d6 (sender status) |
+| F85 | Nit | codebase fit | Cancel during the claim | fixed: F68 |
+| F86 | Nit | codebase fit | Which budget pays a `continue` after a woken turn | fixed: D14 |
+| F87 | Nit | codebase fit | Test profile needs a template cap of 200 | fixed: phase 03 task 1.5 |
+| F88 | Nit | codebase fit | R28 too broad | fixed: R28 limited to claims and Signals |
+| F89 | Nit | zoom out | D12's rationale wrong | fixed: D12 (guards command order on the restructured loop) |
+| F90 | Nit | zoom out | A rerun of the same turn would show claimed rows twice | fixed: task 4.1 |
+| F91 | Nit | zoom out | `openai_agents` `sh` can read the comms URL | accepted: Assumptions (the same holds for `PRAXIS_SAMPLE_DB_URL`; DSH isolates commands) |
+| F92 | Nit | fresh reader | Terms, multi-rule requirements, duplication, ordering, `post_status` mechanics, clamp vs refusal, late-reply recording, the `--join` race, submit gate | fixed: Terms, D8 (clamped), R11 (closed questions recorded), D15, Assumptions (`--join`), Rollout (no submit gate), requirements in ID order; multi-rule requirements R13, R19, R24, R30 accepted as one rule with its observable outcome |
+| F93 | Nit | fresh reader | plan.md is 375 lines (budget 250) | accepted: 24 requirements each with scenarios; mechanics are in notes.md |

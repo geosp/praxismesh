@@ -42,7 +42,10 @@ Migration 0006. The inbox table is `task_messages`: `agent_messages` already exi
 - The dispatcher waits on its notification with `common.events.transport.wait_set`, never
   `asyncio.wait_for(event.wait(), ...)`: on Python 3.11 `wait_for` loses a cancellation that lands as
   the event is set (found by the events plan's load benchmark).
-- `message_wakes (id, recipient_workflow, created_at)`. Each insert runs `NOTIFY message_wakes` in the
+- `task_inbox (task_id PK, sleeping boolean)`: set by a claim that found nothing, cleared by a claim
+  that found rows. A send to a sleeping recipient adds its wake row in the same transaction.
+- `message_wakes (id identity, recipient_workflow UNIQUE, created_at)`; a send inserts with
+  `ON CONFLICT DO NOTHING`, so a recipient has at most one pending wake. Each insert runs `NOTIFY message_wakes` in the
   same transaction. The dispatcher selects rows `FOR UPDATE SKIP LOCKED` (several orchestrator replicas
   are safe), Signals `inbox`, and deletes a row once the Signal returns, or on "workflow not found" or
   "already completed" (with a log line). Any other error leaves the row for the next poll.
@@ -51,7 +54,10 @@ Migration 0006. The inbox table is `task_messages`: `agent_messages` already exi
   (`init.sh` revokes `CONNECT` from `PUBLIC`). `init.sh` calls it on a fresh volume; operators run it
   once on an existing one (`make db-roles`). Migration 0006, run as the app role that owns the
   tables, grants `SELECT, INSERT, UPDATE` on `task_messages`, `INSERT` on `message_wakes`, `SELECT` on
-  `tasks` and `task_attempts`, and revokes them on downgrade.
+  `tasks` and `task_attempts`, `SELECT, INSERT, UPDATE` on `task_inbox`, and revokes them on downgrade.
+  `roles.sh` is mounted into the `db` service as `/docker-entrypoint-initdb.d/21_roles.sh` (it runs
+  after `20_praxismesh.sh`) and gets `PRAXIS_COMMS_DB_PASSWORD` from the service env; `make db-roles`
+  runs the same script through `docker compose exec db` on an existing volume.
 - Idempotency key: sha256 of sender task, turn, tool name and canonical arguments. Attempts of one turn
   share it, so a retried attempt that repeats a send stores nothing new and gets the stored result. A
   regenerated send (different text) is a new message.
@@ -59,8 +65,12 @@ Migration 0006. The inbox table is `task_messages`: `agent_messages` already exi
   (task locks use the one-key form, so the namespaces differ). Recipient status (R25), the cycle walk
   (R23) and `end_task` (R24, R30) read and write under the request lock. `end_task` takes only the
   request lock (it is not an attempt write).
-- Cycle walk (R23): from the recipient, follow its open questions' recipients, breadth first, within
-  the request; reaching the asker refuses the ask.
+- Cycle walk (R23): an ask to itself is refused; otherwise from the recipient, follow the recipients
+  of its open questions, breadth first, within the request; reaching the asker refuses the ask.
+- `blocking_finish(task)` (R19): its open questions and its unread replies (replies to its questions
+  not yet `read`), read under the request lock so an ask committed in the same model step counts.
+- Sender status (R25): a send or ask from a task whose row is no longer `running` is refused, so a
+  stale attempt of an ended task cannot reopen a question.
 
 ## D7 · Claim, restore and the wait loop
 
@@ -73,7 +83,9 @@ Migration 0006. The inbox table is `task_messages`: `agent_messages` already exi
 - `read_claimed(task, turn)`: the woken turn's Activity reads the bodies and marks them `read`.
 - Restore: the finish short-circuit applies only to a checkpoint of the same turn. A woken turn's input
   lists its rows (sender, kind, correlation ID, body) instead of `CONTINUE_MESSAGE`.
-- Wait loop, after a `waiting` outcome: claim; a count above zero runs the woken turn now; otherwise
+- Wait loop, after a `waiting` outcome: check Continue-As-New (D11); claim (retry policy: unlimited
+  attempts, `schedule_to_close` the remaining wall time; a final failure or a cancellation goes to
+  `complete_task(failed)`); a count above zero runs the woken turn now; otherwise
   sleep on `workflow.wait_condition(lambda: woken, timeout=...)` until the earliest of the returned
   deadline, the idle timeout (only with no open question) and the wall-time deadline; clear `woken`;
   claim again. Because the loop always claims before it sleeps, a Signal that arrived during a turn is
