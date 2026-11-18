@@ -97,3 +97,35 @@ Approved by the owner after design review passed (2 rounds); phases 01 and 02 ap
 ## 2026-11-18 · phase 01 verification deferred
 
 Owner decision: phase 01 stays in-progress (impl review passed) and one `verify-phase` run covers both phases at the end of phase 02, which adds the load runs and the report that verification checks anyway.
+
+## 2026-11-18 · impl-review · phase 02 · round 1 · changes-requested
+
+- Diff 5371368db80b232b2f155fd5ef0a8c6dd3c0df16..4d6c4cae9e55134bce942e0202e4955549d636d1 (code_sha 4d6c4ca). Three fresh `impl-reviewer` subagents, one at a time; each report committed before the next (the scope reviewer was resumed once after a usage-limit stop). Raw reports: docs/reviews/general-event-transport-spike/raw/impl-review-phase-02-round-1-{contract,failure,scope}.md.
+- Reviewers: contract ✅ · failure ✅ · scope ✅. None of the findings changes the D2 outcome or the owner's choice.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F59 | Major | contract, failure, scope | The report gives medians without ranges; container CPU is from run 1 only, and "4x" database CPU is the most favourable run (3 runs: 1.7-4.1x). | open |
+| F60 | Major | contract, failure, scope | The growth results file has no commit or command, mixes 12 entries from earlier runs with the 4 growth entries, comes from a probe added after c1fda62, and the growth load in measure.sh never wrote its file; task 1.1's per-tailer growth metric was never built. | open |
+| F61 | Major | contract (failure, scope as Nits) | The load generator is closed-loop: Streams' slower publishes gave it ~5% less load (54.9k vs 58.0k events) and hide latency during stalls; the comparison is not at equal offered load. | open |
+| F62 | Major | contract (failure, scope as Nits) | measure.sh never resets the stack between runs, as the plan's Rollout and Risks promise; earlier Streams runs stay Running and table rows accumulate. | open |
+| F63 | Major | contract (scope as Nit) | R11's 298 KB was measured before the batch-ID set reached steady state (5 min < 600 s horizon) and is not only "the last 500 events". | open |
+| F64 | Major | failure | Agent Activities retry forever with no Workflow timeout; after a stalled run is killed, orphaned agents are picked up by the next run's worker and add hidden load. | open |
+| F65 | Major | scope | The report and notes extrapolate roll-over timing (~100 s, ~36 s) past the measured load and treat the 2,000-Update cap as the roll-over interval; measured roll-over was every ~40 s, driven by Temporal's size suggestion. | open |
+| F66 | Nit | contract | NATS's committed suite result predates `check_r1_cancel`. | open |
+| F67 | Nit | contract | Some operating-cost cells cite facts not in notes.md#verified. | open |
+| F68 | Nit | contract | "Owner attention" still opens as if the ADR were for Streams. | open |
+| F69 | Nit | contract | R5's "4.50 MB" is decimal while the bound in load.py is 5 MiB. | open |
+| F70 | Nit | contract | Summed `ByteSize()` approximates Temporal's history-size accounting; the agent Workflows' runs are not measured. | open |
+| F71 | Nit | contract, scope | load.py keeps dead `hosted` branches (which would raise on None) and the NATS container name. | open |
+| F72 | Nit | contract | "Extra code" counts are whole-file line counts. | open |
+| F73 | Nit | contract | probes/README.md's last row is detached from its table. | open |
+| F74 | Nit | contract | The decision-log entry lacks the winner's server versions. | open |
+| F75 | Nit | contract | R5/R6/R11 judging and `percentile()` have no unit test. | open |
+| F76 | Nit | failure, scope | Batch IDs restart per Activity attempt, so a retried attempt's events would be dropped as re-sends. | open |
+| F77 | Nit | failure | The Activity heartbeats only after a flush; a long-blocked publish times out while its coroutine keeps running. | open |
+| F78 | Nit | failure | An aborted measure.sh leaves a results directory mixing invocations; results files are overwritten in place, non-atomically. | open |
+| F79 | Nit | failure | load.py has no try/finally around its run; check_r1_cancel can hang rather than fail on a reader that swallows cancellation. | open |
+| F80 | Nit | failure | Nothing shows task 3.1's reset happened; the table fence's lock order against ADR-0007's writers is unstated. | open |
+| F81 | Nit | scope | Streams' RUN_TIMEOUT covers the whole Continue-As-New chain, not each run; the report's limits row omits it and the fixed queue. | open |
+| F82 | Nit | scope | The table uses one global NOTIFY channel, so every follower wakes for every workflow's batch; with the pool at 20, 17+ followers in one process block publishers. | open |
