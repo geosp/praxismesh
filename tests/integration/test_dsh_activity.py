@@ -352,6 +352,9 @@ async def test_stale_attempt_that_finished_is_fenced(
     assert [tuple(r) for r in outcomes] == [(1, "lost"), (2, "started")]
 
 
+COMMAND_DEADLINE = 20  # seconds from opening the attempt
+
+
 async def test_deadline_stops_a_running_command_within_the_grace(
     container: DshContainer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -363,7 +366,10 @@ async def test_deadline_stops_a_running_command_within_the_grace(
         monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
         registry = load_registry()
         config = build_config(registry, registry.templates["local-dsh"], "task-deadline-1")
-        deadline = time.monotonic() + 4
+        # Long enough for a slow runner to start the DSH runtime and reach the
+        # command before the deadline (issue #73); the command sleeps far longer,
+        # so the deadline still fires while it runs.
+        deadline = time.monotonic() + COMMAND_DEADLINE
         scope = await runner.open_attempt(
             AttemptContext(f"task-deadline-{run_id()}", 1, 1, "wf", 1_000_000, deadline)
         )
