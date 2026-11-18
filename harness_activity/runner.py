@@ -51,7 +51,7 @@ class Usage:
 
 @dataclass
 class RunResult:
-    status: Literal["done", "continue", "needs_input"]
+    status: Literal["done", "continue", "needs_input", "waiting"]
     usage: Usage
     summary: str = ""
     questions: list[str] | None = None

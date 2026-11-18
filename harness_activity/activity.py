@@ -573,7 +573,7 @@ class HarnessActivities:
                 "summary": result.summary,
                 "questions": result.questions or [],
             }
-            if result.status in ("done", "needs_input")
+            if result.status in ("done", "needs_input", "waiting")  # D18
             else None
         )
         return await self._finish(
@@ -625,7 +625,7 @@ class HarnessActivities:
         if finish_checkpoint is not None:
             await finish_checkpoint()
         outputs: list[Artifact] = []
-        if result.status == "done":
+        if result.status in ("done", "waiting"):  # a waiting turn keeps its outputs (D18)
             try:  # a stale attempt publishes no artifact (D10, R7)
                 await self.attempts.assert_current(turn.task_id, turn.turn, attempt)
             except FenceRejected as e:

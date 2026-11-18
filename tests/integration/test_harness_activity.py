@@ -888,3 +888,25 @@ async def test_a_failed_checkpoint_lookup_still_opens_with_reset(
     events = await stored(t, h.task_id)
     assert [e.type for e in events] == ["reset", "status"]
     assert events[1].payload == {"status": "failed", "error": "ConnectionError"}
+
+
+async def test_a_lost_waiting_turn_keeps_its_outputs_without_rerunning(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """Phase 2 messaging D18: a `waiting` finish is recorded like `done`, so a lost
+    attempt after it goes straight to finish, with the turn's outputs."""
+    h = await harness(engine, tmp_path, done)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE tasks SET outputs = CAST(:o AS json) WHERE task_id = :t"),
+            {"o": '["order-summary.md"]', "t": h.task_id},
+        )
+    await AttemptRepository(engine).start(h.task_id, 1, 1, "lost-worker")
+    await add_checkpoint(
+        h, engine, position=0, files={"order-summary.md": "draft"},
+        finish={"status": "waiting", "summary": "asked B", "questions": []},
+    )  # fmt: skip
+    outcome = await h.run(attempt=2)
+    assert h.runner.seen.calls == 0
+    assert outcome.status == "waiting" and outcome.summary == "asked B"
+    assert [a.path for a in outcome.outputs] == ["order-summary.md"]

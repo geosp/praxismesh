@@ -23,7 +23,7 @@ closes its messages and wakes its waiters.
 ### 1. Schemas and registry
 
 - [x] 1.1 Add `idle_timeout`, `max_ask_wait`, `max_wakes` (profile), `max_wakes_cap` (template, default 100), the resolved fields and `TurnInput.max_ask_wait`, all with defaults; fill them in `resolve_capabilities` (D14, R22, R29). Verify: `tests/test_registry.py`; the existing `TaskWorkflow` replay test still decodes the Phase 1 `ResolvedTask`.
-- [ ] 1.2 Add `waiting` to `finish_task`, `RunResult`, `AttemptOutcome` and `TurnOutcome`; a `waiting` turn writes a finish record and collects outputs like `done` (D18, R32). Verify: runner conformance tests for `waiting`, and a lost attempt after `finish_task("waiting")` that does not rerun the model.
+- [x] 1.2 Add `waiting` to `finish_task`, `RunResult`, `AttemptOutcome` and `TurnOutcome`; a `waiting` turn writes a finish record and collects outputs like `done` (D18, R32). Verify: runner conformance tests for `waiting`, and a lost attempt after `finish_task("waiting")` that does not rerun the model.
 
 ### 2. Inbox
 

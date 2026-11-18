@@ -74,7 +74,7 @@ class TurnInput(Strict):
 
 class TurnOutcome(Strict):
     schema_version: Literal[1] = 1
-    status: Literal["done", "continue", "needs_input"]
+    status: Literal["done", "continue", "needs_input", "waiting"]
     checkpoint_id: str | None = None
     tokens_in: int = Field(default=0, ge=0)
     tokens_out: int = Field(default=0, ge=0)
@@ -110,7 +110,15 @@ class TaskResult(Strict):
 
 
 AttemptOutcome = Literal[
-    "started", "done", "continue", "needs_input", "failed", "lost", "refused", "cancelled"
+    "started",
+    "done",
+    "continue",
+    "needs_input",
+    "waiting",
+    "failed",
+    "lost",
+    "refused",
+    "cancelled",
 ]
 
 

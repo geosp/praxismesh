@@ -226,6 +226,16 @@ async def test_needs_input(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert result.status == "needs_input" and result.questions == ["Which SKU?"]
 
 
+async def test_waiting(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase 2 messaging task 1.2: `finish_task("waiting")` ends the run as waiting."""
+    result, _ = await run(
+        script({"tool": "finish_task", "args": {"status": "waiting", "summary": "asked B"}}),
+        tmp_path,
+        monkeypatch,
+    )
+    assert result.status == "waiting" and result.summary == "asked B"
+
+
 async def test_invalid_finish_arguments_continue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
