@@ -28,6 +28,6 @@ R1-R4 and R7 for each. A requirement an option fails is a result to record, not 
 
 ### 2. The three transports
 
-- [ ] 2.1 PostgreSQL table transport, as D5 (D1, D5). Verify: the suite runs against it in a disposable project and its results file is written.
+- [x] 2.1 PostgreSQL table transport, as D5 (D1, D5). Verify: the suite runs against it in a disposable project and its results file is written.
 - [ ] 2.2 Workflow Streams transport: a hosting Workflow with the batch-ID set, the `publish_batch` Update and the `retained_base` Query, a publishing Activity, and a reader on the poll Update, as notes.md#d5 (D1, D5, R4). Verify: as 2.1.
 - [ ] 2.3 NATS JetStream probe, as D5, with a spike-only Compose file running nats-server 2.15.3 by digest (D2, D4, D5). Verify: as 2.1; `git diff --stat main...HEAD -- . ':!spikes' ':!docs'` is empty (R9).

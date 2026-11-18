@@ -1,0 +1,13 @@
+{
+  "transport": "table",
+  "commit": "632ccb22a4f8cc51469237f7ba4bfe3b50218551",
+  "command": "SPIKE_TRANSPORTS=table /home/geo/develop/praxismesh/spikes/event-transport/.venv/bin/pytest -q tests/test_suite.py",
+  "finished": "2026-11-18T04:11:21+00:00",
+  "requirements": {
+    "R1": "pass",
+    "R2": "pass",
+    "R3": "pass",
+    "R4": "n/a",
+    "R7": "pass"
+  }
+}

@@ -25,6 +25,13 @@ async def _memory(horizon_s: float) -> EventTransport:
     return MemoryTransport(horizon_s)
 
 
+async def _table(horizon_s: float) -> EventTransport:
+    from event_transport.table import TableTransport
+
+    return await TableTransport.connect(horizon_s)
+
+
 OPTIONS: dict[str, Option] = {
     "memory": Option("memory", hosted=False, build=_memory),
+    "table": Option("table", hosted=False, build=_table),
 }
