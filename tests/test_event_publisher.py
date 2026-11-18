@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 from datetime import UTC, datetime
 from typing import Any
@@ -243,3 +244,20 @@ async def test_attempt_events_from_threads_arrive_in_seq_order() -> None:
         th.join()
     assert await p.close() is None
     assert await stored(t) == list(range(200))
+
+
+async def test_the_close_bound_holds_when_the_caller_is_cancelled() -> None:
+    """A cancelled caller of close() must not leave the publisher retrying a failing
+    database forever: the bound still stops it, and the result is the error."""
+    t = LostReplies(fails=10**6)
+    p = publisher(t, backoff_s=(0.01,), delay_s=0.05)
+    p.emit(event(0))
+    caller = asyncio.create_task(p.close(timeout_s=0.3))
+    await asyncio.sleep(0.05)
+    caller.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await caller
+    with contextlib.suppress(asyncio.CancelledError):
+        await asyncio.wait_for(p.task, 2)
+    assert p.task.done()
+    assert isinstance(await p.close(), ConnectionError)

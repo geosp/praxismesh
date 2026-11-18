@@ -93,3 +93,13 @@ Diff base 41c0bcf; review commit c7dcbcd. Reviewers: contract ✅ · failure and
 | I21 | Nit | failure | An emit after the worker's loop closed raises in the emitting thread | accepted: shutdown only |
 | I22 | Nit | failure | `status: done` can precede a finish checkpoint that then fails | accepted: D3 (`status` is the runner's result) |
 | I23 | Nit | scope | The benchmark has no concurrent same-task fenced writers | accepted: lock order under concurrency is pinned by `test_publish_and_fenced_checkpoint_never_deadlock` (200 pairs) |
+
+## 2026-11-18 · impl-review · phase 01 · targeted follow-up · passed
+Diff c7dcbcd..4463f52, one fresh impl-reviewer (raw: docs/reviews/phase-2/raw/events-impl-review-round-1-follow-up.md). I1, I2 and I3 confirmed fixed. Recorded with its findings open; resolutions:
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| I24 | Major | follow-up | With I6, a caller cancelled during `close()` skipped the timeout branch, so a publisher facing a failing database retried forever and reported success | fixed: `close()` runs its bound in its own task (`_close_within`); test `test_the_close_bound_holds_when_the_caller_is_cancelled` (fails before the fix) |
+| I25 | Nit | follow-up | The fallback reset for a failed checkpoint lookup had no test | fixed: `test_a_failed_checkpoint_lookup_still_opens_with_reset` (fails without the fallback) |
+| I26 | Nit | follow-up | The timeout test could not observe a second status; its fake was misnamed | fixed: `HangsAlways` records what it was asked to store; the test asserts one status |
+| I27 | Nit | follow-up | An emit racing the publisher's stop was dropped without the warning | fixed: the stop is decided under the buffer lock (`stopped`), so a racing emit is either published or logged |

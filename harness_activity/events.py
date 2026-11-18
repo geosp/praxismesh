@@ -105,6 +105,8 @@ class BatchingPublisher:
         self.refused: FenceRejected | None = None
         self.error: Exception | None = None
         self.closing = False
+        self.stopped = False  # set under the lock when the publisher stops for good
+        self.closer: asyncio.Task[None] | None = None
         self.result: Exception | None = None
         self.wake = asyncio.Event()
         self.task = self.loop.create_task(self._run())
@@ -113,7 +115,7 @@ class BatchingPublisher:
         with self.lock:
             if self.refused is not None:
                 return  # a superseded attempt stores nothing more
-            if self.closing and self.task.done():
+            if self.stopped:
                 log.warning("event emitted after its attempt closed; not stored",
                             extra={"fields": {"type": event.type, "seq": event.seq}})  # fmt: skip
                 return
@@ -126,24 +128,31 @@ class BatchingPublisher:
         return self.closing
 
     async def close(self, timeout_s: float | None = None) -> Exception | None:
-        """Publish everything buffered and stop. Shielded from the caller's
-        cancellation and bounded by `timeout_s`. Returns the refusal, the last
-        database error (or a timeout), or None when every event was stored. Only
-        the first call waits; later calls return its result."""
+        """Publish everything buffered and stop, within `timeout_s`. Returns the
+        refusal, the last database error (or a timeout), or None when every event
+        was stored. The bound runs in its own task, so a cancelled caller still
+        stops the publisher in time; the caller's cancellation reaches the caller
+        only. Only the first call waits; later calls return its result."""
         if self.closing:
             return self.result
         self.closing = True
         self.wake.set()
+        bound = CLOSE_TIMEOUT_S if timeout_s is None else timeout_s
+        self.closer = self.loop.create_task(self._close_within(bound))
+        await asyncio.shield(self.closer)
+        return self.result
+
+    async def _close_within(self, bound: float) -> None:
         try:
-            # The caller's cancellation reaches the caller only; the flush goes on.
-            async with asyncio.timeout(CLOSE_TIMEOUT_S if timeout_s is None else timeout_s):
+            async with asyncio.timeout(bound):
                 await asyncio.shield(self.task)
         except TimeoutError as e:
             self.task.cancel()
+            with self.lock:
+                self.stopped = True
             self.result = self.refused or self.error or e
-            return self.result
+            return
         self.result = self.refused or self.error
-        return self.result
 
     def _next_wait(self) -> float | None:
         if self.pending is not None:
@@ -159,13 +168,15 @@ class BatchingPublisher:
             self.wake.clear()
             await self._drain()
             if self.refused is not None:
+                with self.lock:
+                    self.stopped = True
                 return
-            if self.closing and self._empty():
-                return  # a failing database keeps it trying until close() times out
-
-    def _empty(self) -> bool:
-        with self.lock:
-            return self.pending is None and not self.buffer
+            if self.closing:
+                with self.lock:  # an emit that races this check lands in the buffer
+                    if self.pending is None and not self.buffer:
+                        self.stopped = True
+                        return
+                # a failing database keeps it trying until close()'s bound
 
     def _cut(self) -> bool:
         with self.lock:

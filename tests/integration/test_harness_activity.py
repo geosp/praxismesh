@@ -834,12 +834,18 @@ async def test_an_attempt_that_fails_early_still_opens_with_reset(
     assert events[1].payload == {"status": "failed", "error": "RuntimeError"}
 
 
-class HangsAfterFirst(TableTransport):
-    """Every publish blocks, as a database that stopped answering."""
+class HangsAlways(TableTransport):
+    """Every publish blocks, as a database that stopped answering; it records the
+    events it was asked to store."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        super().__init__(engine)
+        self.asked: list[Any] = []
 
     async def publish(
         self, workflow_id: str, writer: Writer, batch_id: str, events: list[Any]
     ) -> None:
+        self.asked.extend(events)
         await asyncio.sleep(3600)
 
 
@@ -855,10 +861,30 @@ async def test_a_final_flush_that_times_out_raises_events_unavailable(
     async def finishes(seen: Seen, b: BeforeModelCall, u: Usage, w: Path, s: Session) -> Any:
         return RunResult("done", u, summary="ok")  # no model call: no mid-turn checkpoint
 
-    h = await harness(engine, tmp_path, finishes, events=HangsAfterFirst(engine))
+    hangs = HangsAlways(engine)
+    h = await harness(engine, tmp_path, finishes, events=hangs)
     with pytest.raises(Exception) as raised:
         await asyncio.wait_for(h.run(), 10)
     assert "EventsUnavailable" in repr(raised.value) or type(raised.value).__name__ == (
         "EventsUnavailable"
     )
     assert await finish_writes(engine, h.task_id, 1) == (0, "started")
+    assert [e.type for e in hangs.asked].count("status") == 1  # no second status
+
+
+async def test_a_failed_checkpoint_lookup_still_opens_with_reset(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """R9: the failure path emits the reset when the lookup itself failed."""
+    t = TableTransport(engine)
+    h = await harness(engine, tmp_path, done, events=t)
+
+    async def lookup_fails(task_id: str) -> Any:
+        raise ConnectionError("database unreachable")
+
+    h.acts.checkpoints.latest = lookup_fails  # type: ignore[method-assign]
+    with pytest.raises(Exception, match="database unreachable"):
+        await h.run()
+    events = await stored(t, h.task_id)
+    assert [e.type for e in events] == ["reset", "status"]
+    assert events[1].payload == {"status": "failed", "error": "ConnectionError"}
