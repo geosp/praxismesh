@@ -23,7 +23,6 @@ from pathlib import Path
 
 from common.blob_store import MemoryBlobStore
 from harness_activity.dsh.runner import DshRunner
-from harness_activity.events import EventSink
 from registry.loader import REGISTRY_ROOT, read_runtime_pins
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -109,10 +108,10 @@ class DshContainer:
         (path / "workspace").mkdir(parents=True)
         return path / "workspace"
 
-    def runner(self, sink: EventSink | None = None) -> DshRunner:
+    def runner(self) -> DshRunner:
         # Every attempt checks the pin, as a worker's does (R17).
         pinned = read_runtime_pins(REGISTRY_ROOT)["dsh"]
-        return DshRunner(self.control, MemoryLedgerStore(), MemoryBlobStore(), sink, pinned=pinned)
+        return DshRunner(self.control, MemoryLedgerStore(), MemoryBlobStore(), pinned=pinned)
 
     def exec(self, *command: str) -> subprocess.CompletedProcess[str]:
         return docker("exec", self.name, *command, check=False)

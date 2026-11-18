@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from temporalio.testing import ActivityEnvironment
 
 from common.blob_store import MemoryBlobStore
+from common.events import Expired, MemoryTransport
 from common.persistence.fence import FenceRejected
 from common.persistence.repositories import (
     AttemptRepository,
@@ -41,7 +42,6 @@ from harness_activity.dsh.launcher_client import LauncherClient, LauncherError
 from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, UsageLedger
 from harness_activity.dsh.pins import RuntimePinMismatch
 from harness_activity.dsh.runner import DshRunner, LauncherUnhealthy
-from harness_activity.events import MemorySink
 from harness_activity.runner import (
     AttemptContext,
     RunnerFailure,
@@ -57,6 +57,7 @@ from tests.support.dsh import (
     make_dsh_registry,
     start_container,
 )
+from tests.support.events import attempt_events
 from tests.support.fake_model import FakeModel
 from tests.support.stack import run_id
 
@@ -89,7 +90,7 @@ async def engine() -> AsyncIterator[AsyncEngine]:
 class Harness:
     acts: HarnessActivities
     blobs: MemoryBlobStore
-    sink: MemorySink
+    events: MemoryTransport
     task_id: str
     heartbeats: list[dict[str, Any]]
     registry: Registry = dataclasses.field(default_factory=load_registry)
@@ -124,7 +125,7 @@ async def harness(
     engine: AsyncEngine, container: DshContainer, registry: Registry | None = None
 ) -> Harness:
     registry = registry or load_registry()
-    blobs, sink = MemoryBlobStore(), MemorySink()
+    blobs, events = MemoryBlobStore(), MemoryTransport()
     task_id = f"task-dsh-{run_id()}"
     instructions = await blobs.put(INSTRUCTIONS.encode(), retention="task")
     data = await blobs.put(b"input data", retention="task")
@@ -140,7 +141,7 @@ async def harness(
     await TaskRepository(engine).record_task(
         start, workflow_id=task_id, run_id="run-1", template_version=1, template_hash="x"
     )
-    runner = DshRunner(container.control, UsageLedgerRepository(engine), blobs, sink)
+    runner = DshRunner(container.control, UsageLedgerRepository(engine), blobs)
     acts = HarnessActivities(
         registry,
         engine,
@@ -149,8 +150,9 @@ async def harness(
         container.attempts,
         "test-dsh-worker",
         open_attempt=runner.open_attempt,
+        events=events,
     )
-    return Harness(acts, blobs, sink, task_id, [], registry)
+    return Harness(acts, blobs, events, task_id, [], registry)
 
 
 async def rows(engine: AsyncEngine, sql: str, **params: Any) -> list[Any]:
@@ -208,12 +210,19 @@ async def test_dsh_turn_through_the_activity(
     )
     assert [tuple(r) for r in attempt] == [("done", 300, 30, 3, True)]
 
-    # R16: ordered events with the attempt's identity, and no prompt or tool text.
-    events = h.sink.events
+    # R16 and Phase 2 events plan R6, R9: one ordered stream per attempt, opening
+    # with its reset and ending with its status, and no prompt or tool text.
+    events = [i[1] async for i in h.events.read(h.task_id, 0) if not isinstance(i, Expired)]
     assert [e.seq for e in events] == list(range(len(events)))
     assert {e.attempt_id for e in events} == {f"{h.task_id}:1:1"}
     assert {e.workflow_id for e in events} == {h.task_id}
-    assert [e.type for e in events] == ["token", "tool_call", "tool_result"] * 3
+    assert [e.type for e in events] == [
+        "reset",
+        *["token", "tool_call", "tool_result"] * 3,
+        "status",
+    ]
+    assert events[0].payload == {"restored_from": None}
+    assert events[-1].payload == {"status": "done"}
     assert [e.payload["tool"] for e in events if e.type == "tool_call"] == [
         "lookup_price",
         "write_file",
@@ -376,7 +385,13 @@ async def test_deadline_stops_a_running_command_within_the_grace(
         try:
             with pytest.raises(RunnerFailure) as failure:
                 await runner.run(
-                    config, scope.workspace, scope.store.session, "go", _no_op, Usage()
+                    config,
+                    scope.workspace,
+                    scope.store.session,
+                    "go",
+                    _no_op,
+                    Usage(),
+                    attempt_events(),
                 )
             stopped_after = time.monotonic() - deadline
         finally:
@@ -406,7 +421,15 @@ async def run_one(
     scope = await runner.open_attempt(AttemptContext(task, 1, 1, "wf", 1_000_000, deadline))
     try:
         with pytest.raises(RunnerFailure) as failure:
-            await runner.run(config, scope.workspace, scope.store.session, "go", before, Usage())
+            await runner.run(
+                config,
+                scope.workspace,
+                scope.store.session,
+                "go",
+                before,
+                Usage(),
+                attempt_events(),
+            )
         return failure.value, time.monotonic() - deadline
     finally:
         await scope.close()
@@ -552,7 +575,13 @@ async def test_step_limit_stops_a_runtime_that_does_not_exit(
         )
         try:
             result = await runner.run(
-                config, scope.workspace, scope.store.session, "go", _no_op, Usage()
+                config,
+                scope.workspace,
+                scope.store.session,
+                "go",
+                _no_op,
+                Usage(),
+                attempt_events(),
             )
             ended = time.monotonic()
         finally:
@@ -585,7 +614,7 @@ async def test_failed_cleanup_after_success_stops_new_attempts(
             AttemptContext(task, 1, 1, "wf", 1_000_000, time.monotonic() + 60)
         )
         result = await runner.run(
-            config, scope.workspace, scope.store.session, "go", _no_op, Usage()
+            config, scope.workspace, scope.store.session, "go", _no_op, Usage(), attempt_events()
         )
         await scope.close()
     assert result.status == "done"

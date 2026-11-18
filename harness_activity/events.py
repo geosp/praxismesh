@@ -112,10 +112,16 @@ class BatchingPublisher:
             self.buffer.append(event)
         self.loop.call_soon_threadsafe(self.wake.set)
 
+    @property
+    def closed(self) -> bool:
+        return self.task.done()
+
     async def close(self, timeout_s: float = 10.0) -> Exception | None:
         """Publish everything buffered and stop. Shielded from the caller's
         cancellation and bounded by `timeout_s`. Returns the refusal, the last
         database error (or a timeout), or None when every event was stored."""
+        if self.task.done():
+            return self.refused or self.error
         self.closing = True
         self.wake.set()
         try:

@@ -51,7 +51,7 @@ from harness_activity.dsh.ledger import DSH_MAX_OUTPUT_TOKENS, LedgerStore, Usag
 from harness_activity.dsh.pins import RuntimePinMismatch, verify_launcher_report
 from harness_activity.dsh.policy import CLEANUP_GRACE_SECONDS, classify
 from harness_activity.dsh.session import DshSessionStore
-from harness_activity.events import AttemptEvents, EventSink, NoOpSink
+from harness_activity.events import AttemptEvents
 from harness_activity.runner import (
     AttemptContext,
     BeforeModelCall,
@@ -224,7 +224,6 @@ class DshRunner:
         control: Path,
         ledger_store: LedgerStore,
         blobs: BlobStore,
-        sink: EventSink | None = None,
         *,
         relay_port: int = RELAY_PORT,
         pinned: str | None = None,
@@ -235,7 +234,6 @@ class DshRunner:
         # Why this worker's container can no longer be trusted to be clean (F71).
         self.unhealthy: str | None = None
         self.ledger_store, self.blobs = ledger_store, blobs
-        self.sink = sink or NoOpSink()
         self.relay_port = relay_port
         self.attempts: dict[Path, DshAttempt] = {}
 
@@ -350,6 +348,7 @@ class DshRunner:
         input_text: str,
         before_model_call: BeforeModelCall,
         usage: Usage,
+        events: AttemptEvents,
     ) -> RunResult:
         attempt = await self._attempt_for(workspace)
         context = attempt.context
@@ -357,9 +356,6 @@ class DshRunner:
             return RunResult("continue", usage, summary="token budget for the task is used up")
         gid = attempt.gid
         loop = asyncio.get_running_loop()
-        events = AttemptEvents(
-            self.sink, context.workflow_id, context.task_id, context.turn, context.attempt
-        )
 
         instructions = config.instructions
         if config.skills_bundle is not None:

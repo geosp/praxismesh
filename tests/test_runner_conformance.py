@@ -21,10 +21,12 @@ import yaml
 
 from common.observability import disable_sdk_tracing
 from harness_activity.config import HarnessConfig, McpConfig, build_config
+from harness_activity.events import AttemptEvents, MemorySink
 from harness_activity.runner import HarnessRunner, OpenAIAgentsRunner, Usage
 from harness_activity.session_store import SessionStore
 from registry.loader import REGISTRY_ROOT, load_registry
 from tests.support.dsh import DshContainer, build_image, start_container
+from tests.support.events import attempt_events
 from tests.support.fake_model import FakeModel
 from tests.support.session_stores import MemorySessionStore, store_contract
 
@@ -144,6 +146,7 @@ async def run(
             "Write the order summary.",
             no_op,
             Usage(),
+            attempt_events(),
         )
         return result, fake
 
@@ -345,7 +348,13 @@ async def test_stop_run_and_superseded_reach_the_runner_unwrapped(
     with FakeModel(steps) as fake:
         config = config_for(fake, monkeypatch)
         result = await make_runner().run(
-            config, tmp_path, make_store("stop").session, "go", stop_on_second_call, Usage()
+            config,
+            tmp_path,
+            make_store("stop").session,
+            "go",
+            stop_on_second_call,
+            Usage(),
+            attempt_events(),
         )
         assert result.status == "continue" and result.summary == "budget"
         assert len(fake.state.requests) == 1
@@ -355,7 +364,13 @@ async def test_stop_run_and_superseded_reach_the_runner_unwrapped(
 
         with pytest.raises(Superseded):
             await make_runner().run(
-                config, tmp_path, make_store("sup").session, "go", superseded, Usage()
+                config,
+                tmp_path,
+                make_store("sup").session,
+                "go",
+                superseded,
+                Usage(),
+                attempt_events(),
             )
 
 
@@ -420,7 +435,7 @@ async def test_mcp_tools_allowed_filter(tmp_path: Path, monkeypatch: pytest.Monk
         config = build_config(registry, loaded, "task-filter-0001")
         workspace = make_workspace(tmp_path, "ws")
         await make_runner().run(
-            config, workspace, make_store("filter").session, "go", no_op, Usage()
+            config, workspace, make_store("filter").session, "go", no_op, Usage(), attempt_events()
         )
         offered = {t["function"]["name"] for t in fake.state.requests[0]["tools"]}
         assert "record_order" not in offered and "lookup_price" in offered
@@ -513,6 +528,7 @@ async def test_mcp_subprocess_env_is_granted_plus_sdk_defaults(
             "Report the environment.",
             no_op,
             Usage(),
+            attempt_events(),
         )
         observed = json.loads(tool_results(fake)[0])
     expected = set(get_default_environment()) | set(granted)
@@ -538,3 +554,40 @@ async def test_tool_errors_are_counted(tmp_path: Path, monkeypatch: pytest.Monke
     )
     assert REGISTRY.get_sample_value("praxis_tool_errors_total", labels) == before + 1
     assert REGISTRY.get_sample_value("praxis_tool_calls_total", labels) == calls_before + 1
+
+
+async def test_tool_and_token_events(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase 2 events plan D3, R6: the runner reports one token event per model
+    response and a tool_call and tool_result per call, with no model or tool text,
+    in the same order DSH does."""
+    sink = MemorySink()
+    with FakeModel(
+        script(
+            {"tool": "lookup_price", "args": {"sku": "SKU-1"}},
+            {"tool": "write_file", "args": {"path": "summary.md", "content": "Total: 37.50\n"}},
+            {"tool": "finish_task", "args": {"status": "done", "summary": "Wrote it."}},
+        )
+    ) as fake:
+        await make_runner().run(
+            config_for(fake, monkeypatch),
+            tmp_path,
+            make_store("events").session,
+            "Write the order summary.",
+            no_op,
+            Usage(),
+            AttemptEvents(sink, "wf", "task", 1, 1),
+        )
+    events = sink.events
+    assert [e.type for e in events] == ["token", "tool_call", "tool_result"] * 3
+    assert [e.payload["tool"] for e in events if e.type == "tool_call"] == [
+        "lookup_price",
+        "write_file",
+        "finish_task",
+    ]
+    assert [e.payload["call"] for e in events if e.type == "tool_result"] == [1, 2, 3]
+    assert {e.payload["status"] for e in events if e.type == "tool_result"} == {"ok"}
+    assert all(
+        set(e.payload) == {"input_tokens", "output_tokens"} for e in events if e.type == "token"
+    )
+    dumped = json.dumps([e.payload for e in events])
+    assert "37.50" not in dumped and "summary" not in dumped.lower().replace("summary.md", "")
