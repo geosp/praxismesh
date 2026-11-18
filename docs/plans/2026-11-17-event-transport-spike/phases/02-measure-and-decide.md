@@ -6,7 +6,7 @@ branch: spike/76-event-transport
 base: 5371368db80b232b2f155fd5ef0a8c6dd3c0df16
 delivers: [R5, R6, R8, R10, R11]
 design_review: { status: passed, rounds: 2, last: 2026-11-17 }
-impl_review: { status: changes-requested, rounds: 1, last: 2026-11-18 }
+impl_review: { status: passed, rounds: 2, last: 2026-11-18 }
 approved: 2026-11-17
 ---
 

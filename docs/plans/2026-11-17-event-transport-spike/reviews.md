@@ -129,3 +129,26 @@ Owner decision: phase 01 stays in-progress (impl review passed) and one `verify-
 | F80 | Nit | failure | Nothing shows task 3.1's reset happened; the table fence's lock order against ADR-0007's writers is unstated. | fixed: the stack was reset before the open-loop runs (5854ca2 results); accepted: the fence's lock order is for Phase 2 to set, as the report now says |
 | F81 | Nit | scope | Streams' RUN_TIMEOUT covers the whole Continue-As-New chain, not each run; the report's limits row omits it and the fixed queue. | fixed: notes and the report's limits row |
 | F82 | Nit | scope | The table uses one global NOTIFY channel, so every follower wakes for every workflow's batch; with the pool at 20, 17+ followers in one process block publishers. | fixed: ADR-0009's consequences and the report's limits row |
+
+## 2026-11-18 · impl-review · phase 02 · round 2 · passed
+
+- Targeted follow-up (docs/reviews/README.md rule 6) on 4d6c4ca..02018c5; one fresh `impl-reviewer` subagent (contract lens, with every report figure recomputed from the results files). Raw report: docs/reviews/general-event-transport-spike/raw/impl-review-phase-02-round-2-contract.md.
+- Reviewer: contract ✅. Code fixes F61, F64, F71, F75, F76, F78 confirmed with tests; report figures trace to the results files; R9 holds; the owner's decision is recorded consistently. F59 reopened in ADR-0009 (F84). Recorded as passed after the fixes below, per the skill's two-round limit.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F83 | Major | contract | The roll-over ranges added for F65 (194-207 batches, 775-827 Updates, "every run") do not match the results (191-207, 757-827). | fixed: exact ranges of the 84 completed runs in the report and notes |
+| F84 | Major | contract (reopens F59) | ADR-0009 cited run-1 CPU figures as medians. | fixed: 1.4% against 32.4%, medians over 3 runs |
+| F85 | Major | contract | ADR-0009 said the open-loop rerun confirms the table's latency, but its p95 is 204 ms and Streams was not rerun at equal load. | fixed: ADR-0009 says latency did not decide it and no equal-load comparison was made |
+| F86 | Nit | contract | Publish-time row lacked ranges and the open-loop figures. | fixed |
+| F87 | Nit | contract | "Largest run" combined maxima from different runs. | fixed: completed-run ranges; R5 row names per-load maxima |
+| F88 | Nit | contract | The cause of the open-loop p95 rise was stated as fact. | fixed: marked as not isolated |
+| F89 | Nit | contract | "The bias favours Streams" was an inference; Streams' R6 at equal load was not measured. | fixed: stated as likely, with D2's reliance on closed-loop runs |
+| F90 | Nit | contract | `percentile()` had no test. | fixed: test_percentile_picks_the_value_at_the_rank |
+| F91 | Nit | contract | Suite results were written in place. | fixed: atomic replace in conftest.py |
+| F92 | Nit | contract | The orphan test is skipped without SPIKE_STACK. | accepted: it needs the stack; it ran against the disposable stack (5 passed) |
+| F93 | Nit | contract | measure.sh resets before each run, not after the last; resets leave no record. | fixed: a final reset; accepted: the open-loop results' clean, steady figures are the evidence |
+| F94 | Nit | contract | The provenance file's commit is the one that added the probe. | fixed: the note says the probe ran just before that commit |
+| F95 | Nit | contract | load.py's docstring still named Streams runs and NATS containers. | fixed |
+| F96 | Nit | contract | "17 or more followers" assumed 4 publishers sharing the pool. | fixed: stated in ADR-0009 |
+| F97 | Nit | contract | probes/README.md cited the raw growth file. | fixed: points to the provenance file |
