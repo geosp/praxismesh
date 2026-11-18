@@ -75,3 +75,21 @@ Approved by the owner after design review passed (2 rounds); phases 01 and 02 ap
 | F46 | Nit | contract | The fixture scan checks payloads only; `blob_ref` is a plain dict and the copy is not `Strict`. | accepted: the copy keeps the root schema's field names (tested); the spike never sets blob_ref |
 | F47 | Nit | failure | Temporal limits Updates per run (`TOO_MANY_UPDATES`), including poll Updates; not recorded. | accepted: recorded in notes.md#d5 for phase 02 to verify |
 | F48 | Nit | failure, scope | `_retry` swallows every `RPCError` for ~20 s; R7's fixture fits one batch; the R1 tailer is abandoned, not cancelled; task 1.1's "Compose overlay" is an env file. | accepted: spike-scope test and wording details; R1 multi-batch ordering covers R7's single batch |
+
+## 2026-11-17 · impl-review · phase 01 · round 2 · passed
+
+- Targeted follow-up (docs/reviews/README.md rule 6) on dfc16fd..a2c6e0c; one fresh `impl-reviewer` subagent (contract lens, with fairness). Raw report: docs/reviews/general-event-transport-spike/raw/impl-review-phase-01-round-2-contract.md.
+- Reviewer: contract ✅. Round 1's F31, F33-F36, F38-F43 confirmed enforced; F32 confirmed as a documentation clarification; F37 reopened in part (F50). No fix favours or handicaps one option. Recorded as passed after the fixes below (69c95c4), per the skill's two-round limit; suite results for all four options at 69c95c4.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F49 | Major | contract | `check_r2_mid_read` accepted an expiry naming any base, so a reader losing retained events after a removal would pass. | fixed: the check requires `Expired(50)` then 50-110; ResumesPastBase validation variant fails it (passed the old check) |
+| F50 | Major | contract (reopens F37) | A test-ID, `-x` or `--deselect` run wrote `"partial": false` and a synthesized full-suite command. | fixed: partial whenever any requirement test of tests/test_suite.py did not report for an option; the command is recorded as run; tests/test_results_file.py |
+| F51 | Nit | contract | The Streams docstring still described Query reads. | fixed |
+| F52 | Nit | contract | R3 ignored whether the roll-over happened. | fixed: hosted options assert it |
+| F53 | Nit | contract | Teardown failures are not recorded. | accepted: close() releases connections only; a failure would surface in the pytest output |
+| F54 | Nit | contract | All results files come from one multi-transport session. | fixed: the command records SPIKE_TRANSPORTS as run |
+| F55 | Nit | contract | A removal through the end of the log during a read yields no expiry until a later event arrives. | accepted: the same for every option; recorded for the report |
+| F56 | Nit | contract | F40 and F41 have no failing test. | accepted: edge cases of test hooks outside the load path |
+| F57 | Nit | contract | capture.py's guard checks only the event count. | accepted: a failed turn raises before writing; a normal end with ≥ 10 events is a valid recording |
+| F58 | Nit | contract | Streams' fixed queue and 2 h run timeout are not listed with the other added parameters. | fixed: notes.md#d5 |
