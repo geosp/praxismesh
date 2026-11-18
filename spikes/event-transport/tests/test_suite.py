@@ -23,6 +23,11 @@ async def test_r1_resume(transport: EventTransport) -> None:
     await checks.check_r1_resume(transport)
 
 
+@pytest.mark.requirement("R1")
+async def test_r1_cancel(transport: EventTransport) -> None:
+    await checks.check_r1_cancel(transport)
+
+
 @pytest.mark.requirement("R2")
 async def test_r2_expiry(transport: EventTransport) -> None:
     await checks.check_r2_expiry(transport)

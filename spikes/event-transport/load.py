@@ -1,0 +1,424 @@
+"""The load runner (plan R5, R6, R11; notes.md#d3, #d5; phase 02 task 1.1).
+
+    uv run python load.py <option> [--seconds 300] [--agents 4] [--tailers 3]
+                         [--no-roll] [--label run1]
+
+Each agent publishes from inside one long-running Activity (notes.md#d5, F32), the
+same for every option: ~50 `token` events/s with a ~40-byte text delta, plus a
+`tool_call`/`tool_result` pair every 10 s, batched every 200 ms or 64 events. Each
+agent has `--tailers` following readers from offset 0; one per agent is stopped and
+resumed from its last offset every 60 s. Results go to
+`results/load-<option>-<label>.json`, with the commit and command.
+
+Measured: publish-to-display latency of every event a tailer shows; per Streams
+hosting run, history events and bytes (split by publish and poll Updates) and the
+carried state's size; CPU and memory of the stack's database, Temporal and NATS
+containers. `--no-roll` turns Streams roll-over off (the informational growth run).
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import contextlib
+import json
+import os
+import statistics
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+from event_transport.factories import OPTIONS
+from event_transport.models import AgentEvent
+from event_transport.transport import EventTransport, Expired
+from temporalio import activity, workflow
+from temporalio.client import Client
+from temporalio.worker import Worker
+
+SPIKE = Path(__file__).resolve().parent
+RESULTS = SPIKE / "results"
+ADDRESS = os.environ.get("SPIKE_TEMPORAL", "127.0.0.1:37233")
+LOAD_QUEUE = "spike76-load"
+RATE_PER_S = 50
+BATCH_S, BATCH_MAX = 0.2, 64
+TOOL_EVERY_S = 10.0
+KILL_EVERY_S = 60.0
+DELTA = "x" * 40  # stands in for ~40 bytes of token text (size only)
+LIMIT_EVENTS, LIMIT_BYTES = 51_200, 50 * 1024 * 1024  # Temporal per-run history (task 1.1)
+LIMIT_PAYLOAD = 2 * 1024 * 1024  # Temporal per-payload size
+
+
+# ---- publishing agents: one long-running Activity each, the same for every option
+
+
+@dataclass
+class AgentInput:
+    workflow_id: str
+    seconds: float
+
+
+@dataclass
+class AgentResult:
+    published: int = 0
+    batches: int = 0
+    publish_ms: list[float] = field(default_factory=list)
+
+
+@workflow.defn(name="SpikeLoadAgent", sandboxed=False)
+class LoadAgentWorkflow:
+    @workflow.run
+    async def run(self, inp: AgentInput) -> AgentResult:
+        return await workflow.execute_activity(
+            "spike_publish",
+            inp,
+            result_type=AgentResult,
+            start_to_close_timeout=timedelta(seconds=inp.seconds + 120),
+            heartbeat_timeout=timedelta(seconds=30),
+        )
+
+
+class Agents:
+    def __init__(self, transport: EventTransport) -> None:
+        self.transport = transport
+
+    @activity.defn(name="spike_publish")
+    async def publish(self, inp: AgentInput) -> AgentResult:
+        out, wf, seq = AgentResult(), inp.workflow_id, 0
+        end = time.monotonic() + inp.seconds
+        next_tool = time.monotonic() + TOOL_EVERY_S
+        pending: list[AgentEvent] = []
+        last_flush = time.monotonic()
+        while time.monotonic() < end:
+            now = time.monotonic()
+            kinds = ["token"]
+            if now >= next_tool:
+                kinds += ["tool_call", "tool_result"]
+                next_tool += TOOL_EVERY_S
+            for kind in kinds:
+                payload: dict[str, Any] = {"t": time.time()}
+                payload |= (
+                    {"delta": DELTA} if kind == "token" else {"tool": "run_command", "call": seq}
+                )
+                pending.append(
+                    AgentEvent(
+                        seq=seq,
+                        timestamp=datetime.now(UTC),
+                        workflow_id=wf,
+                        task_id=wf,
+                        attempt_id=f"{wf}:1:1",
+                        type=kind,  # type: ignore[arg-type]
+                        payload=payload,
+                    )
+                )
+                seq += 1
+            if len(pending) >= BATCH_MAX or now - last_flush >= BATCH_S:
+                started = time.monotonic()
+                await self.transport.publish(wf, f"{wf}-{out.batches}", pending)
+                out.publish_ms.append((time.monotonic() - started) * 1000)
+                out.published += len(pending)
+                out.batches += 1
+                pending, last_flush = [], time.monotonic()
+                activity.heartbeat(out.published)
+            await asyncio.sleep(1 / RATE_PER_S)
+        if pending:
+            await self.transport.publish(wf, f"{wf}-{out.batches}", pending)
+            out.published += len(pending)
+            out.batches += 1
+        return out
+
+
+# ---- tailers
+
+
+@dataclass
+class Tailer:
+    workflow_id: str
+    killable: bool
+    last: int = 0
+    shown: int = 0
+    expired: list[int] = field(default_factory=list)
+    latency_ms: list[float] = field(default_factory=list)
+    restarts: int = 0
+    error: str | None = None
+
+
+async def tail(t: EventTransport, tailer: Tailer, stop: asyncio.Event) -> None:
+    """Follow one workflow; a killable tailer is stopped and resumed from its last
+    offset every KILL_EVERY_S. The reader runs in its own task and is cancelled only
+    to stop it: cancelling a pending `anext` would end the reader for good."""
+
+    async def consume() -> None:
+        async for item in t.read(tailer.workflow_id, tailer.last, follow=True):
+            if isinstance(item, Expired):
+                tailer.expired.append(item.retained_base)
+                continue
+            offset, event = item
+            tailer.latency_ms.append((time.time() - event.payload["t"]) * 1000)
+            tailer.last, tailer.shown = offset, tailer.shown + 1
+
+    while not stop.is_set():
+        reader = asyncio.create_task(consume())
+        stopper = asyncio.create_task(stop.wait())
+        timeout = KILL_EVERY_S if tailer.killable else None
+        done, _ = await asyncio.wait(
+            {reader, stopper}, timeout=timeout, return_when="FIRST_COMPLETED"
+        )
+        stopper.cancel()
+        if reader in done:
+            if reader.exception() is not None:
+                exc = reader.exception()
+                tailer.error = f"{type(exc).__name__}: {exc}"[:300]
+            return
+        reader.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await reader
+        if not stop.is_set():
+            tailer.restarts += 1  # stopped and resumed from its last offset
+
+
+# ---- measurements
+
+
+async def stream_runs(client: Client, workflow_id: str) -> list[dict[str, Any]]:
+    """History of every run of one Streams hosting Workflow."""
+    wid = f"spike76-stream-{workflow_id}"
+    runs = []
+    async for ex in client.list_workflows(f"WorkflowId = '{wid}'"):
+        handle = client.get_workflow_handle(wid, run_id=ex.run_id)
+        counts: dict[str, int] = {}
+        events = 0
+        size = 0
+        carried = 0
+        async for e in handle.fetch_history_events():
+            events += 1
+            size += e.ByteSize()
+            if e.HasField("workflow_execution_started_event_attributes"):
+                carried = sum(
+                    p.ByteSize()
+                    for p in e.workflow_execution_started_event_attributes.input.payloads
+                )
+            if e.HasField("workflow_execution_update_accepted_event_attributes"):
+                accepted = e.workflow_execution_update_accepted_event_attributes
+                name = accepted.accepted_request.input.name
+                counts[name] = counts.get(name, 0) + 1
+        runs.append(
+            {
+                "run_id": ex.run_id,
+                "started": str(ex.start_time),
+                "events": events,
+                "bytes": size,
+                "carried_input_bytes": carried,
+                "updates": counts,
+            }
+        )
+    return sorted(runs, key=lambda r: r["started"])
+
+
+def say(message: str) -> None:
+    print(f"[load] {message}", file=sys.stderr, flush=True)
+
+
+def percentile(values: list[float], q: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
+
+
+def git(*args: str) -> str:
+    return subprocess.run(["git", *args], capture_output=True, text=True, cwd=SPIKE).stdout.strip()
+
+
+async def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="load")
+    parser.add_argument("option", choices=sorted(OPTIONS))
+    parser.add_argument("--seconds", type=float, default=300)
+    parser.add_argument("--agents", type=int, default=4)
+    parser.add_argument("--tailers", type=int, default=3)
+    parser.add_argument("--no-roll", action="store_true", help="Streams: roll-over off")
+    parser.add_argument("--label", default="run")
+    args = parser.parse_args(argv)
+    if args.no_roll:
+        os.environ["SPIKE_STREAMS_NO_ROLL"] = "1"
+    option = OPTIONS[args.option]
+    say("building transport")
+    transport = await option.build(600.0)
+    say("transport ready")
+    client = await Client.connect(ADDRESS)
+    agents = Agents(transport)
+    worker = Worker(
+        client, task_queue=LOAD_QUEUE, workflows=[LoadAgentWorkflow], activities=[agents.publish]
+    )
+    run_id = uuid.uuid4().hex[:8]
+    wfs = [f"load-{run_id}-a{i}" for i in range(args.agents)]
+    tailers = [Tailer(wf, killable=(j == 0)) for wf in wfs for j in range(args.tailers)]
+    stop = asyncio.Event()
+    samples: list[dict[str, Any]] = []
+    stats_stop = threading.Event()
+    running = subprocess.run(
+        ["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True, check=False
+    ).stdout.split()
+    wanted = ("pmspike76-db-1", "pmspike76-temporal-1", "pmspike76-nats-nats-1")
+    names = [n for n in wanted if n in running]
+    sampler = threading.Thread(target=_sampler, args=(names, samples, stats_stop), daemon=True)
+    began = time.monotonic()
+    async with worker:
+        sampler.start()
+        say("worker up; starting tailers")
+        tasks = [asyncio.create_task(tail(transport, tl, stop)) for tl in tailers]
+        handles = [
+            await client.start_workflow(
+                LoadAgentWorkflow.run,
+                AgentInput(wf, args.seconds),
+                id=f"agent-{wf}",
+                task_queue=LOAD_QUEUE,
+            )
+            for wf in wfs
+        ]
+        say(f"publishing for {args.seconds:.0f} s")
+        results = [await h.result() for h in handles]
+        say("publishers done; tailers catching up")
+        latest = {wf: await transport.latest(wf) or 0 for wf in wfs}
+        catch_up = time.monotonic() + 60
+        while time.monotonic() < catch_up and any(
+            tl.last < latest[tl.workflow_id] and tl.error is None for tl in tailers
+        ):
+            await asyncio.sleep(0.5)
+        stop.set()
+        say("stopping tailers")
+        await asyncio.gather(*tasks)
+        stats_stop.set()
+    elapsed = time.monotonic() - began
+    say("reading history")
+    runs = {wf: await stream_runs(client, wf) for wf in wfs} if option.hosted else {}
+    await transport.close()
+
+    latencies = [ms for tl in tailers for ms in tl.latency_ms]
+    p95 = percentile(latencies, 0.95)
+    all_runs = [r for rs in runs.values() for r in rs]
+    max_events = max((r["events"] for r in all_runs), default=None)
+    max_bytes = max((r["bytes"] for r in all_runs), default=None)
+    max_carried = max((r["carried_input_bytes"] for r in all_runs), default=None)
+    complete = all(tl.last == latest[tl.workflow_id] and tl.error is None for tl in tailers)
+    judged = {
+        "R5": "n/a"
+        if not option.hosted
+        else (
+            "pass" if max_events < LIMIT_EVENTS * 0.1 and max_bytes < LIMIT_BYTES * 0.1 else "fail"
+        ),
+        "R6": "pass" if p95 is not None and p95 <= 1000 and complete else "fail",
+        "R11": "n/a"
+        if not option.hosted
+        else ("pass" if max_carried < LIMIT_PAYLOAD * 0.5 else "fail"),
+    }
+    if args.no_roll:
+        judged = {k: "informational" for k in judged}
+    report = {
+        "option": args.option,
+        "label": args.label,
+        "commit": git("rev-parse", "HEAD"),
+        "dirty": bool(git("status", "--porcelain", "--", ".", ":!results")),
+        "command": "uv run python load.py " + " ".join(argv),
+        "finished": datetime.now(UTC).isoformat(timespec="seconds"),
+        "params": {
+            "seconds": args.seconds,
+            "agents": args.agents,
+            "tailers": args.tailers,
+            "rate_per_s": RATE_PER_S,
+            "batch_s": BATCH_S,
+            "batch_max": BATCH_MAX,
+            "roll": not args.no_roll,
+        },
+        "elapsed_s": round(elapsed, 1),
+        "requirements": judged,
+        "published": sum(r.published for r in results),
+        "batches": sum(r.batches for r in results),
+        "publish_ms": {
+            "p50": percentile([m for r in results for m in r.publish_ms], 0.5),
+            "p95": percentile([m for r in results for m in r.publish_ms], 0.95),
+        },
+        "latency_ms": {
+            "p50": percentile(latencies, 0.5),
+            "p95": p95,
+            "p99": percentile(latencies, 0.99),
+            "max": max(latencies, default=None),
+            "mean": statistics.fmean(latencies) if latencies else None,
+        },
+        "tailers": [
+            {
+                "workflow": tl.workflow_id,
+                "killable": tl.killable,
+                "shown": tl.shown,
+                "last": tl.last,
+                "latest": latest[tl.workflow_id],
+                "restarts": tl.restarts,
+                "expired": tl.expired,
+                "error": tl.error,
+            }
+            for tl in tailers
+        ],
+        "complete": complete,
+        "history": {
+            "limits": {"events": LIMIT_EVENTS, "bytes": LIMIT_BYTES, "payload": LIMIT_PAYLOAD},
+            "max_run_events": max_events,
+            "max_run_bytes": max_bytes,
+            "max_carried_bytes": max_carried,
+            "runs": runs,
+        },
+        "containers": samples,
+    }
+    RESULTS.mkdir(exist_ok=True)
+    out = RESULTS / f"load-{args.option}-{args.label}.json"
+    out.write_text(json.dumps(report, indent=2) + "\n")
+    print(
+        json.dumps(
+            {
+                k: report[k]
+                for k in ("option", "label", "requirements", "published", "latency_ms", "complete")
+            }
+        )
+    )
+    print(
+        f"history: max events {max_events}, max bytes {max_bytes}, "
+        f"max carried {max_carried} -> {out}"
+    )
+    return 0
+
+
+def _sampler(names: list[str], samples: list[dict[str, Any]], stop: Any) -> None:
+    while not stop.is_set():
+        out = subprocess.run(
+            [
+                "docker",
+                "stats",
+                "--no-stream",
+                "--format",
+                "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}",
+                *names,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+        for line in out.splitlines():
+            parts = line.split("|")
+            if len(parts) == 3:
+                samples.append(
+                    {
+                        "t": round(time.time(), 1),
+                        "name": parts[0],
+                        "cpu": float(parts[1].rstrip("%") or 0),
+                        "mem": parts[2].split(" / ")[0],
+                    }
+                )
+        stop.wait(10)
+
+
+if __name__ == "__main__":
+    sys.exit(asyncio.run(main(sys.argv[1:])))

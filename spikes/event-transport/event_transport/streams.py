@@ -76,7 +76,10 @@ class StreamsTransport:
         if workflow_id not in self._started:
             await self.client.start_workflow(
                 EventStreamWorkflow.run,
-                StreamInput(horizon_s=self.horizon_s),
+                StreamInput(
+                    horizon_s=self.horizon_s,
+                    auto_roll=not os.environ.get("SPIKE_STREAMS_NO_ROLL"),
+                ),
                 id=self._wid(workflow_id),
                 task_queue=QUEUE,
                 id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING,
@@ -101,8 +104,9 @@ class StreamsTransport:
             except WorkflowUpdateFailedError as err:
                 if _cause_type(err) not in _RETRYABLE:
                     raise
-            except WorkflowUpdateRPCTimeoutOrCancelledError:
-                pass
+            except WorkflowUpdateRPCTimeoutOrCancelledError as err:
+                if isinstance(err.__cause__, asyncio.CancelledError):
+                    raise err.__cause__ from err  # the caller cancelled: never retry it
             await asyncio.sleep(COOLDOWN_S)
         raise TimeoutError("the stream Workflow did not accept the call")
 

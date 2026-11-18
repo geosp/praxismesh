@@ -29,6 +29,7 @@ class StreamInput:
     stream_state: WorkflowStreamState | None = None
     batches: dict[str, float] = field(default_factory=dict)  # batch_id -> seen, epoch seconds
     base: int = 1  # spike offset of the retained base
+    auto_roll: bool = True  # False for the informational growth run (load.py --no-roll)
 
 
 @dataclass
@@ -46,6 +47,7 @@ class EventStreamWorkflow:
         self.horizon_s = inp.horizon_s
         self.batches = dict(inp.batches)
         self.base = inp.base
+        self.auto_roll = inp.auto_roll
         self.batches_this_run = 0
         self.end = (
             (inp.stream_state.base_offset + len(inp.stream_state.log)) if inp.stream_state else 0
@@ -57,8 +59,13 @@ class EventStreamWorkflow:
         await workflow.wait_condition(
             lambda: (
                 self.roll_requested
-                or self.batches_this_run >= ROLL_EVERY_BATCHES
-                or workflow.info().is_continue_as_new_suggested()
+                or (
+                    self.auto_roll
+                    and (
+                        self.batches_this_run >= ROLL_EVERY_BATCHES
+                        or workflow.info().is_continue_as_new_suggested()
+                    )
+                )
             )
         )
         keep_from = max(self.base - 1, self.end - KEEP_AT_ROLL)  # stream offsets
@@ -72,6 +79,7 @@ class EventStreamWorkflow:
                     stream_state=state,
                     batches=self.batches,
                     base=self.base,
+                    auto_roll=self.auto_roll,
                 )
             ]
         )

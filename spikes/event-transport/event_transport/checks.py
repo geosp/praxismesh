@@ -9,6 +9,7 @@ stack between checks.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 from datetime import UTC, datetime
 
@@ -66,6 +67,21 @@ async def check_r1_resume(t: EventTransport) -> None:
     assert resumed == list(range(6, 17)), resumed
     seqs = [e.seq for i in await collect(t, wf, 0) if not isinstance(i, Expired) for e in [i[1]]]
     assert seqs == list(range(16)), seqs
+
+
+async def check_r1_cancel(t: EventTransport) -> None:
+    """R1: a following reader cancelled while it waits stops promptly, and a new
+    reader resumes after its last offset (a tailer that cannot stop cannot resume)."""
+    wf = new_workflow()
+    await t.publish(wf, f"{wf}-b0", make_events(wf, 3))
+    reader = t.read(wf, 0, follow=True).__aiter__()
+    got = [await asyncio.wait_for(anext(reader), 30) for _ in range(3)]
+    assert offsets(got) == [1, 2, 3]
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(anext(reader), 0.5)  # nothing new: times out, cancelled
+    await asyncio.wait_for(reader.aclose(), 5)  # stops promptly
+    await t.publish(wf, f"{wf}-b1", make_events(wf, 2, start=3))
+    assert offsets(await collect(t, wf, 3)) == [4, 5]
 
 
 async def check_r2_expiry(t: EventTransport) -> None:
