@@ -915,7 +915,7 @@ async def test_a_lost_waiting_turn_keeps_its_outputs_without_rerunning(
 class ChecksFinish(ScriptedRunner):
     """Calls the config's finish check from a worker thread, as a tool body does."""
 
-    async def run(self, config: HarnessConfig, *args: Any) -> RunResult:  # type: ignore[override]
+    async def run(self, config: HarnessConfig, *args: Any) -> RunResult:
         assert config.finish_check is not None
         self.blocking = await asyncio.to_thread(config.finish_check)
         usage: Usage = args[4]
