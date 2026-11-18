@@ -1,13 +1,21 @@
 ---
 phase: 2
 title: Measure, decide and clean up
-status: in-progress
+status: done
 branch: spike/76-event-transport
 base: 5371368db80b232b2f155fd5ef0a8c6dd3c0df16
 delivers: [R5, R6, R8, R10, R11]
 design_review: { status: passed, rounds: 2, last: 2026-11-17 }
 impl_review: { status: passed, rounds: 2, last: 2026-11-18 }
 approved: 2026-11-17
+verification: { status: passed, last: 2026-11-18 }
+demo: { status: passed, last: 2026-11-18 }
+evidence:
+  code_sha: 8153e7b8dd534da06fb4a16f9a7dd8c78ff4829a
+  docs_sha: 1f2871d739412ec8847252c324b774d6bb8c0f70
+  review: docs/plans/2026-11-17-event-transport-spike/reviews.md
+  verification: docs/reviews/general-event-transport-spike/verification.md
+  demo: docs/demos/general-event-transport-spike.md
 ---
 
 # Phase 02 · Measure, decide and clean up

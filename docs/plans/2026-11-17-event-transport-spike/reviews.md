@@ -152,3 +152,7 @@ Owner decision: phase 01 stays in-progress (impl review passed) and one `verify-
 | F95 | Nit | contract | load.py's docstring still named Streams runs and NATS containers. | fixed |
 | F96 | Nit | contract | "17 or more followers" assumed 4 publishers sharing the pool. | fixed: stated in ADR-0009 |
 | F97 | Nit | contract | probes/README.md cited the raw growth file. | fixed: points to the provenance file |
+
+## 2026-11-18 · verification · phases 01 and 02 · pass
+
+One verification for both phases (owner decision of 2026-11-18): code_sha 8153e7b8dd534da06fb4a16f9a7dd8c78ff4829a, docs_sha 1f2871d739412ec8847252c324b774d6bb8c0f70. Report: docs/reviews/general-event-transport-spike/verification.md; demo: docs/demos/general-event-transport-spike.md. The remote revision check follows the push with the PR.

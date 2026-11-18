@@ -1,13 +1,21 @@
 ---
 phase: 1
 title: Interface, suite and three transports
-status: in-progress
+status: done
 branch: spike/76-event-transport
 base: f43c2ffafb79bd2cfc6791398cf32acb4d61867d
 delivers: [R1, R2, R3, R4, R7, R9]
 design_review: { status: passed, rounds: 2, last: 2026-11-17 }
 impl_review: { status: passed, rounds: 2, last: 2026-11-17 }
 approved: 2026-11-17
+verification: { status: passed, last: 2026-11-18 }
+demo: { status: passed, last: 2026-11-18 }
+evidence:
+  code_sha: 8153e7b8dd534da06fb4a16f9a7dd8c78ff4829a
+  docs_sha: 1f2871d739412ec8847252c324b774d6bb8c0f70
+  review: docs/plans/2026-11-17-event-transport-spike/reviews.md
+  verification: docs/reviews/general-event-transport-spike/verification.md
+  demo: docs/demos/general-event-transport-spike.md
 ---
 
 # Phase 01 · Interface, suite and three transports
