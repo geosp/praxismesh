@@ -1,0 +1,72 @@
+{
+  "commit": "cda93d947d214e3b4fadacb81fb282edb15c937b",
+  "dirty": false,
+  "command": "python -m tests.benchmarks.event_load --seconds 180 --runs 3",
+  "date": "2026-11-18T19:02:20+00:00",
+  "settings": {
+    "seconds": 180.0,
+    "agents": 4,
+    "tailers": 3,
+    "runs": 3,
+    "label": "",
+    "out": null
+  },
+  "thresholds": {
+    "display_p95_s": 1.0,
+    "publish_p95_s": 0.25,
+    "db_cpu_ratio": 2.0
+  },
+  "runs": [
+    {
+      "fenced": true,
+      "events_published": 35196,
+      "publishes": 3508,
+      "publish_p95_s": 0.010235569110955111,
+      "display_p95_s": 0.208878,
+      "display_median_s": 0.113421,
+      "tailers_complete": true,
+      "db_cpu_median_pct": 3.6,
+      "db_cpu_samples": 31
+    },
+    {
+      "fenced": true,
+      "events_published": 35196,
+      "publishes": 3508,
+      "publish_p95_s": 0.01023179767653346,
+      "display_p95_s": 0.20886054999999998,
+      "display_median_s": 0.1123565,
+      "tailers_complete": true,
+      "db_cpu_median_pct": 3.63,
+      "db_cpu_samples": 31
+    },
+    {
+      "fenced": true,
+      "events_published": 35172,
+      "publishes": 3504,
+      "publish_p95_s": 0.010234358487650752,
+      "display_p95_s": 0.208819,
+      "display_median_s": 0.122944,
+      "tailers_complete": true,
+      "db_cpu_median_pct": 3.4,
+      "db_cpu_samples": 31
+    },
+    {
+      "fenced": false,
+      "events_published": 35172,
+      "publishes": 3504,
+      "publish_p95_s": 0.02143263771722559,
+      "display_p95_s": 0.208854,
+      "display_median_s": 0.123465,
+      "tailers_complete": true,
+      "db_cpu_median_pct": 3.48,
+      "db_cpu_samples": 31
+    }
+  ],
+  "verdict": {
+    "display_p95": true,
+    "publish_p95": true,
+    "tailers_complete": true,
+    "db_cpu_ratio": true
+  },
+  "pass": true
+}
