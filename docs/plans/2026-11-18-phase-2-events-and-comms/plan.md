@@ -3,7 +3,7 @@ title: Phase 2 - real-time events and the comms MCP
 status: draft
 created: 2026-11-18
 updated: 2026-11-18
-design_review: { status: none, rounds: 0, last: null }
+design_review: { status: changes-requested, rounds: 1, last: 2026-11-18 }
 approved: null
 adr_review: null
 ---
