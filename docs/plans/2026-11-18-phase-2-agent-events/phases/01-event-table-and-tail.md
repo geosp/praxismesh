@@ -21,7 +21,7 @@ batching publisher, and `agentctl tail` follows a task live, resumes from an off
 
 ### 1. Event store
 
-- [ ] 1.1 Add migration 0005: `event_logs`, `agent_events`, `event_batches`, each with `retention_class` `task`, and add them to `PHASE1_TABLES` in `common/persistence/retention.py`, renamed `APP_TABLES` with its comment updated (D1, notes.md#d1). Verify: `alembic upgrade head` then `downgrade -1` on a copy of the dev database; the retention test covers the new tables.
+- [x] 1.1 Add migration 0005: `event_logs`, `agent_events`, `event_batches`, each with `retention_class` `task`, and add them to `PHASE1_TABLES` in `common/persistence/retention.py`, renamed `APP_TABLES` with its comment updated (D1, notes.md#d1). Verify: `alembic upgrade head` then `downgrade -1` on a copy of the dev database; the retention test covers the new tables.
 - [ ] 1.2 Move `_TASK_LOCK`, `_NO_NEWER_ATTEMPT` and `FenceRejected` into `common/persistence/fence.py` and use them from every fenced write in the repositories (D2). Verify: the existing fence tests pass unchanged.
 - [ ] 1.3 Port `transport.py` (interface, `Expired`, `expiry_for`, `guarded`), `memory.py` and the table transport into `common/events/`, with `publish(workflow, task, turn, attempt, batch_id, events)`, the fence from `fence.py`, `prune` and the batch-row cleanup (D1, D2, D4, R1-R4). Verify: the spike's shared suite, ported to `tests/integration/test_event_table.py`, passes against the table and the in-memory reference, including the notify-during-fetch test; a publish from attempt 1 after attempt 2 started stores nothing; a fenced checkpoint insert and a publish of one task run concurrently 200 times without deadlock.
 

@@ -23,7 +23,7 @@ from common.persistence.repositories import (
     TaskRepository,
     make_engine,
 )
-from common.persistence.retention import PHASE1_TABLES
+from common.persistence.retention import APP_TABLES
 from common.schemas import BlobRef, TaskStart
 from tests.support.stack import run_id
 
@@ -74,7 +74,7 @@ async def test_every_phase1_table_requires_retention(engine: AsyncEngine) -> Non
             )
         )
         tables = {r[0] for r in rows}
-    assert set(PHASE1_TABLES) <= tables
+    assert set(APP_TABLES) <= tables
 
 
 async def test_retention_class_is_checked(engine: AsyncEngine) -> None:
