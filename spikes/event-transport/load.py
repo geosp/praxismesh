@@ -11,9 +11,8 @@ resumed from its last offset every 60 s. Results go to
 `results/load-<option>-<label>.json`, with the commit and command.
 
 Measured: publish-to-display latency of every event a tailer shows; per Streams
-hosting run, history events and bytes (split by publish and poll Updates) and the
-carried state's size; CPU and memory of the stack's database, Temporal and NATS
-containers. Streams' history and roll-over measurement is in git history at 1bfac67.
+hosting run (none remain since ADR-0009; that code is at 1bfac67), history and carried
+state; CPU and memory of the stack's database and Temporal containers.
 """
 
 from __future__ import annotations

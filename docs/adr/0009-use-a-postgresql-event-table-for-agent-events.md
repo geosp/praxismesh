@@ -39,15 +39,16 @@ Streams and the table passed every must-pass requirement of the spike in all 3 r
 spike's rule (plan D2, following §4.4) selected Streams. The owner chose the table instead, a
 deliberate departure from §4.4, because the measurements favour it on everything the rule did not
 weigh:
-- Temporal used ~20x less CPU (1.6% median against 33% under the spike's load), and the table has
+- Temporal used ~20-23x less CPU (1.4% against 32.4%, medians over 3 runs), and the table has
   no per-run limit, while each Streams run holds at most 2,000 Updates and every observer adds one
   poll Update per batch.
 - A stable API and ~183 lines of code, against a Public Preview API with a private import and
   ~314 lines of workarounds (batch-ID dedup, expiry reporting, cancellation).
 - Event writes can take ADR-0007's fence in the same transaction as the attempt rows.
-- p95 latency of 187 ms against 199 ms. The spike's original load generator was closed-loop, so
-  Streams received ~5% less load than the table; an open-loop rerun of the table confirms its
-  figures at the full offered load (spike report).
+Latency did not decide it: at the spike's closed-loop load p95 was 187 ms for the table and 199 ms
+for Streams, but that generator gave Streams ~5% less load; an open-loop rerun showed the table
+passing at the full offered load with p95 204 ms, and Streams was not rerun at equal load (spike
+report).
 
 How it is used (from the spike):
 - One event table keyed by workflow and offset, a per-workflow counter row locked on publish, so
@@ -68,7 +69,8 @@ outgrows PostgreSQL; the interface keeps that switch contained.
 - Bad, because the table grows with every event and retention means `DELETE` churn: Phase 3A's
   retention work needs time-based partitioning or equivalent for it.
 - Bad, because each following reader holds a database connection while it follows (the spike's
-  pool allowed 20, so 17 or more followers in one process would block publishers), and the spike
+  pool allowed 20, so with the spike's 4 publishers sharing it, 17 or more followers in one process
+  would block them), and the spike
   uses one global `NOTIFY` channel, so every follower wakes for every workflow's batch. Fan-out to
   many observers (Phase 4 gateway, Phase 8 UI) needs a per-workflow channel or a reader that fans
   out in memory, or a pooler.

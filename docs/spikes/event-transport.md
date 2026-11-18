@@ -30,7 +30,7 @@ were then deleted from the spike (D6); they remain in git history at `1bfac67`.
 | R2 An expired offset is reported | pass (3/3) | pass (3/3; 3/3) | pass |
 | R3 A re-sent batch is stored once | pass (3/3) | pass (3/3; 3/3) | pass |
 | R4 Offsets survive roll-over | pass (3/3) | n/a | n/a |
-| R5 History stays bounded | pass (3/3): largest run 3,519 (3,519-3,531) events, 4.50 MB (decimal; bound 5,120 events and 5 MiB) | n/a | not measured |
+| R5 History stays bounded | pass (3/3): per load, the most events in a run 3,519 (3,519-3,531) and the most bytes 4.50 MB (decimal; bounds 5,120 events and 5 MiB) | n/a | not measured |
 | R6 p95 publish-to-display ≤ 1 s | pass (3/3): 199 (199-200) ms | pass (3/3): 187 (187-188) ms; open-loop 204 (204-204) ms | not measured |
 | R7 The recorded turn replays exactly | pass (3/3) | pass (3/3; 3/3) | pass |
 | R8 Results are reproducible | every pass/fail matches across 3 runs | same, in both sets | single suite run at `69c95c4`, before the cancel check (`check_r1_cancel`) existed |
@@ -50,14 +50,15 @@ agent (one stopped and resumed every 60 s).
 | Metric | Workflow Streams (`c1fda62`) | Table (`c1fda62`) | Table, open-loop (`5854ca2`) |
 | --- | --- | --- | --- |
 | Events published (offered: 60,232) | 54,897 (54,889-54,956) | 58,002 (57,811-58,059) | 60,232 (all runs) |
-| Publish time p50 / p95 | 13.4 / 23.8 ms | 4.3 / 5.5 ms | |
+| Publish time p50 | 13.4 (13.1-13.7) ms | 4.3 (4.3-4.4) ms | 4.3 (4.2-4.3) ms |
+| Publish time p95 | 23.8 (18.4-26.9) ms | 5.5 (5.4-6.1) ms | 5.7 (5.7-5.8) ms |
 | Latency p50 | 113 (113-114) ms | 92 (92-104) ms | 110 (109-110) ms |
 | Latency p95 | 199 (199-200) ms | 187 (187-188) ms | 204 (204-204) ms |
 | Latency p99 | 326 (326-372) ms | 189 (188-190) ms | 214 (213-214) ms |
 | Latency max | 1,225 (1,218-1,227) ms | 222 (218-227) ms | 224 (223-227) ms |
 | Tailers complete, expiries seen | all complete, none | all complete, none | all complete, none |
 | Hosting runs per agent in 5 min | 8 (a roll-over every ~40 s) | n/a | n/a |
-| Largest run | 3,519 events, 4.50 MB, ~775-827 Updates | n/a | n/a |
+| Completed hosting runs (84; each chain's last, partial run left out) | 3,232-3,531 events, 4.44-4.50 MB, 757-827 Updates, 191-207 batches | n/a | n/a |
 | Temporal CPU, median of run medians (range) | 32.4% (32.1-32.6%) | 1.4% (1.4-1.6%) | 1.3% (1.2-1.8%) |
 | Temporal CPU, peak (range over runs) | 185% (39-204%) | 3% (3-15%) | 13% (13-21%) |
 | PostgreSQL CPU, median (range) | 12.8% (12.1-13.1%), Temporal's persistence | 4.0% (3.2-7.1%) | 3.3% (3.2-3.3%) |
@@ -65,9 +66,12 @@ agent (one stopped and resumed every 60 s).
 Caveats about the `c1fda62` comparison:
 - **Closed-loop load (impl review F61).** The original generator waited for each publish, so
   Streams' slower publishes gave it ~5% less load than the table, and time blocked in a publish was
-  not counted as latency. The bias favours Streams. The open-loop runner (`5854ca2`) produces
-  events on a fixed schedule and stamps each when due; the table keeps every requirement at the
-  full offered load. Its p95 is higher (204 ms) because blocked time now counts.
+  not counted as latency. The bias likely favours Streams; Streams' R6 at equal offered load was not
+  measured, so D2's selection of Streams rests on these closed-loop runs. The open-loop runner
+  (`5854ca2`) produces events on a fixed schedule and stamps each when due; the table keeps every
+  requirement at the full offered load. Its p95 is higher (204 ms); the cause was not isolated
+  (blocked time now counts, and the runner's 10 ms flush poll adds delay). No latency comparison
+  between the options at equal load was made.
 - **No reset between runs (F62).** Earlier Streams hosting runs stayed Running during later table
   runs, and table rows accumulated; the table's database CPU drifted from 3.2% to 7.1% across runs.
   The open-loop runs reset the stack before each run, and their figures are steady.
@@ -91,9 +95,9 @@ from the judged loads, which are not growth data). Per-tailer growth was not mea
 follows from the Update counts: each tailer adds one poll Update per batch.
 
 What that means for roll-over, as measured: with 3 tailers each batch costs 4 Updates, so the cap
-arrives at ~500 batches and D5's 2,000-batch trigger can never fire first. In the judged runs every
-hosting run rolled over after ~194-207 batches (~40 s), at ~4.45-4.50 MB and ~775-827 Updates, when
-Temporal suggested Continue-As-New, apparently on history size. How Streams behaves at other event
+arrives at ~500 batches and D5's 2,000-batch trigger can never fire first. In the judged runs the
+84 completed hosting runs rolled over after 191-207 batches (~40 s), at 4.44-4.50 MB and 757-827
+Updates, when Temporal suggested Continue-As-New, apparently on history size. How Streams behaves at other event
 sizes or tailer counts was not measured. The risk: more tailers add bytes and Updates per batch, so
 roll-over comes sooner; small batches may reach the 2,000-Update cap before the size suggestion,
 and a run then stalls as the roll-over-off run did, unless Temporal also suggests Continue-As-New

@@ -21,3 +21,4 @@ for n in 1 2 3; do
         uv run python load.py "$option" --label "$LABEL$n"
     done
 done
+reset  # and after the last run (plan Rollout)

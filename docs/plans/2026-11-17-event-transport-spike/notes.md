@@ -132,8 +132,8 @@ Clarifications from phase 01 impl review round 1:
   ~4,600 events and ~5.5 MB per minute (`results/streams-growth-norollover.json`,
   `probes/streams_update_limit.py`; provenance in `results/streams-growth-norollover.provenance.json`).
   With 3 tailers each batch costs 4 Updates, so the cap arrives at ~500 batches and D5's
-  2,000-batch trigger can never fire first. In the judged runs every hosting run rolled over after
-  ~194-207 batches (~40 s), at ~4.45-4.50 MB and ~775-827 Updates, when Temporal suggested
+  2,000-batch trigger can never fire first. In the judged runs the 84 completed hosting runs rolled
+  over after 191-207 batches (~40 s), at 4.44-4.50 MB and 757-827 Updates, when Temporal suggested
   Continue-As-New, apparently on history size. Behaviour at other event sizes or tailer counts was
   not measured (impl review F65).
 - **Fragility (F44):** Streams decoding uses the preview package's private `_decode_payload`.

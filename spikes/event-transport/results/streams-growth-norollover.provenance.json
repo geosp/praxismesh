@@ -1,7 +1,7 @@
 {
   "what": "Streams hosting-run growth with roll-over off (informational; phase 02 task 1.2)",
   "measured_on": "the disposable stack after `load.py streams --no-roll --label growth` at c1fda62 stalled at Temporal's 2,000-Updates-per-run limit and was stopped (it wrote no load-streams-growth.json)",
-  "commit": "36ebee0",
+  "commit": "36ebee0 (the probe ran from the working tree just before this commit, which added it and its raw output)",
   "command": "PYTHONPATH=. uv run python probes/streams_update_limit.py > results/streams-growth-norollover.json",
   "probe_source": "probes/streams_update_limit.py at 36ebee0..1bfac67 (deleted with the Streams code)",
   "note": "streams-growth-norollover.json is the probe's raw output: it also lists 12 runs left Running by the judged loads (run IDs fb809c98, 3c994f04, 5e40dd37), which are not growth data. This file keeps only the growth run (e47794c1).",

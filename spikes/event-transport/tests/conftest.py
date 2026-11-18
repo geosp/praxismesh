@@ -107,7 +107,9 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     args = " ".join(sys.argv[1:])
     RESULTS.mkdir(exist_ok=True)
     for name, outcomes in _outcomes.items():
-        (RESULTS / f"suite-{name}.json").write_text(
+        target = RESULTS / f"suite-{name}.json"
+        tmp = target.with_suffix(".tmp")
+        tmp.write_text(
             json.dumps(
                 {
                     "transport": name,
@@ -123,3 +125,4 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
             )
             + "\n"
         )
+        tmp.replace(target)  # never a half-written results file (F78)

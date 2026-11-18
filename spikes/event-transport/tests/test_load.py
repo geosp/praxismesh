@@ -82,6 +82,15 @@ def test_judging_applies_the_thresholds() -> None:
     }
 
 
+def test_percentile_picks_the_value_at_the_rank() -> None:
+    """F75: the latency percentiles the judging uses."""
+    values = [float(v) for v in range(1, 101)]
+    assert load.percentile(values, 0.5) == 51.0
+    assert load.percentile(values, 0.95) == 96.0
+    assert load.percentile(values, 0.99) == 100.0
+    assert load.percentile([], 0.95) is None
+
+
 class FailingTransport(MemoryTransport):
     async def publish(self, workflow_id: str, batch_id: str, events: list[AgentEvent]) -> None:
         raise RuntimeError("the transport is down")
