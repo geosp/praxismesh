@@ -202,12 +202,17 @@ async def print_events(
     *,
     follow: bool,
     closed: Callable[[], Awaitable[bool]],
-    write: Callable[[str], None] = print,
+    write: Callable[[str], None] | None = None,
 ) -> int:
     """Print the events above `after`. With `follow`, keep printing until the
     Workflow has closed, then read once more to the end, so the last batch is not
-    missed (R2, R3; D5). Returns the last offset printed."""
+    missed (R2, R3; D5). Returns the last offset printed. Each line is flushed, so
+    a pipe or file sees it at once and a stopped tail loses nothing it printed."""
     last = after
+    if write is None:
+
+        def write(line: str) -> None:
+            print(line, flush=True)
 
     async def read(follow_: bool) -> None:
         nonlocal last
