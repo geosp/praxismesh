@@ -1,10 +1,10 @@
 {
   "transport": "memory",
-  "commit": "bd6ea37183ed115818b636e39947f593e5a8ccd8",
+  "commit": "69c95c4550221724a4ec34fa8fa310d39954357c",
   "dirty": false,
-  "command": "SPIKE_TRANSPORTS=memory SUITE_HORIZON_S=60 pytest tests/test_suite.py",
+  "command": "SPIKE_TRANSPORTS=memory,table,streams,nats SUITE_HORIZON_S=60 pytest -q -p no:cacheprovider tests/test_suite.py tests/test_table_notify.py",
   "partial": false,
-  "finished": "2026-11-18T04:42:21+00:00",
+  "finished": "2026-11-18T04:51:59+00:00",
   "requirements": {
     "R1": "pass",
     "R2": "pass",
