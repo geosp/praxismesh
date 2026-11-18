@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pytest
 from event_transport import checks
+from event_transport.factories import OPTIONS
 from event_transport.models import AgentEvent
 from event_transport.transport import EventTransport
 
@@ -27,14 +28,26 @@ async def test_r2_expiry(transport: EventTransport) -> None:
     await checks.check_r2_expiry(transport)
 
 
+@pytest.mark.requirement("R2")
+async def test_r2_mid_read(transport: EventTransport) -> None:
+    await checks.check_r2_mid_read(transport)
+
+
 @pytest.mark.requirement("R3")
 async def test_r3_resend(transport: EventTransport, horizon_s: float) -> None:
     await checks.check_r3_resend(transport, horizon_s)
 
 
 @pytest.mark.requirement("R4")
-async def test_r4_roll_over(transport: EventTransport) -> None:
-    await checks.check_r4_roll_over(transport)
+async def test_r4_roll_over(transport: EventTransport, option_name: str) -> None:
+    await checks.check_r4_roll_over(transport, OPTIONS[option_name].hosted)
+
+
+@pytest.mark.requirement("R4")
+async def test_r4_truncating_roll_over(transport: EventTransport, option_name: str) -> None:
+    if not OPTIONS[option_name].hosted:
+        pytest.skip("no Workflow to roll over (R4 is n/a)")
+    await checks.check_r4_truncating_roll_over(transport)
 
 
 @pytest.mark.requirement("R7")

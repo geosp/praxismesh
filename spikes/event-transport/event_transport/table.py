@@ -16,11 +16,12 @@ import asyncio
 import contextlib
 import os
 from collections.abc import AsyncIterator
+from typing import Any
 
 import asyncpg
 
 from event_transport.models import AgentEvent
-from event_transport.transport import Item, expiry_for
+from event_transport.transport import Item, expiry_for, guarded
 
 DSN = os.environ.get(
     "SPIKE_PG_DSN", "postgresql://praxismesh:change-me-app@127.0.0.1:35432/praxismesh"
@@ -108,9 +109,21 @@ class TableTransport:
         )
         return (row["next_offset"], row["base"]) if row else None
 
-    async def read(
-        self, workflow_id: str, after: int, *, follow: bool = False
-    ) -> AsyncIterator[Item]:
+    async def _fetch(self, conn: asyncpg.Connection, workflow_id: str, after: int) -> list[Any]:
+        return list(
+            await conn.fetch(
+                'SELECT "offset", body FROM spike76.events WHERE workflow_id = $1 '
+                'AND "offset" > $2 ORDER BY "offset" LIMIT $3',
+                workflow_id,
+                after,
+                PAGE,
+            )
+        )
+
+    def read(self, workflow_id: str, after: int, *, follow: bool = False) -> AsyncIterator[Item]:
+        return guarded(after, self._read(workflow_id, after, follow))
+
+    async def _read(self, workflow_id: str, after: int, follow: bool) -> AsyncIterator[Item]:
         async with self.pool.acquire() as conn:
             woken = asyncio.Event()
             if follow:
@@ -129,13 +142,8 @@ class TableTransport:
                         after = expired.retained_base - 1
                 position = after
                 while True:
-                    rows = await conn.fetch(
-                        'SELECT "offset", body FROM spike76.events WHERE workflow_id = $1 '
-                        'AND "offset" > $2 ORDER BY "offset" LIMIT $3',
-                        workflow_id,
-                        position,
-                        PAGE,
-                    )
+                    woken.clear()  # before the fetch, so a NOTIFY during it is kept (F38)
+                    rows = await self._fetch(conn, workflow_id, position)
                     for row in rows:
                         position = row["offset"]
                         yield position, AgentEvent.model_validate_json(row["body"])
@@ -143,7 +151,6 @@ class TableTransport:
                         continue
                     if not follow:
                         return
-                    woken.clear()
                     with contextlib.suppress(TimeoutError):  # the 1 s poll fallback
                         await asyncio.wait_for(woken.wait(), POLL_S)
             finally:
@@ -163,13 +170,14 @@ class TableTransport:
                 offset,
             )
             await conn.execute(
-                "UPDATE spike76.counters SET base = GREATEST(base, $2) WHERE workflow_id = $1",
+                "UPDATE spike76.counters SET base = GREATEST(base, LEAST($2, next_offset)) "
+                "WHERE workflow_id = $1",
                 workflow_id,
                 offset,
             )
 
-    async def roll_over(self, workflow_id: str) -> None:
-        return None  # not hosted in a Workflow (R4 is n/a)
+    async def roll_over(self, workflow_id: str) -> bool:
+        return False  # not hosted in a Workflow (R4 is n/a)
 
     async def close(self) -> None:
         await self.pool.close()

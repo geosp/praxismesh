@@ -33,6 +33,7 @@ from tests.support.dsh_container import build_image, start_container  # noqa: E4
 
 OUT = Path(__file__).resolve().parent / "fixtures" / "dsh-turn-t01.jsonl"
 TASK = "t01-order-total"
+MIN_EVENTS = 10
 
 
 async def _no_op(usage: Usage) -> None:
@@ -63,8 +64,13 @@ async def capture() -> int:
             await scope.close()
     finally:
         container.stop()
+    if len(sink.events) < MIN_EVENTS:  # keep the committed fixture (impl review F42)
+        print(f"error: only {len(sink.events)} events; fixture left unchanged", file=sys.stderr)
+        return 1
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text("".join(e.model_dump_json() + "\n" for e in sink.events))
+    tmp = OUT.with_suffix(".tmp")
+    tmp.write_text("".join(e.model_dump_json() + "\n" for e in sink.events))
+    tmp.replace(OUT)
     print(f"turn ended: {result.status}; {len(sink.events)} events -> {OUT}")
     return 0
 

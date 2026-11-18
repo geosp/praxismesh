@@ -48,11 +48,16 @@ class StoresResentTwice(MemoryTransport):
         await super().publish(workflow_id, batch_id, events)
 
 
+class NeverRolls(MemoryTransport):
+    """Claims a Workflow (hosted) but its roll-over does nothing."""
+
+
 async def run_all(t: MemoryTransport) -> None:
     await checks.check_r1_resume(t)
     await checks.check_r2_expiry(t)
+    await checks.check_r2_mid_read(t)
     await checks.check_r3_resend(t, HORIZON_S)
-    await checks.check_r4_roll_over(t)
+    await checks.check_r4_roll_over(t, hosted=False)
     await checks.check_r7_replay(t, recorded_turn())
 
 
@@ -67,6 +72,9 @@ async def test_reference_passes_every_check() -> None:
         (DropsEvent, "check_r7_replay"),
         (RepeatsEvent, "check_r1_resume"),
         (SkipsExpiry, "check_r2_expiry"),
+        (SkipsExpiry, "check_r2_mid_read"),
+        (NeverRolls, "check_r4_roll_over"),
+        (NeverRolls, "check_r4_truncating_roll_over"),
         (StoresResentTwice, "check_r3_resend"),
     ],
 )
@@ -78,6 +86,8 @@ async def test_a_broken_transport_fails_its_check(
     args: tuple[object, ...] = (t,)
     if check == "check_r3_resend":
         args = (t, HORIZON_S)
+    elif check == "check_r4_roll_over":
+        args = (t, True)
     elif check == "check_r7_replay":
         args = (t, recorded_turn())
     with pytest.raises(AssertionError):

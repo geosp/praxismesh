@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import timedelta
 
 from temporalio import workflow
 from temporalio.contrib.workflow_streams import WorkflowStream, WorkflowStreamState
@@ -30,7 +29,6 @@ class StreamInput:
     stream_state: WorkflowStreamState | None = None
     batches: dict[str, float] = field(default_factory=dict)  # batch_id -> seen, epoch seconds
     base: int = 1  # spike offset of the retained base
-    batches_this_run: int = 0
 
 
 @dataclass
@@ -107,6 +105,3 @@ class EventStreamWorkflow:
     @workflow.query
     def latest(self) -> int:
         return self.end
-
-
-ROLL_TIMEOUT = timedelta(seconds=30)

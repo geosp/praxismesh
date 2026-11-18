@@ -1,30 +1,32 @@
 """What does a JetStream consumer get when it starts below the first retained sequence?"""
 
 import asyncio
+import uuid
 
 import nats
 from nats.js import api
+
+STREAM = f"probe-expiry-{uuid.uuid4().hex[:8]}"
+SUBJECT = STREAM.replace("-", ".")
 
 
 async def main():
     nc = await nats.connect("nats://127.0.0.1:34222")
     js = nc.jetstream()
     await js.add_stream(
-        api.StreamConfig(
-            name="probe-expiry", subjects=["probe.expiry"], storage=api.StorageType.FILE
-        )
+        api.StreamConfig(name=STREAM, subjects=[SUBJECT], storage=api.StorageType.FILE)
     )
     try:
         for i in range(20):
-            await js.publish("probe.expiry", str(i).encode())
-        await js.purge_stream("probe-expiry", seq=15)
-        st = (await js.stream_info("probe-expiry")).state
+            await js.publish(SUBJECT, str(i).encode())
+        await js.purge_stream(STREAM, seq=15)
+        st = (await js.stream_info(STREAM)).state
         print(
             f"after purge: first_seq={st.first_seq} last_seq={st.last_seq} messages={st.messages}"
         )
         sub = await js.pull_subscribe(
-            "probe.expiry",
-            stream="probe-expiry",
+            SUBJECT,
+            stream=STREAM,
             config=api.ConsumerConfig(
                 deliver_policy=api.DeliverPolicy.BY_START_SEQUENCE,
                 opt_start_seq=5,
@@ -39,7 +41,7 @@ async def main():
         )
         await sub.unsubscribe()
     finally:
-        await js.delete_stream("probe-expiry")
+        await js.delete_stream(STREAM)
         await nc.close()
 
 

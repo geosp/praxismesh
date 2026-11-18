@@ -10,7 +10,6 @@ so a batch is published one message at a time.
 
 from __future__ import annotations
 
-import contextlib
 import os
 from collections.abc import AsyncIterator
 
@@ -20,7 +19,7 @@ from nats.js import api
 from nats.js.errors import NotFoundError
 
 from event_transport.models import AgentEvent
-from event_transport.transport import Item, expiry_for
+from event_transport.transport import Item, expiry_for, guarded
 
 URL = os.environ.get("SPIKE_NATS", "nats://127.0.0.1:34222")
 FETCH = 256
@@ -71,9 +70,10 @@ class JetStreamTransport:
         except NotFoundError:
             return None
 
-    async def read(
-        self, workflow_id: str, after: int, *, follow: bool = False
-    ) -> AsyncIterator[Item]:
+    def read(self, workflow_id: str, after: int, *, follow: bool = False) -> AsyncIterator[Item]:
+        return guarded(after, self._read(workflow_id, after, follow))
+
+    async def _read(self, workflow_id: str, after: int, follow: bool) -> AsyncIterator[Item]:
         stream, subject = await self._ensure(workflow_id)
         state = await self._state(workflow_id)
         last = state.last_seq if state else 0
@@ -107,6 +107,10 @@ class JetStreamTransport:
                     yield position, AgentEvent.model_validate_json(msg.data)
                 if not follow and position >= last:
                     return
+                if not follow and not msgs:
+                    state = await self._state(workflow_id)  # purged during the read (F40)
+                    if state is None or not state.messages or state.last_seq <= position:
+                        return
         finally:
             await sub.unsubscribe()
 
@@ -118,11 +122,10 @@ class JetStreamTransport:
         stream, _ = await self._ensure(workflow_id)
         await self.js.purge_stream(stream, seq=offset)
 
-    async def roll_over(self, workflow_id: str) -> None:
-        return None  # not hosted in a Workflow (R4 is n/a)
+    async def roll_over(self, workflow_id: str) -> bool:
+        return False  # not hosted in a Workflow (R4 is n/a)
 
     async def close(self) -> None:
-        for stream in self._streams:
-            with contextlib.suppress(NotFoundError):
-                await self.js.delete_stream(stream)
+        # Streams stay: other instances may still use them (F36); `down --volumes`
+        # on the NATS project removes them.
         await self.nc.close()

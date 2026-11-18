@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
 from event_transport.models import AgentEvent
-from event_transport.transport import Item, expiry_for
+from event_transport.transport import Item, expiry_for, guarded
 
 
 @dataclass
@@ -40,9 +40,10 @@ class MemoryTransport:
             log.next_offset += 1
         log.changed.set()
 
-    async def read(
-        self, workflow_id: str, after: int, *, follow: bool = False
-    ) -> AsyncIterator[Item]:
+    def read(self, workflow_id: str, after: int, *, follow: bool = False) -> AsyncIterator[Item]:
+        return guarded(after, self._read(workflow_id, after, follow))
+
+    async def _read(self, workflow_id: str, after: int, follow: bool) -> AsyncIterator[Item]:
         log = self._log(workflow_id)
         expired = expiry_for(after, log.base) if log.next_offset > 1 else None
         if expired is not None:
@@ -51,6 +52,9 @@ class MemoryTransport:
         position = after
         while True:
             while position + 1 < log.next_offset:
+                if position + 1 < log.base:
+                    position = log.base - 1  # removed during the read: guarded() reports it
+                    continue
                 position += 1
                 yield position, log.events[position]
             if not follow:
@@ -66,10 +70,10 @@ class MemoryTransport:
         log = self._log(workflow_id)
         for o in range(log.base, min(offset, log.next_offset)):
             log.events.pop(o, None)
-        log.base = max(log.base, offset)
+        log.base = max(log.base, min(offset, log.next_offset))
 
-    async def roll_over(self, workflow_id: str) -> None:
-        return None
+    async def roll_over(self, workflow_id: str) -> bool:
+        return False
 
     async def close(self) -> None:
         return None

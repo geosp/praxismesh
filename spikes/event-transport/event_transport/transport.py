@@ -32,6 +32,26 @@ def expiry_for(after: int, retained_base: int | None) -> Expired | None:
     return None
 
 
+async def guarded(after: int, items: AsyncIterator[Item]) -> AsyncIterator[Item]:
+    """The reader rule every implementation applies (impl review F31): an offset that
+    jumps past the next one expected means events were removed during the read, so an
+    `Expired` naming it comes first; an offset that goes backwards or repeats is a bug
+    and raises, so the suite sees it."""
+    position = after
+    async for item in items:
+        if isinstance(item, Expired):
+            yield item
+            position = item.retained_base - 1
+            continue
+        offset = item[0]
+        if offset <= position:
+            raise RuntimeError(f"offset {offset} after {position}: repeated or out of order")
+        if offset > position + 1:
+            yield Expired(offset)
+        yield item
+        position = offset
+
+
 class EventTransport(Protocol):
     async def publish(self, workflow_id: str, batch_id: str, events: list[AgentEvent]) -> None:
         """Store a batch. Re-sending a batch ID within the re-send horizon stores nothing (R3)."""
@@ -46,8 +66,9 @@ class EventTransport(Protocol):
     async def expire_below(self, workflow_id: str, offset: int) -> None:
         """Test hook: remove every event below `offset` using the option's retention (R2)."""
 
-    async def roll_over(self, workflow_id: str) -> None:
-        """Test hook: Continue-As-New for options hosted in a Workflow; else a no-op (R4)."""
+    async def roll_over(self, workflow_id: str) -> bool:
+        """Test hook: Continue-As-New for options hosted in a Workflow, returning once
+        the new run has started; returns False for options with no Workflow (R4)."""
 
     async def close(self) -> None:
         """Release connections."""

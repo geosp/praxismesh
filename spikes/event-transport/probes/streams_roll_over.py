@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 
 from event_transport.checks import collect, make_events, offsets
 from event_transport.streams import StreamsTransport
@@ -7,7 +8,7 @@ from event_transport.streams import StreamsTransport
 async def main():
     t = await StreamsTransport.connect(60)
     try:
-        wf = "probe-can"
+        wf = f"probe-can-{uuid.uuid4().hex[:8]}"
         await t.publish(wf, "b0", make_events(wf, 600))
         h = t.client.get_workflow_handle(t._wid(wf))
         before = (await h.describe()).run_id

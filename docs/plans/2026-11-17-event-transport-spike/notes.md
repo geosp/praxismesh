@@ -109,3 +109,18 @@ Expired(retained_base: int)
 | Workflow Streams | the publishing Activity sends one `publish_batch(batch_id, events)` Update per batch to the hosting Workflow; the Workflow checks its batch-ID set (entries older than the horizon dropped) and appends through the stream's Workflow-side topic; the set travels in the Continue-As-New arguments with the stream state. Readers call the stream's poll Update by Workflow ID (so they follow roll-over), map `TruncatedOffset` to `Expired` using a spike `retained_base` Query, and add 1 to stream offsets. Roll-over when `workflow.info().is_continue_as_new_suggested()` or every 2,000 batches, after truncating the log to its last 500 events. One extra load run with roll-over off reports growth per minute per agent and per tailer (informational) |
 | PostgreSQL table | `asyncpg` 0.32.0; one table keyed `(workflow_id, offset)`; a per-workflow counter row; a `(workflow_id, batch_id)` row inserted in the same transaction as the events; `NOTIFY` per batch; readers fall back to a 1 s poll |
 | NATS JetStream | a stream per workflow (`events-<workflow_id>`), one message per event, `Nats-Msg-Id` `<batch_id>:<i>`, duplicate window 600 s (60 s in the R3 case), file storage, 1 replica; readers use a pull consumer with `by_start_sequence` and read the stream's first sequence for expiry; the cost of one stream per workflow goes into the assessment |
+
+Clarifications from phase 01 impl review round 1:
+- **"A publishing Activity" (F32).** In production the long-running Activity that produces the
+  events (the harness turn) calls the `publish_batch` Update from its own process; there is no
+  Activity per batch, so no extra round trip or history per batch. The suite makes the same
+  Update call from the test process. Phase 02's load runner publishes from inside one
+  long-running Activity per agent, so the measured path matches production.
+- **Every reader applies one rule (F31):** an offset that jumps past the next expected one is
+  reported as `Expired` first; an offset that repeats or goes backwards raises.
+- **Parameters the implementations add (F45):** table connection pool up to 20 (each following
+  reader holds one connection); JetStream consumers expire after 60 s idle. Phase 02 reports
+  both if the load reaches them.
+- **To check in phase 02 (F47):** Temporal also limits Updates per run (`TOO_MANY_UPDATES`), and
+  poll Updates count; the default and whether it, rather than 2,000 batches, triggers roll-over.
+- **Fragility (F44):** Streams decoding uses the preview package's private `_decode_payload`.

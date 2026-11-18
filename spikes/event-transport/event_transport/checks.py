@@ -84,20 +84,48 @@ async def check_r2_expiry(t: EventTransport) -> None:
 
 
 async def check_r3_resend(t: EventTransport, horizon_s: float) -> None:
-    """R3: a batch re-sent at once and just inside the horizon is stored once."""
+    """R3: a batch re-sent at once, after a roll-over, and just inside the horizon is
+    stored once."""
     wf = new_workflow()
     batch = make_events(wf, 5)
     await t.publish(wf, f"{wf}-b0", batch)
     await t.publish(wf, f"{wf}-b0", batch)
     assert await t.latest(wf) == 5
+    await t.roll_over(wf)  # the batch-ID set must survive it (no-op without a Workflow)
+    await t.publish(wf, f"{wf}-b0", batch)
+    assert await t.latest(wf) == 5, "a re-send after a roll-over was stored again"
     await asyncio.sleep(max(horizon_s - 5, 0.1))
     await t.publish(wf, f"{wf}-b0", batch)
     assert await t.latest(wf) == 5
     assert offsets(await collect(t, wf, 0)) == [1, 2, 3, 4, 5]
 
 
-async def check_r4_roll_over(t: EventTransport) -> None:
-    """R4: a reader at offset N during a roll-over gets N+1 onwards, no gap or repeat."""
+async def check_r2_mid_read(t: EventTransport) -> None:
+    """R2 during a read: a follower whose next events are removed while it reads gets
+    an expiry report naming the new base, then the base onwards."""
+    wf = new_workflow()
+    await t.publish(wf, f"{wf}-b0", make_events(wf, 5))
+    reader = t.read(wf, 0, follow=True).__aiter__()
+    first = [await asyncio.wait_for(anext(reader), 30) for _ in range(5)]
+    assert offsets(first) == [1, 2, 3, 4, 5]
+    # Published after the reader's last page, then removed before it reads again:
+    # events a reader already buffered may still be delivered.
+    await t.publish(wf, f"{wf}-b1", make_events(wf, 95, start=5))
+    await t.expire_below(wf, 50)
+    await t.publish(wf, f"{wf}-b2", make_events(wf, 10, start=100))
+    rest: list[Item] = []
+    while len(offsets(rest)) < 61 and not (offsets(rest) and offsets(rest)[-1] == 110):
+        rest.append(await asyncio.wait_for(anext(reader), 30))
+    await reader.aclose()
+    expiries = [i for i in rest if isinstance(i, Expired)]
+    assert expiries and expiries[0].retained_base >= 6, rest[:3]
+    after_expiry = offsets(rest[rest.index(expiries[0]) + 1 :])
+    assert after_expiry == list(range(expiries[0].retained_base, 111)), after_expiry[:5]
+
+
+async def check_r4_roll_over(t: EventTransport, hosted: bool) -> None:
+    """R4: a reader at offset N during a roll-over gets N+1 onwards, no gap or repeat.
+    For a hosted option the roll-over must start a new run while the reader waits."""
     wf = new_workflow()
     await t.publish(wf, f"{wf}-b0", make_events(wf, 5))
     got: list[int] = []
@@ -111,11 +139,39 @@ async def check_r4_roll_over(t: EventTransport) -> None:
 
     reader = asyncio.create_task(tail())
     await asyncio.sleep(0.5)
-    await t.roll_over(wf)
+    rolled = await t.roll_over(wf)
+    if hosted:
+        assert rolled, "roll_over did not start a new run"
+        assert got == [4, 5], f"the reader moved before the post-roll publish: {got}"
     await t.publish(wf, f"{wf}-b1", make_events(wf, 5, start=5))
     await asyncio.wait_for(reader, 60)
     assert got == list(range(4, 11)), got
     assert offsets(await collect(t, wf, 0)) == list(range(1, 11))
+
+
+async def check_r4_truncating_roll_over(t: EventTransport, keep: int = 500) -> None:
+    """R4 with D5's retention: a roll-over keeps the last `keep` events; a stalled
+    tailer then gets an expiry report naming the carried base and continues without
+    a gap; reads after the base report nothing expired. Hosted options only."""
+    wf = new_workflow()
+    await t.publish(wf, f"{wf}-b0", make_events(wf, 5))
+    tailer = t.read(wf, 3, follow=True).__aiter__()
+    assert offsets([await asyncio.wait_for(anext(tailer), 30)]) == [4]
+    for b in range(10):
+        await t.publish(wf, f"{wf}-b{b + 1}", make_events(wf, 60, start=5 + 60 * b))
+    assert await t.latest(wf) == 605
+    assert await t.roll_over(wf), "roll_over did not start a new run"
+    base = 605 - keep + 1
+    await t.publish(wf, f"{wf}-b11", make_events(wf, 5, start=605))
+    rest: list[Item] = []
+    while not (offsets(rest) and offsets(rest)[-1] == 610):
+        rest.append(await asyncio.wait_for(anext(tailer), 30))
+    await tailer.aclose()
+    expiries = [i for i in rest if isinstance(i, Expired)]
+    assert expiries == [Expired(base)], rest[:3]
+    assert offsets(rest[rest.index(expiries[0]) + 1 :]) == list(range(base, 611))
+    assert (await collect(t, wf, 0))[0] == Expired(base)
+    assert not any(isinstance(i, Expired) for i in await collect(t, wf, base - 1))
 
 
 async def check_r7_replay(t: EventTransport, recorded: list[AgentEvent]) -> None:
