@@ -123,6 +123,11 @@ Clarifications from phase 01 impl review round 1:
   both if the load reaches them.
   Streams adds a fixed task queue and a 2 h execution timeout per hosting run (round 2); the
   report lists them with the others.
-- **To check in phase 02 (F47):** Temporal also limits Updates per run (`TOO_MANY_UPDATES`), and
-  poll Updates count; the default and whether it, rather than 2,000 batches, triggers roll-over.
+- **Checked in phase 02 (F47):** Temporal limits each run to 2,000 distinct Updates (server message:
+  "The limit on the total number of distinct updates in this workflow has been reached (2000)").
+  Poll Updates count. In the roll-over-off growth run, each hosting run reached the cap after
+  ~1.85 min: ~500 publish and ~1,500 poll Updates (3 tailers), ~8,500 history events and ~10.2 MB,
+  ~4,600 events and ~5.5 MB per minute (`results/streams-growth-norollover.json`,
+  `probes/streams_update_limit.py`). A run therefore holds at most 2,000 / (1 + tailers) batches;
+  the judged runs stayed bounded because Temporal suggested Continue-As-New in time.
 - **Fragility (F44):** Streams decoding uses the preview package's private `_decode_payload`.
