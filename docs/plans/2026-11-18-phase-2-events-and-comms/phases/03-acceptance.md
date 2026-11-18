@@ -1,13 +1,13 @@
 ---
 phase: 3
 title: Acceptance and demo
-status: draft
+status: approved
 branch: null
 base: null
 delivers: [R10, R13, R14, R16, R17, R19, R24, R30, R33]
 design_review: { status: passed, rounds: 3, last: 2026-11-18 }
 impl_review: { status: none, rounds: 0, last: null }
-approved: null
+approved: 2026-11-18
 ---
 
 # Phase 03 · Acceptance and demo

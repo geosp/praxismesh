@@ -115,3 +115,7 @@ After the split and rework, a fresh round (owner decision when splitting). Revie
 | F91 | Nit | zoom out | `openai_agents` `sh` can read the comms URL | accepted: Assumptions (the same holds for `PRAXIS_SAMPLE_DB_URL`; DSH isolates commands) |
 | F92 | Nit | fresh reader | Terms, multi-rule requirements, duplication, ordering, `post_status` mechanics, clamp vs refusal, late-reply recording, the `--join` race, submit gate | fixed: Terms, D8 (clamped), R11 (closed questions recorded), D15, Assumptions (`--join`), Rollout (no submit gate), requirements in ID order; multi-rule requirements R13, R19, R24, R30 accepted as one rule with its observable outcome |
 | F93 | Nit | fresh reader | plan.md is 375 lines (budget 250) | accepted: 24 requirements each with scenarios; mechanics are in notes.md |
+
+## 2026-11-18 · approved · plan (phases 02 and 03)
+
+Owner approved, including the two extensions flagged with round 3: finish_task also waits for unread replies (R19); a used-up wake budget fails the task (R22).
