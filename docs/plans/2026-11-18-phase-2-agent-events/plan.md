@@ -1,10 +1,10 @@
 ---
 title: Phase 2 events - the event table and agentctl tail
-status: draft
+status: approved
 created: 2026-11-18
 updated: 2026-11-18
 design_review: { status: passed, rounds: 2, last: 2026-11-18 }
-approved: null
+approved: 2026-11-18
 adr_review: null
 ---
 
@@ -206,7 +206,7 @@ the previous workers; events stop being written and the tables stay, unused.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | Event table and agentctl tail | draft | 0/11 |
+| 01 | Event table and agentctl tail | approved | 0/11 |
 
 ## Decision log
 

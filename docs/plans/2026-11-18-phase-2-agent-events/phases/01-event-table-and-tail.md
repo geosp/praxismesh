@@ -1,13 +1,13 @@
 ---
 phase: 1
 title: Event table and agentctl tail
-status: draft
+status: approved
 branch: null
 base: null
 delivers: [R1, R2, R3, R4, R5, R6, R7, R8, R9]
 design_review: { status: passed, rounds: 2, last: 2026-11-18 }
 impl_review: { status: none, rounds: 0, last: null }
-approved: null
+approved: 2026-11-18
 ---
 
 # Phase 01 · Event table and agentctl tail

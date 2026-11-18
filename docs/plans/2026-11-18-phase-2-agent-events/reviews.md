@@ -62,3 +62,5 @@ Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out ✅ (plan at 910be44
 | E47 | Nit | zoom out | `close()` has no overall bound and runs outside the heartbeat | fixed: task 2.1, notes.md#d2 |
 | E48 | Nit | zoom out | Database CPU compared across sessions | fixed: Risks, task 2.3 (fenced and unfenced in one session) |
 | E49 | Nit | fresh reader | Smaller terms, rereads and multi-rule requirements (`before_model_call` unused, shielded, Why vs front matter, outcome and artifact) | fixed: Terms, Why |
+
+## 2026-11-18 · approved · plan (phase 01)
