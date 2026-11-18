@@ -39,6 +39,7 @@ from event_transport.models import AgentEvent
 from event_transport.transport import EventTransport, Expired
 from temporalio import activity, workflow
 from temporalio.client import Client
+from temporalio.common import RetryPolicy
 from temporalio.worker import Worker
 
 SPIKE = Path(__file__).resolve().parent
@@ -80,6 +81,7 @@ class LoadAgentWorkflow:
             result_type=AgentResult,
             start_to_close_timeout=timedelta(seconds=inp.seconds + 120),
             heartbeat_timeout=timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=1),  # a failed agent fails the run (F64)
         )
 
 
@@ -89,47 +91,65 @@ class Agents:
 
     @activity.defn(name="spike_publish")
     async def publish(self, inp: AgentInput) -> AgentResult:
-        out, wf, seq = AgentResult(), inp.workflow_id, 0
-        end = time.monotonic() + inp.seconds
-        next_tool = time.monotonic() + TOOL_EVERY_S
+        """Open-loop (F61): a producer makes events on a fixed schedule and stamps each
+        with the time it was due, so a slow publish shows as latency instead of
+        lowering the load. Batch IDs name the attempt (F76)."""
+        out, wf = AgentResult(), inp.workflow_id
+        attempt = activity.info().attempt
         pending: list[AgentEvent] = []
-        last_flush = time.monotonic()
-        while time.monotonic() < end:
-            now = time.monotonic()
-            kinds = ["token"]
-            if now >= next_tool:
-                kinds += ["tool_call", "tool_result"]
-                next_tool += TOOL_EVERY_S
-            for kind in kinds:
-                payload: dict[str, Any] = {"t": time.time()}
-                payload |= (
-                    {"delta": DELTA} if kind == "token" else {"tool": "run_command", "call": seq}
-                )
-                pending.append(
-                    AgentEvent(
-                        seq=seq,
-                        timestamp=datetime.now(UTC),
-                        workflow_id=wf,
-                        task_id=wf,
-                        attempt_id=f"{wf}:1:1",
-                        type=kind,  # type: ignore[arg-type]
-                        payload=payload,
+
+        async def produce() -> None:
+            start, start_wall, i, seq = time.monotonic(), time.time(), 0, 0
+            next_tool = TOOL_EVERY_S
+            while (due := i / RATE_PER_S) < inp.seconds:
+                delay = start + due - time.monotonic()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                kinds = ["token"]
+                if due >= next_tool:
+                    kinds += ["tool_call", "tool_result"]
+                    next_tool += TOOL_EVERY_S
+                for kind in kinds:
+                    payload: dict[str, Any] = {"t": start_wall + due}
+                    payload |= (
+                        {"delta": DELTA}
+                        if kind == "token"
+                        else {"tool": "run_command", "call": seq}
                     )
-                )
-                seq += 1
-            if len(pending) >= BATCH_MAX or now - last_flush >= BATCH_S:
-                started = time.monotonic()
-                await self.transport.publish(wf, f"{wf}-{out.batches}", pending)
-                out.publish_ms.append((time.monotonic() - started) * 1000)
-                out.published += len(pending)
-                out.batches += 1
-                pending, last_flush = [], time.monotonic()
-                activity.heartbeat(out.published)
-            await asyncio.sleep(1 / RATE_PER_S)
-        if pending:
-            await self.transport.publish(wf, f"{wf}-{out.batches}", pending)
-            out.published += len(pending)
-            out.batches += 1
+                    pending.append(
+                        AgentEvent(
+                            seq=seq,
+                            timestamp=datetime.now(UTC),
+                            workflow_id=wf,
+                            task_id=wf,
+                            attempt_id=f"{wf}:1:{attempt}",
+                            type=kind,  # type: ignore[arg-type]
+                            payload=payload,
+                        )
+                    )
+                    seq += 1
+                i += 1
+
+        producer = asyncio.create_task(produce())
+        last = time.monotonic()
+        try:
+            while not (producer.done() and not pending):
+                due = len(pending) >= BATCH_MAX or time.monotonic() - last >= BATCH_S
+                if pending and (due or producer.done()):
+                    batch = pending[:BATCH_MAX]
+                    del pending[: len(batch)]
+                    started = time.monotonic()
+                    await self.transport.publish(wf, f"{wf}:{attempt}:{out.batches}", batch)
+                    out.publish_ms.append((time.monotonic() - started) * 1000)
+                    out.published += len(batch)
+                    out.batches += 1
+                    last = time.monotonic()
+                    activity.heartbeat(out.published)
+                else:
+                    await asyncio.sleep(0.01)
+            await producer  # re-raise anything the producer hit
+        finally:
+            producer.cancel()
         return out
 
 
@@ -185,6 +205,32 @@ async def tail(t: EventTransport, tailer: Tailer, stop: asyncio.Event) -> None:
 # ---- measurements
 
 
+def judge(
+    hosted: bool,
+    p95: float | None,
+    complete: bool,
+    max_events: int | None,
+    max_bytes: int | None,
+    max_carried: int | None,
+) -> dict[str, str]:
+    """R5, R6 and R11 against the plan's bounds (10% of the history limits, p95 <= 1 s
+    with every tailer complete, 50% of the payload limit). A missing value fails."""
+
+    def under(value: int | None, bound: float) -> str:
+        return "pass" if value is not None and value < bound else "fail"
+
+    history = (
+        "pass"
+        if under(max_events, LIMIT_EVENTS * 0.1) == under(max_bytes, LIMIT_BYTES * 0.1) == "pass"
+        else "fail"
+    )
+    return {
+        "R5": history if hosted else "n/a",
+        "R6": "pass" if p95 is not None and p95 <= 1000 and complete else "fail",
+        "R11": under(max_carried, LIMIT_PAYLOAD * 0.5) if hosted else "n/a",
+    }
+
+
 def say(message: str) -> None:
     print(f"[load] {message}", file=sys.stderr, flush=True)
 
@@ -226,39 +272,56 @@ async def main(argv: list[str]) -> int:
     running = subprocess.run(
         ["docker", "ps", "--format", "{{.Names}}"], capture_output=True, text=True, check=False
     ).stdout.split()
-    wanted = ("pmspike76-db-1", "pmspike76-temporal-1", "pmspike76-nats-nats-1")
+    wanted = ("pmspike76-db-1", "pmspike76-temporal-1")
     names = [n for n in wanted if n in running]
     sampler = threading.Thread(target=_sampler, args=(names, samples, stats_stop), daemon=True)
     began = time.monotonic()
-    async with worker:
-        sampler.start()
-        say("worker up; starting tailers")
-        tasks = [asyncio.create_task(tail(transport, tl, stop)) for tl in tailers]
-        handles = [
-            await client.start_workflow(
-                LoadAgentWorkflow.run,
-                AgentInput(wf, args.seconds),
-                id=f"agent-{wf}",
-                task_queue=LOAD_QUEUE,
-            )
-            for wf in wfs
-        ]
-        say(f"publishing for {args.seconds:.0f} s")
-        results = [await h.result() for h in handles]
-        say("publishers done; tailers catching up")
-        latest = {wf: await transport.latest(wf) or 0 for wf in wfs}
-        catch_up = time.monotonic() + 60
-        while time.monotonic() < catch_up and any(
-            tl.last < latest[tl.workflow_id] and tl.error is None for tl in tailers
-        ):
-            await asyncio.sleep(0.5)
+    handles: list[Any] = []
+    tasks: list[asyncio.Task[None]] = []
+    agent_errors: list[str] = []
+    results: list[AgentResult] = []
+    latest: dict[str, int] = {wf: 0 for wf in wfs}
+    try:
+        async with worker:
+            sampler.start()
+            say("worker up; starting tailers")
+            tasks = [asyncio.create_task(tail(transport, tl, stop)) for tl in tailers]
+            for wf in wfs:
+                handles.append(
+                    await client.start_workflow(
+                        LoadAgentWorkflow.run,
+                        AgentInput(wf, args.seconds),
+                        id=f"agent-{wf}",
+                        task_queue=LOAD_QUEUE,
+                        execution_timeout=timedelta(seconds=args.seconds + 180),  # F64
+                    )
+                )
+            say(f"publishing for {args.seconds:.0f} s")
+            for outcome in await asyncio.gather(
+                *(h.result() for h in handles), return_exceptions=True
+            ):
+                if isinstance(outcome, BaseException):
+                    agent_errors.append(f"{type(outcome).__name__}: {outcome}"[:300])
+                else:
+                    results.append(outcome)
+            say("publishers done; tailers catching up")
+            latest = {wf: await transport.latest(wf) or 0 for wf in wfs}
+            catch_up = time.monotonic() + 60
+            while time.monotonic() < catch_up and any(
+                tl.last < latest[tl.workflow_id] and tl.error is None for tl in tailers
+            ):
+                await asyncio.sleep(0.5)
+    finally:
         stop.set()
         say("stopping tailers")
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
         stats_stop.set()
+        for h in handles:  # never leave an agent running for the next run's worker (F64)
+            with contextlib.suppress(Exception):
+                await h.terminate("load run ended")
+        await transport.close()
     elapsed = time.monotonic() - began
     runs: dict[str, Any] = {}  # Streams hosting runs; none remain (ADR-0009)
-    await transport.close()
 
     latencies = [ms for tl in tailers for ms in tl.latency_ms]
     p95 = percentile(latencies, 0.95)
@@ -267,17 +330,9 @@ async def main(argv: list[str]) -> int:
     max_bytes = max((r["bytes"] for r in all_runs), default=None)
     max_carried = max((r["carried_input_bytes"] for r in all_runs), default=None)
     complete = all(tl.last == latest[tl.workflow_id] and tl.error is None for tl in tailers)
-    judged = {
-        "R5": "n/a"
-        if not option.hosted
-        else (
-            "pass" if max_events < LIMIT_EVENTS * 0.1 and max_bytes < LIMIT_BYTES * 0.1 else "fail"
-        ),
-        "R6": "pass" if p95 is not None and p95 <= 1000 and complete else "fail",
-        "R11": "n/a"
-        if not option.hosted
-        else ("pass" if max_carried < LIMIT_PAYLOAD * 0.5 else "fail"),
-    }
+    judged = judge(option.hosted, p95, complete, max_events, max_bytes, max_carried)
+    if agent_errors:
+        judged = {k: "error" for k in judged}
     report = {
         "option": args.option,
         "label": args.label,
@@ -295,6 +350,7 @@ async def main(argv: list[str]) -> int:
         },
         "elapsed_s": round(elapsed, 1),
         "requirements": judged,
+        "agent_errors": agent_errors,
         "published": sum(r.published for r in results),
         "batches": sum(r.batches for r in results),
         "publish_ms": {
@@ -333,7 +389,9 @@ async def main(argv: list[str]) -> int:
     }
     RESULTS.mkdir(exist_ok=True)
     out = RESULTS / f"load-{args.option}-{args.label}.json"
-    out.write_text(json.dumps(report, indent=2) + "\n")
+    tmp = out.with_suffix(".tmp")
+    tmp.write_text(json.dumps(report, indent=2) + "\n")
+    tmp.replace(out)  # never a half-written results file (F78)
     print(
         json.dumps(
             {
@@ -346,7 +404,7 @@ async def main(argv: list[str]) -> int:
         f"history: max events {max_events}, max bytes {max_bytes}, "
         f"max carried {max_carried} -> {out}"
     )
-    return 0
+    return 1 if agent_errors else 0
 
 
 def _sampler(names: list[str], samples: list[dict[str, Any]], stop: Any) -> None:
