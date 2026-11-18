@@ -6,6 +6,7 @@ import asyncio
 
 from event_transport.memory import MemoryTransport
 from event_transport.transport import Expired
+
 from tests.helpers import events
 
 

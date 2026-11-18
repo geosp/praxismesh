@@ -13,7 +13,11 @@ ROOT_SCHEMA = Path(__file__).resolve().parents[3] / "common" / "schemas" / "even
 def root_fields() -> list[str]:
     tree = ast.parse(ROOT_SCHEMA.read_text())
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "AgentEvent")
-    return [s.target.id for s in cls.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
+    return [
+        s.target.id
+        for s in cls.body
+        if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)
+    ]
 
 
 def test_copy_matches_the_root_schema() -> None:

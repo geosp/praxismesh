@@ -1,0 +1,13 @@
+{
+  "transport": "memory",
+  "commit": "7a2e47b13ebaabc11d8798ffa4b5b71e498d8867",
+  "command": "SPIKE_TRANSPORTS=memory /home/geo/develop/praxismesh/spikes/event-transport/.venv/bin/pytest -q",
+  "finished": "2026-11-18T04:09:49+00:00",
+  "requirements": {
+    "R1": "pass",
+    "R2": "pass",
+    "R3": "pass",
+    "R4": "n/a",
+    "R7": "pass"
+  }
+}
