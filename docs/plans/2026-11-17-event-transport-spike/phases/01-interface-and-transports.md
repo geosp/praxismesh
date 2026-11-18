@@ -21,13 +21,13 @@ R1-R4 and R7 for each. A requirement an option fails is a result to record, not 
 
 ### 1. Groundwork
 
-- [ ] 1.1 Create `spikes/event-transport/` as its own uv project (pins `temporalio` 1.36.0, `nats-py` 2.17.0, a PostgreSQL driver), with a README, and record Temporal's per-run history limits from current docs in notes.md#verified (D4, R5). Verify: `uv sync --locked` in the spike; the limits and their source are in notes.md.
-- [ ] 1.2 Add the `EventTransport` interface, `Expired` and an in-memory reference implementation (D1). Verify: unit tests of the reference implementation.
-- [ ] 1.3 Add the shared suite, parametrized by transport: resume (R1), expiry (R2), re-sent batch (R3), Continue-As-New (R4) and recorded-turn replay (R7). Write results per requirement and transport to a JSON file. Verify: the suite passes on the reference implementation, and fails when the reference drops an event, repeats one or skips an expiry report.
-- [ ] 1.4 Capture the recorded turn: run `t01-order-total` once on the `dsh` profile with a JSON-lines recording sink, and commit the fixture (D3, R7). Verify: the fixture parses as `AgentEvent`s and holds no prompt text or credentials.
+- [ ] 1.1 Create `spikes/event-transport/` as its own uv project (pins `temporalio` 1.36.0, `nats-py` 2.17.0, `asyncpg` 0.32.0, `pydantic`), with a README and a Compose overlay for a disposable project; record Temporal's per-run history limits from current docs in notes.md#verified (D4, R5). Verify: `uv sync --locked` in the spike; the limits and their source are in notes.md.
+- [ ] 1.2 Add the `EventTransport` interface, `Expired`, the test hooks and the copied `AgentEvent`, plus an in-memory reference implementation (D1). Verify: unit tests of the reference implementation; a check that the copy's fields match `common/schemas/events.py`.
+- [ ] 1.3 Add the shared suite, parametrized by transport: R1, R2 (both scenarios), R3 (immediate and near-horizon re-send), R4 and R7, writing pass, fail or N/A per requirement and transport to a JSON file. Verify: the suite passes on the reference implementation, and fails when the reference drops an event, repeats one, skips an expiry report or stores a re-sent batch twice.
+- [ ] 1.4 Capture the recorded turn: a capture script in the root environment drives `t01-order-total` once through `tests/support/dsh_container.py` with a recording sink against the real model, and the fixture is committed (D3, R7). Verify: the fixture parses with the spike's `AgentEvent` copy and holds no prompt text or credentials.
 
 ### 2. The three transports
 
-- [ ] 2.1 PostgreSQL table transport, as notes.md#d5 (D5). Verify: the suite runs against it in a disposable Compose project and its results file is written.
-- [ ] 2.2 Workflow Streams transport, with a minimal Workflow that hosts the stream and continues as new through its helper (D5, R4). Verify: as 2.1.
-- [ ] 2.3 NATS JetStream transport and a spike-only Compose file running nats-server 2.15.3 by digest (D4, D5). Verify: as 2.1; `git diff --stat main -- . ':!spikes' ':!docs'` is empty (R9).
+- [ ] 2.1 PostgreSQL table transport, as D5 (D1, D5). Verify: the suite runs against it in a disposable project and its results file is written.
+- [ ] 2.2 Workflow Streams transport: a hosting Workflow, a publishing Activity and the batch-ID set, as D5 (D1, D5, R4). Verify: as 2.1.
+- [ ] 2.3 NATS JetStream probe, as D5, with a spike-only Compose file running nats-server 2.15.3 by digest (D2, D4, D5). Verify: as 2.1; `git diff --stat main...HEAD -- . ':!spikes' ':!docs'` is empty (R9).

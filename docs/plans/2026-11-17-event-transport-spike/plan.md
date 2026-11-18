@@ -13,168 +13,192 @@ adr_review: null
 ## Summary
 
 Phase 2 streams agent progress, token and tool events to observers (`agentctl tail`, later the
-gateway and the UI). Three transports could carry them: Temporal Workflow Streams, a PostgreSQL
-event table, and NATS JetStream. This spike implements one event-transport interface three
-ways, runs one shared test suite and two workloads against each, and picks the winner by a fixed
-rule (D2). We decide now because the choice shapes Phase 2's first phase and everything that
-reuses the interface. The main risk is a comparison skewed by uneven effort or tuning; the
-requirements, workloads and thresholds are fixed here, before code (D3, D5).
+gateway and the UI). Design §4.4 prefers Temporal Workflow Streams, with a fallback behind an
+interface, but Streams is still a preview API and its expiry and history behaviour is not
+documented well enough to adopt it blind. This isolated spike tests that preference: it builds
+one event-transport interface for Streams and for a PostgreSQL event table, probes NATS JetStream
+on correctness only, and runs one shared suite and two workloads. Streams wins if it passes every
+must-pass requirement; otherwise the table, then NATS (D2). Nothing in production changes; Phase 2
+ports the winner. The main risk is an unfair comparison, so mechanisms and parameters are fixed in
+D1 and D5 before code.
 
 ```text
-recorded DSH turn ─┐                    ┌─ Workflow Streams ─┐
-synthetic load ────┼─> EventTransport ──┼─ PostgreSQL table ─┼─> shared suite -> report -> ADR
-                   │   (one interface)  └─ NATS JetStream ───┘
+recorded DSH turn ─┐                     ┌─ Workflow Streams ── suite + load ─┐
+synthetic load ────┼─> EventTransport ───┼─ PostgreSQL table ── suite + load ─┼─> report -> ADR
+                   │   (D1)              └─ NATS JetStream ──── suite only ───┘
 ```
 
 ## Why
 
-Design §4.4 prefers Workflow Streams "where supported and stable enough", with a fallback
-behind an interface. A check on 2026-11-17 found Streams still in Public Preview, adding
-history events per batch, and not deduplicating retried attempts; neither Streams nor JetStream
-documents what a reader sees for an expired offset, which §4.4 requires us to report. Since
-phase 03 of the DSH migration, `default` runs on DSH, so the OpenAI Agents plugin's built-in
-stream publishing no longer serves the main path. The question has to be answered by
-measurement. Details: notes.md#verified
+Design §4.4 says to "prefer Temporal Python Workflow Streams where supported and stable enough",
+with a narrow fallback behind an event-transport interface. A check on 2026-11-17 (notes.md#verified)
+found four open questions:
+- Streams is still Public Preview.
+- Each Streams batch adds history events, with no documented rate.
+- Streams does not deduplicate a retried attempt's events.
+- Neither Streams nor JetStream documents what a reader sees for an expired offset, which §4.4
+  requires us to report.
+
+The DSH harness now runs the `default` profile, so the OpenAI Agents SDK plugin, which can publish
+model events to a stream for free, no longer covers the main path. These questions need
+measurement before Phase 2's first phase builds on the answer.
 
 ## What changes
 
 - A new isolated spike, `spikes/event-transport/`, with its own uv project: the interface, three
-  implementations, a shared test suite, two workloads and a measurement runner.
+  implementations, a shared suite, two workloads and a load runner.
 - A committed recording of one real DSH benchmark task's events.
 - A comparison report in `docs/spikes/` and a proposed ADR for the winner.
 
 ### Non-goals
 
-- The agent-to-agent inbox and `comms_mcp`: they stay PostgreSQL (§4.4) and belong to Phase 2.
-- Production code: no worker, Workflow, schema or Compose service changes. Phase 2 ports the
-  winner under its own review.
+- The agent-to-agent inbox and `comms_mcp` (Phase 2's agent messaging tools): they stay
+  PostgreSQL (§4.4) and belong to Phase 2.
+- Production code: no worker, Workflow, schema, lock or Compose service changes.
 - Streaming token deltas from the DSH runner: the synthetic load models them (D3).
+- NATS load runs, unless both other options fail (D2).
 
 ## Terms
 
-- **Event transport**: the component that stores `AgentEvent`s for a workflow and serves them
-  to readers from an offset.
-- **Offset**: a reader's position in one workflow's event sequence; a reader resumes after it.
-- **Retained base**: the oldest offset a transport still holds for a workflow.
-- **Batch**: events a publisher sends together; the unit of storage and deduplication.
+- **DSH**: DeepSeek Harness, the agent runtime running inside Temporal Activities (ADR-0005).
+- **`default` profile**: the agent profile a task uses when it names none; it runs on DSH.
+- **DSH pair**: one worker plus its paired DSH container; it runs one attempt at a time. The local
+  stack has two.
+- **Event transport**: stores `AgentEvent`s per workflow and serves them to readers from an offset.
+- **Offset**: a per-workflow, gap-free event number assigned by the transport, starting at 1.
+- **Retained base**: the lowest offset a transport still holds for a workflow.
+- **Batch**: events published together, identified by a batch ID; the unit of deduplication.
+- **Re-send horizon**: the longest time after which a publisher may re-send a batch: 600 s,
+  Streams' default retry duration, for every option.
+- **Roll-over**: Continue-As-New of the Workflow that hosts a Streams log; a no-op for the others.
 - **Tailer**: a reader following one workflow's events live.
 - **Recorded turn**: the events of one real DSH benchmark task, captured once and replayed.
-- **Synthetic load**: 4 agents streaming token deltas with 3 tailers each (D3).
-- **`AgentEvent`**: the existing event schema (`common/schemas/events.py`): `seq`, timestamp,
-  workflow, task and attempt IDs, type, small payload.
+- **Synthetic load**: the D3 workload of streamed token deltas and tailers.
+- **`AgentEvent`**: the existing event schema: `seq` (per attempt), timestamp, workflow, task and
+  attempt IDs, type, small payload.
+- **Fence**: ADR-0007's rule that a superseded attempt's writes are refused.
 
 ## Requirements
 
-### R1 · Readers resume in order without duplicates
+### R1 · Readers resume after their offset
 
-A reader that reconnects from its last offset must receive every retained later event, in order,
-and none it already had.
-- **Given** a tailer killed after offset N, **when** it reconnects from N, **then** it receives N+1 onwards in order with no event repeated.
+A reader that asks for events after offset N must receive every retained event with a higher
+offset, in order, and none with offset N or lower.
+- **Given** a tailer killed after offset N, **when** it reads after N, **then** it gets N+1 onwards in order with no repeat.
 
 ### R2 · An expired offset is reported
 
-A reader asking for an offset below the retained base must be told, with the retained base;
-the transport never skips silently.
-- **Given** events below offset B were removed, **when** a reader asks for offset B-10, **then** it gets an expiry report naming B, then events from B.
+When an event after the requested offset is no longer retained, the reader must first get an
+expiry report naming the retained base.
+- **Given** events below offset B removed, **when** a reader asks for events after B-10, **then** it gets an expiry report naming B, then B onwards.
+- **Given** events below B removed, **when** a reader asks for events after B-1, **then** it gets B onwards and no expiry report.
 
 ### R3 · A re-sent batch is stored once
 
-A publisher that re-sends a batch with the same batch ID (after a timeout or a retry of the same
-attempt) must not create duplicate events.
-- **Given** a batch published and then re-sent with its ID, **when** a reader reads, **then** each event appears once.
+A batch re-sent with the same batch ID within the re-send horizon must not create a second copy.
+- **Given** a batch published, **when** it is re-sent at once and again just inside the horizon, **then** each event appears once.
 
-### R4 · Offsets survive Continue-As-New
+### R4 · Offsets survive roll-over
 
-A workflow's offsets must stay continuous when its Workflow continues as new.
-- **Given** a reader at offset N when the Workflow continues as new, **when** more events arrive, **then** the reader receives N+1 onwards with no gap and no repeat.
+A workflow's offsets must stay continuous across a roll-over.
+- **Given** a reader at offset N during a roll-over, **when** more events arrive, **then** it gets N+1 onwards with no gap or repeat.
 
-### R5 · History stays bounded under token load
+### R5 · History growth stays bounded
 
-One synthetic agent's 5-minute stream must add no more than 10% of Temporal's per-run history
-limits (events and bytes) to any single Workflow run.
-- **Given** the synthetic load, **when** it finishes, **then** each run's history events and bytes are measured and are under 10% of the limits verified in task 1.1.
+Under the synthetic load, with roll-over at the interval the measured growth implies, no Workflow
+run may exceed 10% of Temporal's per-run history limits.
+- **Given** a load run with roll-over on, **when** it finishes, **then** every run's history events and bytes are under 10% of the limits recorded in task 1.1, and the growth per minute per agent and per tailer is reported.
 
 ### R6 · Events reach tailers quickly
 
 Under the synthetic load, publish-to-display latency must be at most 1 s at the 95th percentile.
-- **Given** the synthetic load, **when** tailers record arrival times, **then** p95 publish-to-display latency is ≤ 1 s.
+- **Given** the synthetic load, **when** tailers record arrival times, **then** p95 latency is ≤ 1 s in each of 3 runs.
 
 ### R7 · The recorded turn replays exactly
 
-Replaying the recorded turn through a transport must deliver the same events, in the same order,
-as recorded.
-- **Given** the recorded turn, **when** it is published and read back, **then** the events equal the recording.
+The recorded turn, published and read back, must equal the recording, offsets aside.
+- **Given** the recorded turn, **when** it is published and read back, **then** the events equal the recording in content and order.
 
 ### R8 · Results are reproducible
 
-Every number in the report must come from a committed command run on the committed code.
-- **Given** the report, **when** its commands are rerun on its commit, **then** each requirement's pass/fail result is the same.
+Each requirement's pass or fail must be the same in all 3 runs of a committed command.
+- **Given** the report, **when** its commands run 3 times on its commit, **then** every pass/fail result matches; measurements are reported as median and range.
 
 ### R9 · Production stays unchanged
 
-The spike must not change production packages, migrations, the registry or Compose services.
-- **Given** the spike's diff, **when** it is filtered to production paths, **then** it is empty.
+The spike's diff must stay inside `spikes/` and `docs/`.
+- **Given** the spike branch, **when** `git diff --stat main...HEAD -- . ':!spikes' ':!docs'` runs, **then** it is empty.
+
+### R10 · Stale attempts are assessed
+
+The report must state, for each option, how a superseded attempt's events would be fenced, or
+why they need not be (ADR-0007).
+- **Given** the report, **when** it is read, **then** each option has a fencing statement with the mechanism or the reason.
 
 ## Decisions
 
-### D1 · One interface, three implementations
-`EventTransport` offers `publish(workflow_id, batch_id, events)`, `read(workflow_id, from_offset)`
-yielding events or one expiry report, and `latest(workflow_id)`. The shared suite tests only this
-interface. Attempt resets (`reset` events, `attempt_id`) stay above it, the same for all three.
-Rejected: comparing each option through its native API (tests would differ per option).
-Details: notes.md#d1
+### D1 · One interface, with test hooks
+`EventTransport` has `publish(workflow_id, batch_id, events)`, `read(workflow_id, after)` yielding
+`(offset, event)` pairs or one `Expired(retained_base)` first, and `latest(workflow_id)`. Test hooks:
+`expire_below(workflow_id, offset)` for R2 and `roll_over(workflow_id)` for R4. Attempt resets stay
+above the interface. The spike keeps its own copy of the `AgentEvent` schema. Rejected: each
+option's native API (tests would differ). Details: notes.md#d1
 
-### D2 · Must-pass, then simplest
-An option must pass R1-R7. Among those that pass, prefer no new component and no preview API,
-then lower measured cost (history, latency, database or broker load). The owner decides a close
-call. Rejected: a weighted score (weights would be argued after the numbers are known).
+### D2 · Follow §4.4: Streams first
+Streams wins if it passes R1-R7. Otherwise the table wins if it passes R1-R7. NATS is a probe: it
+runs R1-R4 and R7 only, and gets load runs and the chance to win only if both fail. A requirement
+that does not apply to an option (R4, R5 without a Workflow) counts as passed, shown as N/A.
+Rejected: simplest-first (would reverse §4.4 without new evidence); a weighted score.
 
 ### D3 · Two workloads, no model in the loop
-The recorded turn is one real DSH benchmark task captured once with a recording sink (R7). The
-synthetic load is 4 agents, each streaming ~50 token deltas/s for 5 min, with 3 tailers each (R5,
-R6). Rejected: live model runs (noise in transport numbers); a 16-agent stress level (beyond
-today's capacity of two DSH pairs). Details: notes.md#d3
+The recorded turn is one real DSH run of `t01-order-total`, captured with a recording sink (R7).
+The synthetic load is 4 agents streaming ~50 token deltas/s each for 5 min, with 3 tailers per
+agent (R5, R6). Rejected: live model runs (noise); 16 agents (beyond the stack's two DSH pairs).
+Details: notes.md#d3
 
-### D4 · An isolated spike project
-All code lives in `spikes/event-transport/` with its own uv project and lock, like the DSH spike.
-NATS runs in a spike-only Compose file with a pinned image (nats-server 2.15.3). The spike uses
-the stack's existing Temporal and PostgreSQL (a spike-only schema). Rejected: production packages
-now (Phase 2 must review the winner as production code anyway).
+### D4 · An isolated spike in a disposable stack
+Code lives in `spikes/event-transport/` with its own uv project and lock. Every run uses a
+disposable Compose project with its own Temporal and PostgreSQL; NATS runs from a spike-only
+Compose file (nats-server 2.15.3 by digest). The capture script runs in the root environment
+through the existing DSH test support. Rejected: production packages now (Phase 2 reviews the
+port anyway); the shared dev stack (load would disturb it).
 
-### D5 · Each option at its documented minimum
-Each implementation uses its option's documented mechanisms: Streams with
-`WorkflowStreamClient` and its Continue-As-New helper; the table with a per-workflow sequence and
-`LISTEN/NOTIFY`; JetStream with one stream, a subject per workflow, `Nats-Msg-Id` and
-`by_start_sequence`. Tuning is limited to the parameters listed in notes.md#d5, set once before
-measuring. Rejected: per-option tuning after first results (biases the comparison).
+### D5 · Each option's mechanisms fixed up front
+- Streams: `WorkflowStreamClient` publishing from an Activity, `batch_interval` 200 ms, a batch-ID
+  set in Workflow state carried across Continue-As-New.
+- Table: one event table, a per-workflow counter, a batch-ID row in the same transaction,
+  `LISTEN/NOTIFY` with a 1 s poll fallback.
+- NATS: a stream per workflow, one message per event, message IDs `<batch_id>:<i>`, duplicate
+  window 600 s.
+Code an option needs beyond these counts in the report. Rejected: tuning after first results.
 Details: notes.md#d5
 
 ### D6 · Report, ADR, then delete the losers
-The report (`docs/spikes/event-transport.md`) records each requirement's result per option, the
-measurements and an operating-cost assessment. The winner gets a proposed ADR; the losing
-implementations are deleted from the spike in its last task. Rejected: keeping all three (unused
-code and dependencies).
+The report (`docs/spikes/event-transport.md`) gives R1-R10 per option, the measurements, the extra
+code and an operating-cost assessment. The winner gets a proposed ADR and a decision-log entry
+with the verified versions; the losing implementations are deleted. Rejected: keeping all three.
 
 ## Assumptions
 
-- Temporal's per-run history limits are its documented defaults; task 1.1 verifies the numbers R5
-  uses.
-- A batch interval of ~200 ms gives Streams a fair chance at R6 (its 2 s default would not).
-- One real-model DSH run, done once for the recording, is acceptable under the no-model rule.
-- The local stack's PostgreSQL and Temporal are representative for a single-node comparison.
+- Temporal's default per-run history limits apply (`infra/temporal/dynamicconfig.yaml` is empty);
+  task 1.1 records the numbers from current docs.
+- A 200 ms batch interval gives Streams a fair chance at R6 (its 2 s default would not).
+- One real-model DSH run, done once for the recording, fits the no-model rule.
+- A single-node stack is representative for this comparison.
 
 ## Risks
 
-- Uneven implementation effort skews results → D5 fixes mechanisms and parameters before
-  measuring; the design review checks them.
-- The preview Streams API changes during the spike → pin `temporalio` 1.36.0 in the spike lock.
-- Expiry behaviour needs code each option lacks → the extra code counts in the report.
-- The synthetic load overloads the shared dev stack → run measurements in a disposable Compose
-  project (as phase 03 verification did).
+- Uneven implementation effort skews results → D1 and D5 fix the interface and mechanisms; extra
+  code is reported.
+- The preview Streams API changes during the spike → the spike lock pins `temporalio` 1.36.0.
+- The load overloads the machine → runs use a disposable project, one option at a time.
+- R6 near 1 s flips between runs → R8 requires the same result in 3 runs.
 
 ## Rollout & rollback
 
-N/A: no production change. The spike project can be deleted at any time.
+No production rollout. After each run, `make reset` on the disposable project removes its
+Temporal and PostgreSQL data, including the spike schema; the NATS Compose project is removed with
+its volume. The spike project can be deleted at any time.
 
 ## Open questions
 
@@ -182,18 +206,20 @@ N/A: no production change. The spike project can be deleted at any time.
 
 ## Impact
 
-- Packages / directories: `spikes/event-transport/` (new); `docs/spikes/`; `docs/adr/` (one
-  proposed ADR).
-- Data: a spike-only PostgreSQL schema and JetStream stream, in a disposable project.
+- Packages / directories: `spikes/event-transport/` (new); `docs/spikes/`; `docs/adr/`;
+  `docs/roadmap/decision-log.md`.
+- Data: a spike schema and JetStream streams, in disposable projects only.
 - Jobs / APIs: none in production.
 
 ## Links
 
 - Issue #76: the spike's tracking issue.
-- `docs/roadmap/phases/phase-2.md`: Phase 2's event items (9, 10, 14) and Accept line.
-- `docs/roadmap/design-decisions.md` §4.3, §4.4: bounded history; streams for observation,
-  inbox in PostgreSQL, reported truncation.
+- `docs/roadmap/phases/phase-2.md`: the items "Verify and adopt Temporal Python Workflow Streams",
+  "Batch status/tool/token deltas" and "`agentctl tail`", and the Accept line.
+- `docs/roadmap/design-decisions.md` §4.3, §4.4: bounded history; streams for observation, inbox in
+  PostgreSQL, reported truncation.
 - ADR-0005: DSH is the primary harness inside Temporal Activities.
+- ADR-0007: new attempt write paths take the fence or justify why not.
 
 ## Phases
 
