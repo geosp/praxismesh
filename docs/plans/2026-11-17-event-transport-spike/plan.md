@@ -3,7 +3,7 @@ title: Choose Phase 2's event transport
 status: draft
 created: 2026-11-17
 updated: 2026-11-17
-design_review: { status: changes-requested, rounds: 1, last: 2026-11-17 }
+design_review: { status: passed, rounds: 2, last: 2026-11-17 }
 approved: null
 adr_review: null
 ---
@@ -103,11 +103,17 @@ A batch re-sent with the same batch ID within the re-send horizon must not creat
 A workflow's offsets must stay continuous across a roll-over.
 - **Given** a reader at offset N during a roll-over, **when** more events arrive, **then** it gets N+1 onwards with no gap or repeat.
 
-### R5 · History growth stays bounded
+### R5 · History stays bounded
 
-Under the synthetic load, with roll-over at the interval the measured growth implies, no Workflow
-run may exceed 10% of Temporal's per-run history limits.
-- **Given** a load run with roll-over on, **when** it finishes, **then** every run's history events and bytes are under 10% of the limits recorded in task 1.1, and the growth per minute per agent and per tailer is reported.
+Under the synthetic load, with D5's fixed roll-over policy, no Workflow run may exceed 10% of
+Temporal's per-run history limits.
+- **Given** the synthetic load with D5's roll-over policy, **when** it finishes, **then** every run's history events and bytes are under 10% of the limits recorded in task 1.1.
+
+### R11 · The carried state stays small
+
+The state a Streams run carries into its next run must stay under 50% of Temporal's per-payload
+size limit.
+- **Given** the synthetic load with D5's roll-over policy, **when** a run continues as new, **then** its carried state is under 50% of the payload limit recorded in task 1.1.
 
 ### R6 · Events reach tailers quickly
 
@@ -140,15 +146,17 @@ why they need not be (ADR-0007).
 ### D1 · One interface, with test hooks
 `EventTransport` has `publish(workflow_id, batch_id, events)`, `read(workflow_id, after)` yielding
 `(offset, event)` pairs or one `Expired(retained_base)` first, and `latest(workflow_id)`. Test hooks:
-`expire_below(workflow_id, offset)` for R2 and `roll_over(workflow_id)` for R4. Attempt resets stay
-above the interface. The spike keeps its own copy of the `AgentEvent` schema. Rejected: each
-option's native API (tests would differ). Details: notes.md#d1
+`expire_below(workflow_id, offset)` for R2 and `roll_over(workflow_id)` for R4. Every reader finds
+expiry by comparing `after` with the transport's retained base. Attempt resets stay above the
+interface. The spike keeps its own copy of the `AgentEvent` schema. Rejected: each option's native
+API (tests would differ). Details: notes.md#d1
 
 ### D2 · Follow §4.4: Streams first
-Streams wins if it passes R1-R7. Otherwise the table wins if it passes R1-R7. NATS is a probe: it
-runs R1-R4 and R7 only, and gets load runs and the chance to win only if both fail. A requirement
-that does not apply to an option (R4, R5 without a Workflow) counts as passed, shown as N/A.
-Rejected: simplest-first (would reverse §4.4 without new evidence); a weighted score.
+Streams wins if it passes R1-R7 and R11. Otherwise the table wins if it passes them. NATS is a
+probe: it runs R1-R4 and R7 only, and gets load runs and the chance to win only if both fail. A
+requirement that does not apply to an option (R4, R5, R11 without a Workflow) counts as passed,
+shown as N/A. If no option passes, the report is a no-go and the owner decides. Rejected:
+simplest-first (would reverse §4.4 without new evidence); a weighted score.
 
 ### D3 · Two workloads, no model in the loop
 The recorded turn is one real DSH run of `t01-order-total`, captured with a recording sink (R7).
@@ -164,25 +172,28 @@ through the existing DSH test support. Rejected: production packages now (Phase 
 port anyway); the shared dev stack (load would disturb it).
 
 ### D5 · Each option's mechanisms fixed up front
-- Streams: `WorkflowStreamClient` publishing from an Activity, `batch_interval` 200 ms, a batch-ID
-  set in Workflow state carried across Continue-As-New.
+- Streams: a publishing Activity sends each batch as one Update to the hosting Workflow, which
+  checks a batch-ID set and appends through the stream's Workflow-side topic. Readers call the
+  stream's poll Update directly. Roll-over happens when Temporal suggests it or every 2,000
+  batches, and keeps the last 500 events.
 - Table: one event table, a per-workflow counter, a batch-ID row in the same transaction,
   `LISTEN/NOTIFY` with a 1 s poll fallback.
 - NATS: a stream per workflow, one message per event, message IDs `<batch_id>:<i>`, duplicate
-  window 600 s.
-Code an option needs beyond these counts in the report. Rejected: tuning after first results.
-Details: notes.md#d5
+  window 600 s, a pull consumer from a start sequence.
+Extra code counts in the report. Rejected: tuning after first results; Streams' client publish
+and `subscribe()` (no batch-ID dedup, no expiry report). Details: notes.md#d5
 
 ### D6 · Report, ADR, then delete the losers
-The report (`docs/spikes/event-transport.md`) gives R1-R10 per option, the measurements, the extra
+The report (`docs/spikes/event-transport.md`) gives R1-R11 per option, the measurements, the extra
 code and an operating-cost assessment. The winner gets a proposed ADR and a decision-log entry
 with the verified versions; the losing implementations are deleted. Rejected: keeping all three.
 
 ## Assumptions
 
-- Temporal's default per-run history limits apply (`infra/temporal/dynamicconfig.yaml` is empty);
-  task 1.1 records the numbers from current docs.
-- A 200 ms batch interval gives Streams a fair chance at R6 (its 2 s default would not).
+- Temporal's default per-run history and payload size limits apply
+  (`infra/temporal/dynamicconfig.yaml` is empty); task 1.1 records the numbers from current docs.
+- A 200 ms publish batch gives every option the same chance at R6 (Streams' 2 s client default
+  would not apply, since D5 does not use the client's publish path).
 - One real-model DSH run, done once for the recording, fits the no-model rule.
 - A single-node stack is representative for this comparison.
 

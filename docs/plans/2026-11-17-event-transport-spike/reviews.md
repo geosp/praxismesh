@@ -28,3 +28,20 @@
 | F19 | Nit | zoom out | Load runs publish Streams events from outside an Activity; production publishes from Activities. | fixed: D5 publishes Streams events from an Activity |
 | F20 | Nit | zoom out | Rollout omits removing the spike schema, JetStream volume and NATS project. | fixed: Rollout covers make reset and removing the NATS project and volume |
 | F21 | Nit | fresh reader | Readability: Why sentence 2 is long; R2, R5, R9 hold several rules; the synthetic load is defined three times; D6's assessment has no role in D2. | fixed: Why split into a list; R2 scenarios explicit; R9 one rule; synthetic load defined in D3 only, D6 assessment feeds the report |
+
+## 2026-11-17 · design-review · plan · round 2 · passed
+
+- Targeted follow-up (docs/reviews/README.md rule 6) on e4dc61d; one fresh `design-reviewer` subagent, checking round 1's fixes and the revised plan against the pinned `temporalio` 1.36.0 source. Raw report: docs/reviews/general-event-transport-spike/raw/design-review-round-2-targeted.md.
+- Reviewer: targeted ✅. Round 1's F1, F2 (owner decisions) are stated consistently; F3, F4, F6-F21 confirmed resolved. F5 reopened for Streams (M1 below). Recorded as passed after the fixes below; no third round per the skill's two-round limit.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F22 | Major | targeted (reopens F5) | The Streams client deduplicates only by a random per-client publisher ID and appends in its own Signal handler, so a batch-ID set cannot be checked; the spike's batcher in front of the client's timer also handicaps R6. | fixed: D5 and notes.md#d5 publish each batch as one `publish_batch` Update to the hosting Workflow, which checks the batch-ID set and appends Workflow-side; one transport call per batch for every option |
+| F23 | Major | targeted | No reader is fixed for Streams or NATS; Streams' `subscribe()` silently restarts at 0 on a truncated offset (fails R2 by construction), Streams offsets start at 0 and no query gives the retained base. | fixed: D1 expiry by comparing with the retained base; D5 and notes.md#d1, #d5 name each reader (Streams poll Update by Workflow ID with a `retained_base` Query, offset + 1; NATS pull consumer by start sequence); notes.md#verified records the source-level behaviour |
+| F24 | Major | targeted | R5 with a roll-over interval derived from results cannot fail, and ignores the carried log against the payload size limit. | fixed: D5 fixes the roll-over trigger (suggested or every 2,000 batches) and retention (last 500 events); R5 uses that policy; new R11 caps the carried state at 50% of the payload limit; task 1.1 records it |
+| F25 | Nit | targeted | Task 1.3's suite needs the R7 fixture captured in task 1.4. | fixed: capture is now task 1.3, the suite 1.4 |
+| F26 | Nit | targeted | notes.md#d3 says payloads hold SKUs; DSH events hold request IDs, token counts, tool names, call numbers and outcomes. | fixed: notes.md#d3 |
+| F27 | Nit | targeted | The capture route (activity or runner) and how a script under the spike imports `tests.support` are unstated. | fixed: notes.md#d3 drives `DshRunner.run` through `DshContainer.runner(sink)` with `PYTHONPATH=.` |
+| F28 | Nit | targeted | R8 needs 3 runs of every requirement, but only the load is repeated. | fixed: phase 02 task 1.2 runs the suite 3 times too |
+| F29 | Nit | targeted | Whether the roll-over-off Streams run repeats 3 times is unclear. | fixed: one informational run (growth rate), not judged |
+| F30 | Nit | targeted | D2 gives no outcome when no option passes. | fixed: D2, a no-go report and the owner decides |

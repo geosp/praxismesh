@@ -17,6 +17,13 @@ Checked 2026-11-17 against live docs and package indexes.
     not documented.
   - `WorkflowStream.continue_as_new(...)` carries the log, `base_offset` and the dedup table.
   - One stream per Workflow, created in `@workflow.init`; ~100 ms round trip; ~1 MB poll cap.
+  - In the pinned 1.36.0 source (found in design review round 2): the client sends each flush as
+    the built-in publish Signal, deduplicating only by a random per-client `publisher_id` and a
+    sequence, which callers cannot set; `WorkflowStream` registers that Signal's handler itself.
+    The poll Update raises `TruncatedOffset` for a nonzero offset below the base, and
+    `WorkflowStreamClient.subscribe()` catches it and silently restarts at offset 0. Stream offsets
+    start at 0. No query returns the retained base. `continue_as_new` carries the whole retained
+    log in the next run's arguments.
 - **NATS JetStream**: nats-server v2.15.3 (2026-11-11); `nats-py` 2.17.0 (2026-11-17,
   Python ≥ 3.7).
   - Limits retention (max age, bytes, messages, per subject); discard old or new.
@@ -61,12 +68,14 @@ Expired(retained_base: int)
 
 - `read(after=N)` yields offsets > N. It yields `Expired` first only when some offset > N is
   below the retained base (R2): `after < retained_base - 1`. `after=0` reads from the start.
+- Retained base per option: Streams, a spike Query on the hosting Workflow (stream offset + 1);
+  table, the lowest stored offset; NATS, the stream's first sequence.
 - Offsets start at 1, are gap-free per workflow, and survive roll-over (R4).
 - `batch_id` is stable for a re-send of the same batch (R3); a new attempt uses new batch IDs.
 - `expire_below` uses each option's own retention mechanism: Streams `truncate()`, a JetStream
   purge up to a sequence, a table `DELETE`.
 - `roll_over` is Continue-As-New through `WorkflowStream.continue_as_new` for Streams, and a no-op
-  for the others (R4 shows N/A for them).
+  for the others (R4 and R11 show N/A for them).
 - The spike copies `common/schemas/events.py`'s `AgentEvent`; the copy is checked against the root
   schema's field list in task 1.2.
 
@@ -74,8 +83,11 @@ Expired(retained_base: int)
 
 - **Recorded turn**: `t01-order-total` driven once through the DSH test support
   (`tests/support/dsh_container.py`, a runner with a recording sink) against the real model, from
-  a capture script run in the root environment; the events are written as JSON lines to
-  `spikes/event-transport/fixtures/`. Payloads hold SKUs, tool names and token counts only.
+  a capture script run in the root environment (`PYTHONPATH=. uv run python
+  spikes/event-transport/capture.py`), which drives `DshRunner.run` through
+  `DshContainer.runner(sink)` with no database; the events are written as JSON lines to
+  `spikes/event-transport/fixtures/`. Payloads hold request IDs, token counts, tool names, call
+  numbers and outcomes only.
 - **Synthetic load**: per agent, ~50 `token` events/s with a ~40-byte text delta each, plus a
   `tool_call`/`tool_result` pair every 10 s, for 5 min (~15k events per agent); 3 tailers per
   agent from offset 0; one tailer per agent killed and resumed every 60 s (R1 under load).
@@ -84,7 +96,7 @@ Expired(retained_base: int)
 
 | Option | Mechanisms and parameters, fixed before measuring |
 | --- | --- |
-| All | publish batches every 200 ms or 64 events, whichever comes first; re-send horizon 600 s; the suite's R3 case uses a horizon of 60 s, the same for all |
-| Workflow Streams | `WorkflowStreamClient.from_within_activity()` in a publishing Activity; `batch_interval` 200 ms; a batch-ID set in Workflow state, entries older than the horizon dropped, carried across Continue-As-New; load runs once with roll-over off (growth rate) and once with roll-over at the derived interval (R5, R4 under load) |
+| All | publish batches every 200 ms or 64 events, whichever comes first, one transport call per batch; re-send horizon 600 s; the suite's R3 case uses a horizon of 60 s, the same for all; readers poll no faster than every 100 ms when idle |
+| Workflow Streams | the publishing Activity sends one `publish_batch(batch_id, events)` Update per batch to the hosting Workflow; the Workflow checks its batch-ID set (entries older than the horizon dropped) and appends through the stream's Workflow-side topic; the set travels in the Continue-As-New arguments with the stream state. Readers call the stream's poll Update by Workflow ID (so they follow roll-over), map `TruncatedOffset` to `Expired` using a spike `retained_base` Query, and add 1 to stream offsets. Roll-over when `workflow.info().is_continue_as_new_suggested()` or every 2,000 batches, after truncating the log to its last 500 events. One extra load run with roll-over off reports growth per minute per agent and per tailer (informational) |
 | PostgreSQL table | `asyncpg` 0.32.0; one table keyed `(workflow_id, offset)`; a per-workflow counter row; a `(workflow_id, batch_id)` row inserted in the same transaction as the events; `NOTIFY` per batch; readers fall back to a 1 s poll |
-| NATS JetStream | a stream per workflow (`events-<workflow_id>`), one message per event, `Nats-Msg-Id` `<batch_id>:<i>`, duplicate window 600 s (60 s in the R3 case), file storage, 1 replica; the cost of one stream per workflow goes into the assessment |
+| NATS JetStream | a stream per workflow (`events-<workflow_id>`), one message per event, `Nats-Msg-Id` `<batch_id>:<i>`, duplicate window 600 s (60 s in the R3 case), file storage, 1 replica; readers use a pull consumer with `by_start_sequence` and read the stream's first sequence for expiry; the cost of one stream per workflow goes into the assessment |
