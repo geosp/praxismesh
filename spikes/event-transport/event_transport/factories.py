@@ -31,7 +31,14 @@ async def _table(horizon_s: float) -> EventTransport:
     return await TableTransport.connect(horizon_s)
 
 
+async def _streams(horizon_s: float) -> EventTransport:
+    from event_transport.streams import StreamsTransport
+
+    return await StreamsTransport.connect(horizon_s)
+
+
 OPTIONS: dict[str, Option] = {
     "memory": Option("memory", hosted=False, build=_memory),
     "table": Option("table", hosted=False, build=_table),
+    "streams": Option("streams", hosted=True, build=_streams),
 }
