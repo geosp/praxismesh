@@ -392,7 +392,6 @@ leftover `message_wakes` rows, then redeploy the old workers. The new tables sta
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | Event table and agentctl tail | draft | 0/9 |
 | 02 | Inbox, comms MCP and waiting tasks | draft | 0/12 |
 | 03 | Acceptance and demo | draft | 0/8 |
 

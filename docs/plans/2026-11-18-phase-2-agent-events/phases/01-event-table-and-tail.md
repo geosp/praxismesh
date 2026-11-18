@@ -5,7 +5,7 @@ status: draft
 branch: null
 base: null
 delivers: [R1, R2, R3, R4, R5, R6, R7, R8, R9]
-design_review: { status: changes-requested, rounds: 1, last: 2026-11-18 }
+design_review: { status: none, rounds: 0, last: null }
 impl_review: { status: none, rounds: 0, last: null }
 approved: null
 ---
@@ -36,3 +36,8 @@ batching publisher, and `agentctl tail` follows a task live, resumes from an off
 - [ ] 3.1 Add `./agentctl` and `tail TASK [--after N] [--no-follow]` (D5, R2, R3). Verify: `tests/test_cli.py` cases for resume after N, an `Expired` line, and a stop when the task ends.
 - [ ] 3.2 Add `events prune` (D4, R3). Verify: prune below 15, then `tail --after 5` prints `Expired(15)` first.
 - [ ] 3.3 Update `schemas.md` (event tables, offsets), the decision log and `docs/operations/runbook.md` (tail, prune). Verify: `check_plans.py` and the link check pass.
+
+### 4. Demo and as-built
+
+- [ ] 4.1 Record a demo in `docs/demos/phase-2-events.md`: `tail` a live DSH task, stop and resume with `--after`, prune and show `Expired`, kill the worker mid-turn and show the next attempt's `reset` (R2, R3, R9). Verify: a dry run from a clean worktree whose `infra/.env` comes from `infra/.env.example`.
+- [ ] 4.2 Add a "Phase 2 events" section to `docs/architecture/overview.md` (components, data, failure and recovery, limits). Verify: the verifier's as-built check.

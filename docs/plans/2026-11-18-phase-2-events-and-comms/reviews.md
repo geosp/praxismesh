@@ -78,3 +78,6 @@ Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out ✅ (plan at 4c992ea
 | F65 | Nit | fresh reader | Smaller undefined terms, rereads, defaults stated twice, multi-rule requirements (R5, R6, R18, R21, R24, R28) | open |
 
 Round 1's Majors are resolved. Round 2's new Majors (F36-F44) are all in the messaging part (phase 02); none is in the event part (phase 01). The design review stops after two rounds (design-review skill) with these open.
+
+## 2026-11-18 · split
+Owner decision: the event part (R1-R9, D1-D5, phase 01) moved to `docs/plans/2026-11-18-phase-2-agent-events`, with the same IDs. This plan keeps messaging (phases 02 and 03) and is to be revised against round 2 before a fresh design review.
