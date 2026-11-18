@@ -24,6 +24,15 @@ Checked 2026-11-17 against live docs and package indexes.
     `WorkflowStreamClient.subscribe()` catches it and silently restarts at offset 0. Stream offsets
     start at 0. No query returns the retained base. `continue_as_new` carries the whole retained
     log in the next run's arguments.
+- **Temporal limits** (task 1.1; docs.temporal.io/workflow-execution/limits and
+  /self-hosted-guide/defaults, self-hosted defaults, which apply since
+  `infra/temporal/dynamicconfig.yaml` is empty):
+  - Event History per run: error at 51,200 events or 50 MB; warning at 10,240 events or 10 MB.
+    R5's 10% bound is therefore 5,120 events and 5 MB per run.
+  - Payload (each argument, result and the Continue-As-New input): error at 2 MB; warning at
+    256 KB. R11's 50% bound is therefore 1 MB.
+  - Event History transaction: 4 MB. Temporal recommends "not exceeding a few thousand Events in
+    a single Workflow Execution".
 - **NATS JetStream**: nats-server v2.15.3 (2026-11-11); `nats-py` 2.17.0 (2026-11-17,
   Python ≥ 3.7).
   - Limits retention (max age, bytes, messages, per subject); discard old or new.
