@@ -8,15 +8,19 @@
   2.15.3 and `nats-py` 2.17.0.
 - Date: 2026-11-18.
 
-## Decision by D2
+## Decision
 
 D2 (following design §4.4): Streams wins if it passes R1-R7 and R11; otherwise the table; NATS
 only if both fail.
 
-**Workflow Streams passed every must-pass requirement in all 3 runs, so D2 selects it.** The
-PostgreSQL table also passed everything. NATS passed the correctness suite (its load runs were
-not needed). The costs recorded below are large enough that the owner should confirm the choice
-when accepting the ADR; see [Owner attention](#owner-attention).
+Workflow Streams and the PostgreSQL table both passed every must-pass requirement in all 3 runs,
+so D2 selects Streams. NATS passed the correctness suite (its load runs were not needed).
+
+**Owner decision (2026-11-18): the PostgreSQL table.** The measurements below favour it on
+everything D2 did not weigh: cost under load, limits, API maturity, code size, fencing and latency
+(see [Owner attention](#owner-attention)). This departs deliberately from §4.4's preference and is
+recorded in ADR-0009 (proposed) and the decision log. The Streams and NATS implementations were
+then deleted from the spike (D6); they remain in git history at `1bfac67`.
 
 ## Requirements per option
 
@@ -120,5 +124,4 @@ which also passed everything:
 - **For Streams:** the plan's §4.4 preference, no new storage, and Temporal-native reads that
   follow roll-over.
 
-The proposed ADR records D2's outcome (Workflow Streams). If the owner prefers the table, the ADR
-changes to the table and the decision log records the departure from §4.4 with these numbers.
+The owner chose the table; ADR-0009 (proposed) records it with these numbers.

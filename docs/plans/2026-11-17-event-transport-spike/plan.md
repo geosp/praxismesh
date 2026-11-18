@@ -240,3 +240,4 @@ its volume. The spike project can be deleted at any time.
 | 02 | [Measure, decide and clean up](phases/02-measure-and-decide.md) | in-progress | 4/5 |
 
 ## Decision log
+2026-11-18 · D2 outcome: D2 selected Workflow Streams (both it and the table passed everything); the owner chose the PostgreSQL table on the measured costs, departing from §4.4 (ADR-0009, decision log).
