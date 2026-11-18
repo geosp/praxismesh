@@ -6,7 +6,7 @@
   (per-attempt `seq`, emission under a lock). Only the DSH runner emits: tool events
   (`harness_activity/dsh/executor.py`), one `token` event per response and refused-tool events
   (`gateway.py`). `DshRunner` builds its own `AttemptEvents` from a per-worker sink that defaults to
-  `NoOpSink` (`harness_activity/dsh/runner.py:237`, `:360`); `workers/main.py` passes none.
+  `NoOpSink` (`harness_activity/dsh/runner.py:238`, `:360`); `workers/main.py` passes none.
   `openai_agents` emits none. `HarnessRunner.run` takes no events argument (`harness_activity/runner.py`).
 - `AgentEvent` (`common/schemas/events.py`): `seq`, timestamp, workflow, task, `attempt_id`
   (`task:turn:attempt`), type, content-free payload, optional `blob_ref`.
@@ -56,15 +56,21 @@ Migration 0005, in the app database (the spike's `spike76` schema is not reused)
   advance `next_offset`; delete old batch rows; `NOTIFY`. Every other fenced write takes the task lock
   first and never holds an `event_logs` row, so the order cannot invert.
 - `BatchingPublisher`: `emit` appends under a lock and schedules a flush on the Activity's event loop
-  (`loop.call_soon_threadsafe`), so emitting from a thread is safe. One background task publishes
-  batches one at a time, in order; a database error re-sends the same batch ID with backoff
-  (0.25 s, 0.5 s, 1 s). After the last try the batch stays buffered for the next trigger.
-- `close()` (shielded): cancels the trigger timer, publishes everything buffered, awaits the background
-  task, and returns either nothing or `FenceRejected` or the last database error.
-- In `run_harness_turn` the success path is: runner returns; emit `status`; `close()`; on
-  `FenceRejected` raise `Superseded` (no finish checkpoint, no artifacts, no outcome row); on a
-  database error raise a retryable error; otherwise the finish checkpoint, artifacts and outcome as
-  today. Failure and cancel paths emit `status` with the failure, run `close()`, log a refusal or
-  database error, and re-raise the original exception (ADR-0007: the failure still propagates).
+  (`loop.call_soon_threadsafe`), so emitting from a thread is safe. One background task cuts batches
+  of at most 64 in `seq` order and publishes them one at a time. A cut batch is frozen: its ID and
+  events never change. A database error re-sends it unchanged (backoff 0.25 s, 0.5 s, 1 s, then at
+  each later trigger); new events wait in the buffer for later batches. So a commit whose reply was
+  lost is deduplicated by its ID, and no new event ever shares a stored batch's ID.
+- `close()` (shielded, bounded by `asyncio.wait_for` at 10 s, run inside the heartbeat scope): cancels
+  the trigger timer, publishes everything buffered, awaits the background task, and returns either
+  nothing, `FenceRejected`, or the last database error.
+- Placement in `run_harness_turn`: `_finish` is reached by both success paths, the normal one (runner
+  returns, then the finish checkpoint) and the restore short-circuit (a checkpoint that already holds
+  a finish report). So the normal path writes its finish checkpoint as part of `_finish`, and
+  `_finish` starts with: emit `status`; `close()`; on `FenceRejected` raise `Superseded` (no finish
+  writes); on a database error raise a retryable error; otherwise the finish checkpoint, artifacts and
+  outcome as today. Failure and cancel paths emit `status` with the failure, run `close()`, log a
+  refusal or database error, and re-raise the original exception (ADR-0007: the failure still
+  propagates).
 - A refusal during a background flush needs no flag: `before_model_call` already stops a superseded
   attempt, and the final flush refuses again.

@@ -33,3 +33,32 @@ Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out ✅ (plan at aa6580f
 | E24 | Nit | zoom out | Where `BatchingPublisher` lives; the fence predicates are private | fixed: What changes, task 1.2 (`fence.py`) |
 | E25 | Nit | zoom out | Database CPU had no gate | fixed: Risks, task 2.3 |
 | E26 | Nit | fresh reader | Smaller terms, rereads and repetition (Expired, run hooks, Phase 3A, `--older-than`, reset with no checkpoint, Decision log empty) | fixed: Terms, R9, D4, Non-goals, Decision log |
+
+## 2026-11-18 · design-review · plan · round 2 · passed
+Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out ✅ (plan at 910be44; raw: docs/reviews/phase-2/raw/events-design-review-round-2-*.md). No round 1 finding came back. Recorded changes-requested; every Major below was then fixed, so the review passes without a third round (design-review step 5).
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| E27 | Major | codebase fit, zoom out | The restore short-circuit path reaches `_finish` without the final flush or its fence check | fixed: D2 (flush at the start of `_finish`), R5 second scenario, task 2.2, notes.md#d2 |
+| E28 | Major | codebase fit, zoom out | A batch kept after failed re-sends is not frozen, so new events can be dropped under its ID or stored events duplicated under a new one | fixed: D2 (frozen batches), task 2.1 test, notes.md#d2; the zoom-out alternative (dedup on attempt and `seq`) not taken: it departs from ADR-0009's batch-ID rows |
+| E29 | Major | fresh reader | Summary cites R7 and R8 for the finish ordering; R5 is the rule | fixed: Summary |
+| E30 | Major | fresh reader | "Retention class" undefined | fixed: Terms |
+| E31 | Major | fresh reader | "Phase 01 task 2.3" not findable from plan.md | fixed: Summary and Risks name the phase file |
+| E32 | Major | fresh reader | R8 omits the failed-final-flush case | fixed: R8 |
+| E33 | Major | fresh reader, codebase fit | R7's 640-event scenario ignores `reset` and `status` | fixed: R7 scenario at the publisher |
+| E34 | Major | fresh reader | Batch-row cleanup appears only in Assumptions | fixed: D1 |
+| E35 | Major | fresh reader | Whether existing fenced writes move to `fence.py` | fixed: D2, task 1.2 |
+| E36 | Nit | codebase fit | Phases table says 12 tasks; the phase has 11 | fixed |
+| E37 | Nit | codebase fit | `PHASE1_TABLES` naming | fixed: task 1.1 |
+| E38 | Nit | codebase fit | The E18 fix was wrong; `NoOpSink` is at `runner.py:238` | fixed: notes.md (E18 reopened and corrected) |
+| E39 | Nit | codebase fit | Missed call sites, `DshRunner`'s `sink`, worker wiring, required `events` | fixed: task 2.2 |
+| E40 | Nit | codebase fit | "3 times" versus "3 tries" | fixed: D2, task 2.1 (backoff then each trigger) |
+| E41 | Nit | codebase fit | R1 cannot detect a batch-ID collision; no attempt-named batch-ID test | fixed: R1 scenario, task 2.1 |
+| E42 | Nit | codebase fit, zoom out | `--older-than` may leave holes; retained base when all pruned | fixed: D4 |
+| E43 | Nit | codebase fit, zoom out | `tail`'s end signal fails for terminated or unrecorded tasks | fixed: D5 (Temporal describe) |
+| E44 | Nit | codebase fit | Benchmark results path; `FenceRejected` placement | fixed: task 2.3 (`docs/benchmarks/`), task 1.2 |
+| E45 | Nit | zoom out | `status` may report an outcome that was then refused | fixed: D3, task 3.3 (`status` is the runner's result) |
+| E46 | Nit | zoom out | A stale attempt can publish after the task completed | accepted: Assumptions |
+| E47 | Nit | zoom out | `close()` has no overall bound and runs outside the heartbeat | fixed: task 2.1, notes.md#d2 |
+| E48 | Nit | zoom out | Database CPU compared across sessions | fixed: Risks, task 2.3 (fenced and unfenced in one session) |
+| E49 | Nit | fresh reader | Smaller terms, rereads and multi-rule requirements (`before_model_call` unused, shielded, Why vs front matter, outcome and artifact) | fixed: Terms, Why |
