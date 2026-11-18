@@ -1,0 +1,194 @@
+[
+  {
+    "workflow": "spike76-stream-load-e47794c1-a3",
+    "minutes_to_last_event": 1.84,
+    "events": 8510,
+    "bytes": 10177632,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 1499,
+      "publish_batch": 501
+    },
+    "events_per_min": 4636,
+    "mb_per_min": 5.54
+  },
+  {
+    "workflow": "spike76-stream-load-e47794c1-a2",
+    "minutes_to_last_event": 1.83,
+    "events": 8510,
+    "bytes": 10177953,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 1499,
+      "publish_batch": 501
+    },
+    "events_per_min": 4638,
+    "mb_per_min": 5.55
+  },
+  {
+    "workflow": "spike76-stream-load-e47794c1-a1",
+    "minutes_to_last_event": 1.84,
+    "events": 8509,
+    "bytes": 10178340,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 1499,
+      "publish_batch": 501
+    },
+    "events_per_min": 4636,
+    "mb_per_min": 5.55
+  },
+  {
+    "workflow": "spike76-stream-load-e47794c1-a0",
+    "minutes_to_last_event": 1.89,
+    "events": 8505,
+    "bytes": 10157123,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 1500,
+      "publish_batch": 500
+    },
+    "events_per_min": 4504,
+    "mb_per_min": 5.38
+  },
+  {
+    "workflow": "spike76-stream-load-5e40dd37-a1",
+    "minutes_to_last_event": 0.02,
+    "events": 51,
+    "bytes": 336504,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 8,
+      "publish_batch": 2
+    },
+    "events_per_min": 3172,
+    "mb_per_min": 20.93
+  },
+  {
+    "workflow": "spike76-stream-load-5e40dd37-a3",
+    "minutes_to_last_event": 0.01,
+    "events": 51,
+    "bytes": 335407,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 8,
+      "publish_batch": 2
+    },
+    "events_per_min": 3606,
+    "mb_per_min": 23.71
+  },
+  {
+    "workflow": "spike76-stream-load-5e40dd37-a2",
+    "minutes_to_last_event": 0.02,
+    "events": 61,
+    "bytes": 354485,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 9,
+      "publish_batch": 3
+    },
+    "events_per_min": 3397,
+    "mb_per_min": 19.74
+  },
+  {
+    "workflow": "spike76-stream-load-5e40dd37-a0",
+    "minutes_to_last_event": 0.02,
+    "events": 61,
+    "bytes": 352686,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 9,
+      "publish_batch": 3
+    },
+    "events_per_min": 3965,
+    "mb_per_min": 22.93
+  },
+  {
+    "workflow": "spike76-stream-load-3c994f04-a2",
+    "minutes_to_last_event": 0.02,
+    "events": 68,
+    "bytes": 367971,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 10,
+      "publish_batch": 4
+    },
+    "events_per_min": 3483,
+    "mb_per_min": 18.85
+  },
+  {
+    "workflow": "spike76-stream-load-3c994f04-a0",
+    "minutes_to_last_event": 0.01,
+    "events": 71,
+    "bytes": 368307,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 10,
+      "publish_batch": 4
+    },
+    "events_per_min": 4964,
+    "mb_per_min": 25.75
+  },
+  {
+    "workflow": "spike76-stream-load-3c994f04-a3",
+    "minutes_to_last_event": 0.02,
+    "events": 71,
+    "bytes": 372385,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 10,
+      "publish_batch": 4
+    },
+    "events_per_min": 3853,
+    "mb_per_min": 20.21
+  },
+  {
+    "workflow": "spike76-stream-load-3c994f04-a1",
+    "minutes_to_last_event": 0.02,
+    "events": 81,
+    "bytes": 389253,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 11,
+      "publish_batch": 5
+    },
+    "events_per_min": 4088,
+    "mb_per_min": 19.65
+  },
+  {
+    "workflow": "spike76-stream-load-fb809c98-a2",
+    "minutes_to_last_event": 0.01,
+    "events": 51,
+    "bytes": 340731,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 8,
+      "publish_batch": 2
+    },
+    "events_per_min": 3409,
+    "mb_per_min": 22.78
+  },
+  {
+    "workflow": "spike76-stream-load-fb809c98-a1",
+    "minutes_to_last_event": 0.01,
+    "events": 53,
+    "bytes": 346055,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 9,
+      "publish_batch": 2
+    },
+    "events_per_min": 3673,
+    "mb_per_min": 23.98
+  },
+  {
+    "workflow": "spike76-stream-load-fb809c98-a3",
+    "minutes_to_last_event": 0.02,
+    "events": 58,
+    "bytes": 341841,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 9,
+      "publish_batch": 3
+    },
+    "events_per_min": 3248,
+    "mb_per_min": 19.14
+  },
+  {
+    "workflow": "spike76-stream-load-fb809c98-a0",
+    "minutes_to_last_event": 0.02,
+    "events": 61,
+    "bytes": 357998,
+    "updates_accepted": {
+      "__temporal_workflow_stream_poll": 9,
+      "publish_batch": 3
+    },
+    "events_per_min": 3678,
+    "mb_per_min": 21.59
+  }
+]

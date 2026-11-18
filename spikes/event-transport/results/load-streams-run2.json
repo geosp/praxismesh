@@ -1,0 +1,983 @@
+{
+  "option": "streams",
+  "label": "run2",
+  "commit": "c1fda62e73ec9cfceeb16b99ebe0864a24896f6d",
+  "dirty": false,
+  "command": "uv run python load.py streams --label run2",
+  "finished": "2026-11-18T05:56:14+00:00",
+  "params": {
+    "seconds": 300,
+    "agents": 4,
+    "tailers": 3,
+    "rate_per_s": 50,
+    "batch_s": 0.2,
+    "batch_max": 64,
+    "roll": true
+  },
+  "elapsed_s": 300.6,
+  "requirements": {
+    "R5": "pass",
+    "R6": "pass",
+    "R11": "pass"
+  },
+  "published": 54956,
+  "batches": 5476,
+  "publish_ms": {
+    "p50": 13.102072000037879,
+    "p95": 18.38069799123332
+  },
+  "latency_ms": {
+    "p50": 113.01231384277344,
+    "p95": 199.60498809814453,
+    "p99": 371.55890464782715,
+    "max": 1217.7999019622803,
+    "mean": 113.08348305832683
+  },
+  "tailers": [
+    {
+      "workflow": "load-3c994f04-a0",
+      "killable": true,
+      "shown": 13738,
+      "last": 13738,
+      "latest": 13738,
+      "restarts": 5,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-3c994f04-a0",
+      "killable": false,
+      "shown": 13738,
+      "last": 13738,
+      "latest": 13738,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-3c994f04-a0",
+      "killable": false,
+      "shown": 13738,
+      "last": 13738,
+      "latest": 13738,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-3c994f04-a1",
+      "killable": true,
+      "shown": 13738,
+      "last": 13738,
+      "latest": 13738,
+      "restarts": 5,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-3c994f04-a1",
+      "killable": false,
+      "shown": 13738,
+      "last": 13738,
+      "latest": 13738,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-3c994f04-a1",
+      "killable": false,
+      "shown": 13738,
+      "last": 13738,
+      "latest": 13738,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-3c994f04-a2",
+      "killable": true,
+      "shown": 13740,
+      "last": 13740,
+      "latest": 13740,
+      "restarts": 5,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-3c994f04-a2",
+      "killable": false,
+      "shown": 13740,
+      "last": 13740,
+      "latest": 13740,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-3c994f04-a2",
+      "killable": false,
+      "shown": 13740,
+      "last": 13740,
+      "latest": 13740,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-3c994f04-a3",
+      "killable": true,
+      "shown": 13740,
+      "last": 13740,
+      "latest": 13740,
+      "restarts": 5,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-3c994f04-a3",
+      "killable": false,
+      "shown": 13740,
+      "last": 13740,
+      "latest": 13740,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-3c994f04-a3",
+      "killable": false,
+      "shown": 13740,
+      "last": 13740,
+      "latest": 13740,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    }
+  ],
+  "complete": true,
+  "history": {
+    "limits": {
+      "events": 51200,
+      "bytes": 52428800,
+      "payload": 2097152
+    },
+    "max_run_events": 3519,
+    "max_run_bytes": 4495198,
+    "max_carried_bytes": 297696,
+    "runs": {
+      "load-3c994f04-a0": [
+        {
+          "run_id": "01a1ed35-8d02-7e9f-82d8-79eb42e98253",
+          "started": "2026-11-18 05:51:12.130958+00:00",
+          "events": 3519,
+          "bytes": 4444744,
+          "carried_input_bytes": 104,
+          "updates": {
+            "__temporal_workflow_stream_poll": 617,
+            "publish_batch": 207
+          }
+        },
+        {
+          "run_id": "fec728d2-97ac-4f8e-bfd0-503595506785",
+          "started": "2026-11-18 05:51:57.512351+00:00",
+          "events": 3295,
+          "bytes": 4445970,
+          "carried_input_bytes": 248465,
+          "updates": {
+            "__temporal_workflow_stream_poll": 578,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "42c5eab4-e2fc-4da3-b04a-86b0c80c1fe7",
+          "started": "2026-11-18 05:52:40.076382+00:00",
+          "events": 3315,
+          "bytes": 4468390,
+          "carried_input_bytes": 256386,
+          "updates": {
+            "__temporal_workflow_stream_poll": 582,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "ee00d0af-fdcc-4559-a9f5-110fcdbbb152",
+          "started": "2026-11-18 05:53:22.625497+00:00",
+          "events": 3302,
+          "bytes": 4473197,
+          "carried_input_bytes": 264286,
+          "updates": {
+            "__temporal_workflow_stream_poll": 580,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "1bfa54b0-505d-418e-9c31-326201883e6e",
+          "started": "2026-11-18 05:54:05.037176+00:00",
+          "events": 3281,
+          "bytes": 4473599,
+          "carried_input_bytes": 272241,
+          "updates": {
+            "__temporal_workflow_stream_poll": 575,
+            "publish_batch": 193
+          }
+        },
+        {
+          "run_id": "2c1a9620-fa17-40cb-8260-f7295a0c045c",
+          "started": "2026-11-18 05:54:47.237000+00:00",
+          "events": 3259,
+          "bytes": 4494117,
+          "carried_input_bytes": 280116,
+          "updates": {
+            "__temporal_workflow_stream_poll": 571,
+            "publish_batch": 192
+          }
+        },
+        {
+          "run_id": "9c4ceec5-535f-4def-b684-ae206f442cec",
+          "started": "2026-11-18 05:55:29.400867+00:00",
+          "events": 3245,
+          "bytes": 4490373,
+          "carried_input_bytes": 289626,
+          "updates": {
+            "__temporal_workflow_stream_poll": 568,
+            "publish_batch": 191
+          }
+        },
+        {
+          "run_id": "d53ebdb7-77f4-4d2a-94bf-60bd5573bb02",
+          "started": "2026-11-18 05:56:11.441185+00:00",
+          "events": 71,
+          "bytes": 368307,
+          "carried_input_bytes": 297696,
+          "updates": {
+            "__temporal_workflow_stream_poll": 10,
+            "publish_batch": 4
+          }
+        }
+      ],
+      "load-3c994f04-a1": [
+        {
+          "run_id": "01a1ed35-8d02-7f0d-9952-b09b21576b16",
+          "started": "2026-11-18 05:51:12.130986+00:00",
+          "events": 3519,
+          "bytes": 4444620,
+          "carried_input_bytes": 104,
+          "updates": {
+            "__temporal_workflow_stream_poll": 617,
+            "publish_batch": 207
+          }
+        },
+        {
+          "run_id": "a03f13c0-6d03-4df0-8b12-7b240b845b37",
+          "started": "2026-11-18 05:51:57.491461+00:00",
+          "events": 3298,
+          "bytes": 4448175,
+          "carried_input_bytes": 248472,
+          "updates": {
+            "__temporal_workflow_stream_poll": 578,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "64ec78f5-30ba-4aa2-a65f-3d276c18f86a",
+          "started": "2026-11-18 05:52:40.052493+00:00",
+          "events": 3310,
+          "bytes": 4467536,
+          "carried_input_bytes": 256415,
+          "updates": {
+            "__temporal_workflow_stream_poll": 581,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "4559185d-953b-494e-8ffb-11e63c87232c",
+          "started": "2026-11-18 05:53:22.606035+00:00",
+          "events": 3293,
+          "bytes": 4471559,
+          "carried_input_bytes": 264307,
+          "updates": {
+            "__temporal_workflow_stream_poll": 577,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "5d16ecbd-1554-46a7-8fbe-deb7e3e4a86f",
+          "started": "2026-11-18 05:54:05.048144+00:00",
+          "events": 3272,
+          "bytes": 4472578,
+          "carried_input_bytes": 272271,
+          "updates": {
+            "__temporal_workflow_stream_poll": 575,
+            "publish_batch": 193
+          }
+        },
+        {
+          "run_id": "3405b1ed-6a2a-49b3-811b-488957295319",
+          "started": "2026-11-18 05:54:47.227216+00:00",
+          "events": 3264,
+          "bytes": 4477243,
+          "carried_input_bytes": 280148,
+          "updates": {
+            "__temporal_workflow_stream_poll": 573,
+            "publish_batch": 191
+          }
+        },
+        {
+          "run_id": "18ea8ac2-1ce7-43b4-a4ad-19882720625b",
+          "started": "2026-11-18 05:55:29.159673+00:00",
+          "events": 3234,
+          "bytes": 4487128,
+          "carried_input_bytes": 289668,
+          "updates": {
+            "__temporal_workflow_stream_poll": 567,
+            "publish_batch": 191
+          }
+        },
+        {
+          "run_id": "e6bc1030-4ed8-43aa-90e5-81ee660f2c7f",
+          "started": "2026-11-18 05:56:11.208917+00:00",
+          "events": 81,
+          "bytes": 389253,
+          "carried_input_bytes": 297641,
+          "updates": {
+            "__temporal_workflow_stream_poll": 11,
+            "publish_batch": 5
+          }
+        }
+      ],
+      "load-3c994f04-a2": [
+        {
+          "run_id": "01a1ed35-8d03-775d-9cf4-62a9685f9915",
+          "started": "2026-11-18 05:51:12.131483+00:00",
+          "events": 3508,
+          "bytes": 4443404,
+          "carried_input_bytes": 104,
+          "updates": {
+            "__temporal_workflow_stream_poll": 616,
+            "publish_batch": 207
+          }
+        },
+        {
+          "run_id": "1d7f13c9-a021-455c-8ade-fd5e7219423c",
+          "started": "2026-11-18 05:51:57.512911+00:00",
+          "events": 3298,
+          "bytes": 4448134,
+          "carried_input_bytes": 248479,
+          "updates": {
+            "__temporal_workflow_stream_poll": 578,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "20b388e8-9514-4bbe-b02c-ea65f0b0350b",
+          "started": "2026-11-18 05:52:40.076823+00:00",
+          "events": 3296,
+          "bytes": 4465051,
+          "carried_input_bytes": 256403,
+          "updates": {
+            "__temporal_workflow_stream_poll": 577,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "551094f2-4b6f-4236-aa8c-785f9b4115e7",
+          "started": "2026-11-18 05:53:22.634015+00:00",
+          "events": 3290,
+          "bytes": 4471146,
+          "carried_input_bytes": 264317,
+          "updates": {
+            "__temporal_workflow_stream_poll": 577,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "6fa9529a-a456-4255-90f5-a7ef49079a25",
+          "started": "2026-11-18 05:54:05.061393+00:00",
+          "events": 3291,
+          "bytes": 4476926,
+          "carried_input_bytes": 272279,
+          "updates": {
+            "__temporal_workflow_stream_poll": 577,
+            "publish_batch": 193
+          }
+        },
+        {
+          "run_id": "0eb56d07-a800-41e3-84a8-f7c27e03df3e",
+          "started": "2026-11-18 05:54:47.261322+00:00",
+          "events": 3262,
+          "bytes": 4494562,
+          "carried_input_bytes": 280160,
+          "updates": {
+            "__temporal_workflow_stream_poll": 571,
+            "publish_batch": 192
+          }
+        },
+        {
+          "run_id": "20e5b531-3c8d-4345-99ee-59e51a84f7d0",
+          "started": "2026-11-18 05:55:29.425278+00:00",
+          "events": 3232,
+          "bytes": 4488498,
+          "carried_input_bytes": 289750,
+          "updates": {
+            "__temporal_workflow_stream_poll": 566,
+            "publish_batch": 191
+          }
+        },
+        {
+          "run_id": "0495dc13-e9bb-4c7f-b55f-53d3c91c5b13",
+          "started": "2026-11-18 05:56:11.455761+00:00",
+          "events": 68,
+          "bytes": 367971,
+          "carried_input_bytes": 297685,
+          "updates": {
+            "__temporal_workflow_stream_poll": 10,
+            "publish_batch": 4
+          }
+        }
+      ],
+      "load-3c994f04-a3": [
+        {
+          "run_id": "01a1ed35-8d03-7637-b0f9-73c8bc219775",
+          "started": "2026-11-18 05:51:12.131407+00:00",
+          "events": 3506,
+          "bytes": 4442835,
+          "carried_input_bytes": 104,
+          "updates": {
+            "__temporal_workflow_stream_poll": 615,
+            "publish_batch": 207
+          }
+        },
+        {
+          "run_id": "274733cb-0dc5-4eb8-9c80-1b9346087121",
+          "started": "2026-11-18 05:51:57.499618+00:00",
+          "events": 3296,
+          "bytes": 4447634,
+          "carried_input_bytes": 248461,
+          "updates": {
+            "__temporal_workflow_stream_poll": 577,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "d4daf1e3-c0f8-48f0-839f-0e78ed23d951",
+          "started": "2026-11-18 05:52:40.060715+00:00",
+          "events": 3291,
+          "bytes": 4464344,
+          "carried_input_bytes": 256387,
+          "updates": {
+            "__temporal_workflow_stream_poll": 576,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "f99a7850-1d66-4de8-9b76-fa69d5f01b77",
+          "started": "2026-11-18 05:53:22.615388+00:00",
+          "events": 3292,
+          "bytes": 4471573,
+          "carried_input_bytes": 264280,
+          "updates": {
+            "__temporal_workflow_stream_poll": 578,
+            "publish_batch": 194
+          }
+        },
+        {
+          "run_id": "4b848cdd-5db5-440b-b8fc-761f637381b2",
+          "started": "2026-11-18 05:54:05.071090+00:00",
+          "events": 3287,
+          "bytes": 4473990,
+          "carried_input_bytes": 272233,
+          "updates": {
+            "__temporal_workflow_stream_poll": 578,
+            "publish_batch": 193
+          }
+        },
+        {
+          "run_id": "520871ec-285f-4082-8566-81f793fc3fdd",
+          "started": "2026-11-18 05:54:47.261190+00:00",
+          "events": 3268,
+          "bytes": 4495198,
+          "carried_input_bytes": 280125,
+          "updates": {
+            "__temporal_workflow_stream_poll": 574,
+            "publish_batch": 192
+          }
+        },
+        {
+          "run_id": "0df8b5cc-1121-4dd1-9f60-19dfe6f1c1f7",
+          "started": "2026-11-18 05:55:29.370099+00:00",
+          "events": 3254,
+          "bytes": 4492457,
+          "carried_input_bytes": 289611,
+          "updates": {
+            "__temporal_workflow_stream_poll": 574,
+            "publish_batch": 191
+          }
+        },
+        {
+          "run_id": "385f6c83-7954-49ff-a5a6-60f0e1e423d5",
+          "started": "2026-11-18 05:56:11.420872+00:00",
+          "events": 71,
+          "bytes": 372385,
+          "carried_input_bytes": 297614,
+          "updates": {
+            "__temporal_workflow_stream_poll": 10,
+            "publish_batch": 4
+          }
+        }
+      ]
+    }
+  },
+  "containers": [
+    {
+      "t": 1794981074.2,
+      "name": "pmspike76-db-1",
+      "cpu": 19.12,
+      "mem": "286.5MiB"
+    },
+    {
+      "t": 1794981074.2,
+      "name": "pmspike76-temporal-1",
+      "cpu": 22.28,
+      "mem": "178.6MiB"
+    },
+    {
+      "t": 1794981074.2,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 1.9,
+      "mem": "13.69MiB"
+    },
+    {
+      "t": 1794981086.2,
+      "name": "pmspike76-db-1",
+      "cpu": 14.43,
+      "mem": "287.1MiB"
+    },
+    {
+      "t": 1794981086.2,
+      "name": "pmspike76-temporal-1",
+      "cpu": 36.8,
+      "mem": "171.5MiB"
+    },
+    {
+      "t": 1794981086.2,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 2.01,
+      "mem": "14.82MiB"
+    },
+    {
+      "t": 1794981098.2,
+      "name": "pmspike76-db-1",
+      "cpu": 16.79,
+      "mem": "290.1MiB"
+    },
+    {
+      "t": 1794981098.2,
+      "name": "pmspike76-temporal-1",
+      "cpu": 32.39,
+      "mem": "185.9MiB"
+    },
+    {
+      "t": 1794981098.2,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 1.91,
+      "mem": "14.16MiB"
+    },
+    {
+      "t": 1794981110.2,
+      "name": "pmspike76-db-1",
+      "cpu": 17.76,
+      "mem": "286.6MiB"
+    },
+    {
+      "t": 1794981110.2,
+      "name": "pmspike76-temporal-1",
+      "cpu": 28.72,
+      "mem": "180.2MiB"
+    },
+    {
+      "t": 1794981110.2,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.11,
+      "mem": "13.75MiB"
+    },
+    {
+      "t": 1794981122.2,
+      "name": "pmspike76-db-1",
+      "cpu": 12.35,
+      "mem": "288MiB"
+    },
+    {
+      "t": 1794981122.2,
+      "name": "pmspike76-temporal-1",
+      "cpu": 29.76,
+      "mem": "180.7MiB"
+    },
+    {
+      "t": 1794981122.2,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.15,
+      "mem": "14.01MiB"
+    },
+    {
+      "t": 1794981134.3,
+      "name": "pmspike76-db-1",
+      "cpu": 16.28,
+      "mem": "288.2MiB"
+    },
+    {
+      "t": 1794981134.3,
+      "name": "pmspike76-temporal-1",
+      "cpu": 31.09,
+      "mem": "185.6MiB"
+    },
+    {
+      "t": 1794981134.3,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.09,
+      "mem": "14.28MiB"
+    },
+    {
+      "t": 1794981146.3,
+      "name": "pmspike76-db-1",
+      "cpu": 10.95,
+      "mem": "287.5MiB"
+    },
+    {
+      "t": 1794981146.3,
+      "name": "pmspike76-temporal-1",
+      "cpu": 35.6,
+      "mem": "185.5MiB"
+    },
+    {
+      "t": 1794981146.3,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.13,
+      "mem": "14.27MiB"
+    },
+    {
+      "t": 1794981158.3,
+      "name": "pmspike76-db-1",
+      "cpu": 15.13,
+      "mem": "288.2MiB"
+    },
+    {
+      "t": 1794981158.3,
+      "name": "pmspike76-temporal-1",
+      "cpu": 34.07,
+      "mem": "184.2MiB"
+    },
+    {
+      "t": 1794981158.3,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.12,
+      "mem": "13.46MiB"
+    },
+    {
+      "t": 1794981170.3,
+      "name": "pmspike76-db-1",
+      "cpu": 10.01,
+      "mem": "289.2MiB"
+    },
+    {
+      "t": 1794981170.3,
+      "name": "pmspike76-temporal-1",
+      "cpu": 17.45,
+      "mem": "186MiB"
+    },
+    {
+      "t": 1794981170.3,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 1.89,
+      "mem": "14.3MiB"
+    },
+    {
+      "t": 1794981182.3,
+      "name": "pmspike76-db-1",
+      "cpu": 12.79,
+      "mem": "288.2MiB"
+    },
+    {
+      "t": 1794981182.3,
+      "name": "pmspike76-temporal-1",
+      "cpu": 31.88,
+      "mem": "175.8MiB"
+    },
+    {
+      "t": 1794981182.3,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.12,
+      "mem": "13.75MiB"
+    },
+    {
+      "t": 1794981194.4,
+      "name": "pmspike76-db-1",
+      "cpu": 11.45,
+      "mem": "288.7MiB"
+    },
+    {
+      "t": 1794981194.4,
+      "name": "pmspike76-temporal-1",
+      "cpu": 16.91,
+      "mem": "186.4MiB"
+    },
+    {
+      "t": 1794981194.4,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 1.86,
+      "mem": "14.28MiB"
+    },
+    {
+      "t": 1794981206.4,
+      "name": "pmspike76-db-1",
+      "cpu": 9.98,
+      "mem": "291.8MiB"
+    },
+    {
+      "t": 1794981206.4,
+      "name": "pmspike76-temporal-1",
+      "cpu": 15.62,
+      "mem": "213.1MiB"
+    },
+    {
+      "t": 1794981206.4,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.15,
+      "mem": "13.82MiB"
+    },
+    {
+      "t": 1794981218.4,
+      "name": "pmspike76-db-1",
+      "cpu": 10.62,
+      "mem": "290.6MiB"
+    },
+    {
+      "t": 1794981218.4,
+      "name": "pmspike76-temporal-1",
+      "cpu": 17.99,
+      "mem": "187.7MiB"
+    },
+    {
+      "t": 1794981218.4,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 1.82,
+      "mem": "14.95MiB"
+    },
+    {
+      "t": 1794981230.4,
+      "name": "pmspike76-db-1",
+      "cpu": 15.22,
+      "mem": "289.4MiB"
+    },
+    {
+      "t": 1794981230.4,
+      "name": "pmspike76-temporal-1",
+      "cpu": 35.28,
+      "mem": "188.2MiB"
+    },
+    {
+      "t": 1794981230.4,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.16,
+      "mem": "13.46MiB"
+    },
+    {
+      "t": 1794981242.5,
+      "name": "pmspike76-db-1",
+      "cpu": 16.64,
+      "mem": "290.2MiB"
+    },
+    {
+      "t": 1794981242.5,
+      "name": "pmspike76-temporal-1",
+      "cpu": 36.88,
+      "mem": "186MiB"
+    },
+    {
+      "t": 1794981242.5,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.14,
+      "mem": "13.77MiB"
+    },
+    {
+      "t": 1794981254.5,
+      "name": "pmspike76-db-1",
+      "cpu": 10.28,
+      "mem": "290.8MiB"
+    },
+    {
+      "t": 1794981254.5,
+      "name": "pmspike76-temporal-1",
+      "cpu": 34.9,
+      "mem": "183.4MiB"
+    },
+    {
+      "t": 1794981254.5,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.12,
+      "mem": "13.72MiB"
+    },
+    {
+      "t": 1794981266.5,
+      "name": "pmspike76-db-1",
+      "cpu": 16.94,
+      "mem": "293MiB"
+    },
+    {
+      "t": 1794981266.5,
+      "name": "pmspike76-temporal-1",
+      "cpu": 33.17,
+      "mem": "190.5MiB"
+    },
+    {
+      "t": 1794981266.5,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 1.75,
+      "mem": "13.77MiB"
+    },
+    {
+      "t": 1794981278.5,
+      "name": "pmspike76-db-1",
+      "cpu": 17.86,
+      "mem": "291.9MiB"
+    },
+    {
+      "t": 1794981278.5,
+      "name": "pmspike76-temporal-1",
+      "cpu": 39.02,
+      "mem": "188.8MiB"
+    },
+    {
+      "t": 1794981278.5,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.12,
+      "mem": "13.71MiB"
+    },
+    {
+      "t": 1794981290.5,
+      "name": "pmspike76-db-1",
+      "cpu": 13.55,
+      "mem": "291.9MiB"
+    },
+    {
+      "t": 1794981290.5,
+      "name": "pmspike76-temporal-1",
+      "cpu": 33.28,
+      "mem": "188.7MiB"
+    },
+    {
+      "t": 1794981290.5,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.1,
+      "mem": "14.16MiB"
+    },
+    {
+      "t": 1794981302.6,
+      "name": "pmspike76-db-1",
+      "cpu": 8.97,
+      "mem": "292.1MiB"
+    },
+    {
+      "t": 1794981302.6,
+      "name": "pmspike76-temporal-1",
+      "cpu": 32.91,
+      "mem": "187.6MiB"
+    },
+    {
+      "t": 1794981302.6,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 1.89,
+      "mem": "16.21MiB"
+    },
+    {
+      "t": 1794981314.6,
+      "name": "pmspike76-db-1",
+      "cpu": 11.75,
+      "mem": "291.9MiB"
+    },
+    {
+      "t": 1794981314.6,
+      "name": "pmspike76-temporal-1",
+      "cpu": 36.09,
+      "mem": "192.6MiB"
+    },
+    {
+      "t": 1794981314.6,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 2.15,
+      "mem": "15.53MiB"
+    },
+    {
+      "t": 1794981326.6,
+      "name": "pmspike76-db-1",
+      "cpu": 16.82,
+      "mem": "292.9MiB"
+    },
+    {
+      "t": 1794981326.6,
+      "name": "pmspike76-temporal-1",
+      "cpu": 30.53,
+      "mem": "193MiB"
+    },
+    {
+      "t": 1794981326.6,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 1.86,
+      "mem": "14.82MiB"
+    },
+    {
+      "t": 1794981338.6,
+      "name": "pmspike76-db-1",
+      "cpu": 7.51,
+      "mem": "290.4MiB"
+    },
+    {
+      "t": 1794981338.6,
+      "name": "pmspike76-temporal-1",
+      "cpu": 32.08,
+      "mem": "190.7MiB"
+    },
+    {
+      "t": 1794981338.6,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 2.15,
+      "mem": "14.61MiB"
+    },
+    {
+      "t": 1794981350.6,
+      "name": "pmspike76-db-1",
+      "cpu": 9.49,
+      "mem": "292.5MiB"
+    },
+    {
+      "t": 1794981350.6,
+      "name": "pmspike76-temporal-1",
+      "cpu": 29.69,
+      "mem": "198.7MiB"
+    },
+    {
+      "t": 1794981350.6,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 1.87,
+      "mem": "19.55MiB"
+    },
+    {
+      "t": 1794981362.7,
+      "name": "pmspike76-db-1",
+      "cpu": 12.44,
+      "mem": "291.8MiB"
+    },
+    {
+      "t": 1794981362.7,
+      "name": "pmspike76-temporal-1",
+      "cpu": 23.66,
+      "mem": "199.4MiB"
+    },
+    {
+      "t": 1794981362.7,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.11,
+      "mem": "13.47MiB"
+    }
+  ]
+}

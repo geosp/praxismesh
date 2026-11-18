@@ -1,0 +1,59 @@
+{
+  "what": "Streams hosting-run growth with roll-over off (informational; phase 02 task 1.2)",
+  "measured_on": "the disposable stack after `load.py streams --no-roll --label growth` at c1fda62 stalled at Temporal's 2,000-Updates-per-run limit and was stopped (it wrote no load-streams-growth.json)",
+  "commit": "36ebee0 (the probe ran from the working tree just before this commit, which added it and its raw output)",
+  "command": "PYTHONPATH=. uv run python probes/streams_update_limit.py > results/streams-growth-norollover.json",
+  "probe_source": "probes/streams_update_limit.py at 36ebee0..1bfac67 (deleted with the Streams code)",
+  "note": "streams-growth-norollover.json is the probe's raw output: it also lists 12 runs left Running by the judged loads (run IDs fb809c98, 3c994f04, 5e40dd37), which are not growth data. This file keeps only the growth run (e47794c1).",
+  "per_tailer": "not measured directly: inferred from Update counts (each tailer adds one poll Update per batch)",
+  "runs": [
+    {
+      "workflow": "spike76-stream-load-e47794c1-a3",
+      "minutes_to_last_event": 1.84,
+      "events": 8510,
+      "bytes": 10177632,
+      "updates_accepted": {
+        "__temporal_workflow_stream_poll": 1499,
+        "publish_batch": 501
+      },
+      "events_per_min": 4636,
+      "mb_per_min": 5.54
+    },
+    {
+      "workflow": "spike76-stream-load-e47794c1-a2",
+      "minutes_to_last_event": 1.83,
+      "events": 8510,
+      "bytes": 10177953,
+      "updates_accepted": {
+        "__temporal_workflow_stream_poll": 1499,
+        "publish_batch": 501
+      },
+      "events_per_min": 4638,
+      "mb_per_min": 5.55
+    },
+    {
+      "workflow": "spike76-stream-load-e47794c1-a1",
+      "minutes_to_last_event": 1.84,
+      "events": 8509,
+      "bytes": 10178340,
+      "updates_accepted": {
+        "__temporal_workflow_stream_poll": 1499,
+        "publish_batch": 501
+      },
+      "events_per_min": 4636,
+      "mb_per_min": 5.55
+    },
+    {
+      "workflow": "spike76-stream-load-e47794c1-a0",
+      "minutes_to_last_event": 1.89,
+      "events": 8505,
+      "bytes": 10157123,
+      "updates_accepted": {
+        "__temporal_workflow_stream_poll": 1500,
+        "publish_batch": 500
+      },
+      "events_per_min": 4504,
+      "mb_per_min": 5.38
+    }
+  ]
+}

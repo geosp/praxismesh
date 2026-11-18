@@ -1,0 +1,40 @@
+"""How the suite builds each transport, by name (`SPIKE_TRANSPORTS`).
+
+After the decision (ADR-0009) only the reference and the PostgreSQL table remain; the
+Workflow Streams and NATS JetStream implementations are in git history at 1bfac67.
+
+`hosted` says whether the option keeps its log in a Temporal Workflow: R4 and R11
+apply only then; for the others they are reported as N/A (plan D2).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+
+from event_transport.transport import EventTransport
+
+
+@dataclass(frozen=True)
+class Option:
+    name: str
+    hosted: bool
+    build: Callable[[float], Awaitable[EventTransport]]  # horizon_s -> transport
+
+
+async def _memory(horizon_s: float) -> EventTransport:
+    from event_transport.memory import MemoryTransport
+
+    return MemoryTransport(horizon_s)
+
+
+async def _table(horizon_s: float) -> EventTransport:
+    from event_transport.table import TableTransport
+
+    return await TableTransport.connect(horizon_s)
+
+
+OPTIONS: dict[str, Option] = {
+    "memory": Option("memory", hosted=False, build=_memory),
+    "table": Option("table", hosted=False, build=_table),
+}
