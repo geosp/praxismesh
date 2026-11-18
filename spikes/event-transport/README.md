@@ -29,8 +29,8 @@ cd ../.. && make up ENV_FILE=spikes/event-transport/stack.env   # disposable sta
 ```
 
 Tests that need the disposable stack run when `SPIKE_TRANSPORTS` names a stack-backed
-transport (for example `SPIKE_TRANSPORTS=memory,table`); the load runner's stack test also needs
-`SPIKE_STACK=1`. The suite writes its results to `results/` unless `SPIKE_RESULTS` names another
+transport (for example `SPIKE_TRANSPORTS=memory,table`); the load runner's stack test runs when
+`SPIKE_STACK=1` is set. The suite writes its results to `results/` unless `SPIKE_RESULTS` names another
 directory: point it elsewhere to keep the committed results unchanged.
 
 `stack.env` is `infra/.env.example` with the project name `pmspike76` and its own ports
