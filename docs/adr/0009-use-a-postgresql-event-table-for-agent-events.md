@@ -23,13 +23,15 @@ events they asked for have expired, and keep Temporal histories bounded. Design 
 Temporal Workflow Streams "where supported and stable enough", with a fallback behind an
 interface. Streams is a Public Preview API whose expiry and history behaviour was not documented
 well enough to adopt it untested, so a spike (issue #76) compared it with a PostgreSQL event
-table and NATS JetStream against one test suite and one load.
+table and NATS JetStream against one shared test suite; Streams and the table also ran two
+workloads (a recorded DSH turn and a synthetic multi-agent load), and NATS ran the suite only.
 
 ## Considered options
 
 - Temporal Workflow Streams (`temporalio.contrib.workflow_streams`), one hosting Workflow per
   agent workflow.
-- A PostgreSQL event table with a per-workflow counter and `LISTEN/NOTIFY`.
+- A PostgreSQL event table, behind an event-transport interface (a per-workflow counter and
+  `LISTEN/NOTIFY`).
 - NATS JetStream with a stream per workflow.
 
 ## Decision outcome
@@ -40,8 +42,9 @@ spike's rule (plan D2, following §4.4) selected Streams. The owner chose the ta
 deliberate departure from §4.4, because the measurements favour it on everything the rule did not
 weigh:
 - Temporal used ~20-23x less CPU (1.4% against 32.4%, medians over 3 runs), and the table has
-  no per-run limit, while each Streams run holds at most 2,000 Updates and every observer adds one
-  poll Update per batch.
+  no per-run limit, while each Streams run holds at most 2,000 Updates, poll Updates included
+  (derived from the Update counts, each following observer adds about one poll Update per batch;
+  not measured per observer).
 - A stable API and ~183 lines of code, against a Public Preview API with a private import and
   ~314 lines in the spike's two Streams files, which needed workarounds for batch-ID dedup,
   expiry reporting and cancellation.
@@ -59,9 +62,29 @@ How it is used (from the spike):
   poll every 1 s as a fallback.
 - Every reader reports an offset jump as expiry and fails on a repeated offset.
 
-NATS JetStream passed the correctness suite (a run that predates the cancel check) and stays the
-upgrade path if event volume or fan-out
-outgrows PostgreSQL; the interface keeps that switch contained.
+NATS JetStream passed the correctness suite (a run that predates the cancel check) but lost on
+cost: it adds a new component (the documented Kubernetes deployment is a 3-replica StatefulSet)
+and its writes cannot share a transaction with the attempt rows, so ADR-0007's fence would need a
+justification. It stays the upgrade path if event volume or fan-out outgrows PostgreSQL; the
+interface keeps the code change contained, and that switch would need its own fencing
+justification under ADR-0007.
+
+What Phase 2 commits to (from the spike report):
+- Batch IDs name the attempt (`<workflow>:<attempt>:<n>`): a retried publisher that reuses batch
+  IDs has its new events dropped as re-sends. Dedup holds within a re-send horizon (600 s in the
+  spike), not forever.
+- Readers use both expiry checks: the retained-base check before a read (`expiry_for`) and the
+  offset-jump check during it.
+- Events live outside Temporal history, so Continue-As-New carries no event state; offsets stay
+  continuous because the table assigns them.
+
+What Phase 2 must still decide:
+- The fence's lock order against the counter row (to avoid deadlock) and its cost per publish;
+  the spike measured neither.
+- Tenant and repository scoping: the spike table has no tenant column (`docs/roadmap/schemas.md`).
+- Keying: the spike keys offsets by workflow, while the fence is per task and `AgentEvent.seq`
+  counts per attempt; Phase 2 sets how the table offset, `seq` and `attempt_id` relate.
+- Where token text lives (`AgentEvent` payloads hold no model text).
 
 ### Consequences
 
@@ -71,23 +94,28 @@ outgrows PostgreSQL; the interface keeps that switch contained.
   implement it, and Phase 2 must.
 - Bad, because the table grows with every event and retention means `DELETE` churn: Phase 3A's
   retention work needs time-based partitioning or equivalent for it.
-- Bad, because each following reader holds a database connection while it follows (the spike's
-  pool allowed 20, so with the spike's 4 publishers sharing it, beyond 16 followers in one process
-  the publishers queue for connections, and at 20 they all wait), and the spike uses one global
+- Bad, because each following reader holds a database connection while it follows (derived from
+  the code, not measured: the spike's pool allowed 20, so with the spike's 4 publishers sharing it,
+  beyond 16 followers in one process the publishers queue for connections, and at 20 they all
+  wait), and the spike uses one global
   `NOTIFY` channel, so every follower's connection receives every workflow's notification (only
   the matching workflow's reader fetches again). Fan-out to
   many observers (Phase 4 gateway, Phase 8 UI) needs a per-workflow channel or a reader that fans
   out in memory, or a pooler.
-- Bad, because it departs from the §4.4 preference; the decision log records why.
-- Follow-up: Phase 2 decides where token text lives (`AgentEvent` payloads hold no model text);
-  revisit this ADR if event writes become a visible share of database load or connection counts
-  approach the limit.
+- Bad, because it departs from the §4.4 preference. The decision log records why; §4.3, §4.4,
+  the core plan's architecture diagram and risk table, and Phase 2's first item were updated to
+  match when this ADR was accepted.
+- Follow-up: revisit this ADR if event writes become a visible share of database load or
+  connection counts approach the limit.
 
 ### Confirmation
 
-Phase 2 is to run the spike's shared suite (`spikes/event-transport/tests/test_suite.py`) and load
-runner (`spikes/event-transport/load.py`) against its implementation behind the same interface,
-and its implementation review is to check the reader rule, the batch dedup and the fence.
+Phase 2 is to port the spike's shared suite (`spikes/event-transport/tests/test_suite.py`) and
+load runner (`spikes/event-transport/load.py`, as of commit `bfa210b`; the spike folder may be
+deleted later) into its own tests and run them against its implementation behind the same
+interface. The suite does not exercise the fence or attempt-named batch IDs, so Phase 2 adds tests
+for both, and its implementation review checks the reader rule, the batch dedup, the batch-ID
+format, the fence and its lock order.
 
 ## Links
 

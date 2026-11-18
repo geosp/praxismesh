@@ -103,7 +103,7 @@ Temporal Server (OSS, PostgreSQL persistence)
   |      +--> Claude SDK/CLI or OpenAI agent framework, skills, CLI, MCP
   |      +--> comms_mcp on worker nodes -> scoped Temporal interaction
   |
-  +--> Workflow Streams -> gateway SSE / agentctl / UI
+  +--> PostgreSQL event table (event interface) -> gateway SSE / agentctl / UI
   |
   +--> Signals/Updates -> durable correlated agent messaging
   |
@@ -219,7 +219,7 @@ Each phase implementation plan restates the risks it meets and the measurable si
 | A local model cannot drive the Claude harness reliably | Pre-0.1, Phase 1 | Spike or benchmark pass rate below the owner's threshold | `openai_agents` harness as default; adapter; optional hosted tier |
 | Harness licensing does not permit the intended use or distribution | §0, Phase 1 | Owner or counsel says no | `openai_agents` harness as default; harness installed by the user, never shipped |
 | SDK session state cannot be restored on a different worker | Phase 1 | Pod-loss recovery test cannot pass with the SDK's own interface | Adapter that stores transcripts; restart the task from the last workspace checkpoint |
-| Workflow Streams (preview) changes or bloats history | Phase 2 | Breaking API change, or history per busy run above the set bound | Offset-based transport behind the event interface |
+| The PostgreSQL event table outgrows event volume or observer fan-out (ADR-0009) | Phase 2, Phase 4, Phase 8 | Event writes a visible share of database load, or follower connections near the limit | Per-workflow `NOTIFY` channel or in-memory fan-out; NATS JetStream behind the event interface |
 | Planner output is too poor at the local tier | Phase 3A | Plan validity or routing accuracy on the evaluation set below threshold | Simpler linear plans; stronger planner tier |
 | One GPU cannot serve two tiers at once | Phase 3A | Two models cannot be served concurrently within memory | One model with two profiles; hosted top tier |
 | Entity-workflow history or Continue-As-New proves fragile | Phase 3B | History bound exceeded, or an orphaned child found in tests | More child workflows; fewer Signals; shorter runs |

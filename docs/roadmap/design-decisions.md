@@ -24,16 +24,16 @@ Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [P
 ### 4.3 Entity Workflows and bounded history
 
 - `OrchestratorWorkflow`, `TaskWorkflow`, and `RepoStewardWorkflow` run on stable orchestration queues with always-on capacity (multiple replicas in production).
-- Carry compact deterministic state across Continue-As-New, including stream offset/state, pending message identifiers, and ownership of unfinished children. **Do not assume live children automatically transfer to the new run.** Define lifecycle, tracking and reconciliation.
+- Carry compact deterministic state across Continue-As-New, including pending message identifiers, and ownership of unfinished children. **Do not assume live children automatically transfer to the new run.** Define lifecycle, tracking and reconciliation. Agent events live in the PostgreSQL event table (§4.4, ADR-0009), so no event stream state crosses Continue-As-New.
 - Use PostgreSQL for durable, queryable application records and `BlobStore` for large bytes. Use versioned references in Workflow history and Activities; keep Activities deterministic with respect to recorded return values and write idempotency.
 
 ### 4.4 Real-time agent communications
 
-- Prefer Temporal Python Workflow Streams where supported and stable enough; verify the exact SDK version (experimental/preview status) and provide a narrow fallback behind an event-transport interface. As checked on 2026-11-10 (re-verify): the module is `temporalio.contrib.workflow_streams`, in Public Preview, built on Signals and polling Updates, so each durable batch still adds history events. Temporal's OpenAI Agents SDK plugin can publish model events to a stream; evaluate it for the `openai_agents` harness before writing custom plumbing.
+- **Carry agent progress events in a PostgreSQL event table behind an event-transport interface** (ADR-0009, 2026-11-18): one table keyed by workflow and offset, a per-workflow counter row locked on publish so offsets are gap-free, a batch-ID row in the same transaction so a re-sent batch is stored once, and `LISTEN/NOTIFY` with a polling fallback for following readers. Event writes take ADR-0007's fence. This replaces the earlier preference for Temporal Workflow Streams (`temporalio.contrib.workflow_streams`, Public Preview): the event-transport spike (issue #76, `docs/spikes/event-transport.md`) found both passed every must-pass requirement, and the owner chose the table for its lower Temporal load, stable API, smaller code and same-transaction fencing. NATS JetStream is the upgrade path if volume or fan-out outgrows PostgreSQL.
 - **Streams are for progress and observation**, not agent-to-agent request/response commands. Batch token deltas and noisy tool events; avoid one Temporal history event per token.
 - `comms_mcp` on worker pods offers `post_status`, `send_to_agent`, `ask_agent`, and `get_task_context`. It talks through a scoped service/client, not arbitrary Temporal admin APIs.
 - Agent-to-agent messages use a **durable PostgreSQL inbox**, unique message/correlation IDs, a reply route, bounded blocking timeout, dedupe keys, and a trigger to wake/schedule the recipient agent. Implement cycle/deadlock prevention (time limits, bounded waits, optional dependency detection).
-- Store resumable event offsets and attempt IDs. A reconnect returns every **retained** event in order without duplicate display; explicitly report truncation or retention expiry. Continue-As-New must preserve offset continuity when the SDK supports it.
+- Store resumable event offsets and attempt IDs. A reconnect returns every **retained** event in order without duplicate display; explicitly report truncation or retention expiry. Offsets are assigned by the event table, so they stay continuous across Continue-As-New.
 
 ### 4.5 Planning, dispatch and verification
 
