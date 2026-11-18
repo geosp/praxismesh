@@ -1,13 +1,21 @@
 ---
 phase: 1
 title: Event table and agentctl tail
-status: impl-reviewed
+status: done
 branch: feat/79-agent-events
 base: 41c0bcfbb192e7211ff1100d0849856215aef7a3
 delivers: [R1, R2, R3, R4, R5, R6, R7, R8, R9]
 design_review: { status: passed, rounds: 2, last: 2026-11-18 }
 impl_review: { status: passed, rounds: 1, last: 2026-11-18 }
 approved: 2026-11-18
+verification: { status: passed, last: 2026-11-18 }
+demo: { status: passed, last: 2026-11-18 }
+evidence:
+  code_sha: 499eb635d605826e912fb0fb4f52f02e63da99c5
+  docs_sha: 965e8e83e9d24d5798d5dd367092c5d29953da34
+  review: docs/plans/2026-11-18-phase-2-agent-events/reviews.md
+  verification: docs/reviews/phase-2/verification-events.md
+  demo: docs/demos/phase-2-events.md
 ---
 
 # Phase 01 · Event table and agentctl tail
@@ -40,4 +48,4 @@ batching publisher, and `agentctl tail` follows a task live, resumes from an off
 ### 4. Demo and as-built
 
 - [x] 4.1 Record a demo in `docs/demos/phase-2-events.md`: `tail` a live DSH task, stop and resume with `--after`, prune and show `Expired`, kill the worker mid-turn and show the next attempt's `reset` (R2, R3, R9). Verify: a dry run from a clean worktree whose `infra/.env` comes from `infra/.env.example`.
-- [ ] 4.2 Add a "Phase 2 events" section to `docs/architecture/overview.md` (components, data, failure and recovery, limits). Verify: the verifier's as-built check.
+- [x] 4.2 Add a "Phase 2 events" section to `docs/architecture/overview.md` (components, data, failure and recovery, limits). Verify: the verifier's as-built check.

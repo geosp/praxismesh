@@ -103,3 +103,7 @@ Diff c7dcbcd..4463f52, one fresh impl-reviewer (raw: docs/reviews/phase-2/raw/ev
 | I25 | Nit | follow-up | The fallback reset for a failed checkpoint lookup had no test | fixed: `test_a_failed_checkpoint_lookup_still_opens_with_reset` (fails without the fallback) |
 | I26 | Nit | follow-up | The timeout test could not observe a second status; its fake was misnamed | fixed: `HangsAlways` records what it was asked to store; the test asserts one status |
 | I27 | Nit | follow-up | An emit racing the publisher's stop was dropped without the warning | fixed: the stop is decided under the buffer lock (`stopped`), so a racing emit is either published or logged |
+
+## 2026-11-18 · verification · phase 01 · pass
+
+Code 499eb63, docs 965e8e8. Report: docs/reviews/phase-2/verification-events.md (acceptance failed once on a test expectation, V1, fixed in 499eb63; re-run, as-built and follow-up passed). Demo: docs/demos/phase-2-events.md.
