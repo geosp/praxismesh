@@ -56,7 +56,7 @@ files, which name the commit (`c1fda62`, `69c95c4`) and command that produced th
 | Phase 02 item 1.2 (Streams) | committed results | as above | `results/load-streams-run{1,2,3}.json` at c1fda62; growth via the provenance file | not reproducible at this commit; evidence present |
 | Failure and recovery | expiry report (R2), re-send (R3), stopped and resumed tailer (R1), failing transport, unreachable database | documented diagnostic or recovery | each observed; the unreachable database exits 1 with `ConnectionRefusedError` | pass |
 | Evidence | commit; R9; secrets; transcripts | clean | commit; `git diff --stat main...8153e7b -- . ':!spikes' ':!docs'` empty; no secrets; the only new `.jsonl` is the recorded DSH turn (event data: counts, tool names, statuses; tested) | pass |
-| Remote | `git branch -r --contains` both SHAs | on the remote | pending: the branch is pushed with the PR, after the owner approves | pending |
+| Remote | `git branch -r --contains` both SHAs | on the remote | both on `origin/spike/76-event-transport` (PR #77) | pass |
 
 ## As-built claims
 
@@ -89,4 +89,4 @@ fixes, the follow-up confirmed each corrected statement.
 **pass**: every acceptance test and every Verify item that can run at `code_sha` passed with
 observed output; the items for the deleted options have committed results naming their commit and
 command; the as-built claims at `docs_sha` are confirmed or marked unverifiable with reasons; the
-evidence checks are clean except the remote check, which follows the push.
+evidence checks are clean, including the remote check after the push (PR #77).
