@@ -1,0 +1,18 @@
+# NATS JetStream for the event-transport spike only (plan D4), as its own Compose
+# project beside the disposable stack:
+#   docker compose -p pmspike76-nats -f spikes/event-transport/nats.compose.yml up -d --wait
+#   docker compose -p pmspike76-nats -f spikes/event-transport/nats.compose.yml down --volumes
+services:
+  nats:
+    image: nats:2.15.3@sha256:4b83414183aa5fb87cd164962c47eaffd214e84668dc4fa4f1d4c44a3e765ee8
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "127.0.0.1:34222:4222"
+    volumes: ["jetstream:/data"]
+    healthcheck:
+      test: ["CMD", "nats-server", "--help"]
+      interval: 2s
+      retries: 10
+
+volumes:
+  jetstream:

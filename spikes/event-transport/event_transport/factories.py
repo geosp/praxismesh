@@ -37,7 +37,14 @@ async def _streams(horizon_s: float) -> EventTransport:
     return await StreamsTransport.connect(horizon_s)
 
 
+async def _nats(horizon_s: float) -> EventTransport:
+    from event_transport.jetstream import JetStreamTransport
+
+    return await JetStreamTransport.connect(horizon_s)
+
+
 OPTIONS: dict[str, Option] = {
+    "nats": Option("nats", hosted=False, build=_nats),
     "memory": Option("memory", hosted=False, build=_memory),
     "table": Option("table", hosted=False, build=_table),
     "streams": Option("streams", hosted=True, build=_streams),
