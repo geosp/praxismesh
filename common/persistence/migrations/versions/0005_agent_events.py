@@ -30,7 +30,7 @@ depends_on: str | Sequence[str] | None = None
 NOW = sa.text("CURRENT_TIMESTAMP")
 
 
-def _retention() -> list[sa.SchemaItem]:
+def _retention() -> list[sa.schema.SchemaItem]:
     return [
         sa.Column("retention_class", sa.Text, nullable=False, server_default=sa.text("'task'")),
         sa.CheckConstraint("retention_class IN ('ephemeral', 'task', 'audit')"),
