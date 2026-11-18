@@ -1,7 +1,7 @@
 ---
 id: ADR-0008
 title: Count ledgered model usage over every attempt, and record unobserved usage as unknown and charged, never as zero
-status: proposed
+status: accepted
 date: 2026-11-17
 issue: "#62"
 related:

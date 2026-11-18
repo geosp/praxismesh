@@ -1,7 +1,7 @@
 ---
 id: ADR-0007
 title: Fence every harness attempt's writes in one locked transaction per task
-status: proposed
+status: accepted
 date: 2026-11-17
 issue: "#62"
 related:
@@ -77,9 +77,10 @@ whether the Workflow uses its result.
 - Bad, because writes for one task serialize on its lock; a long transaction would delay
   that task's other attempts (not observed at the current scale; Unknown at larger scale).
   The lock key is a 32-bit hash, so two tasks can occasionally share a lock.
-- Bad, because a stale attempt can still upload artifact blobs that nothing references.
-  They are stored with the `audit` retention class, which is kept indefinitely: retention
-  records lifetimes only, and deletion arrives in Phase 3A.
+- Bad, because a stale attempt can still upload blobs that nothing references: artifact
+  blobs (`audit` class, kept indefinitely) and the workspace and session blobs of a
+  checkpoint whose fenced insert is then refused (`task` class, 30 days). Retention records
+  lifetimes only; deletion arrives in Phase 3A.
 - Follow-up: any new write path for attempts (Phase 2 events, a new runner) must take the
   fence or justify why it need not. The repository still offers unfenced writers
   (`CheckpointRepository.insert`, and `AttemptRepository.finish` with `fenced=False`, its

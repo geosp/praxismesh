@@ -459,5 +459,10 @@ Coordinator approval gate passed on PR #71 (merged as c015e0a): code_sha d55f3ad
 
 - In force, reviewed: ADR-0002, ADR-0003, ADR-0005, ADR-0006 (ADR-0001 and ADR-0004 are proposed).
 - Covered already: D3 (ADR-0006); D1, D4, D5, D6 (ADR-0005 conditions 2-5). Tactical: D2, D8 (replaced by Phase 2's transport).
-- Created, owner-confirmed, `proposed` pending independent review: ADR-0007 (D10, the attempt fence) and ADR-0008 (D7, D9, D11, unknown usage and conservative charging).
+- Created, owner-confirmed: ADR-0007 (D10, the attempt fence) and ADR-0008 (D7, D9, D11, ledgered usage and conservative charging).
+- Independent review by fresh `design-reviewer` subagents, one at a time (raw: docs/reviews/general-dsh-production-harness/raw/adr-review-*):
+  - round 1 at 97578b7: both changes-requested (ADR-0007: stale failure path writes, orphaned blobs kept indefinitely; ADR-0008: rule stated for every runner, true for ledgered runners only); fixed in 03dd1b6;
+  - round 2 at 03dd1b6: ADR-0008 pass; ADR-0007 changes-requested (incomplete list of writes skipping the newer-attempt check); fixed in 19fc4e2;
+  - round 3 at 19fc4e2: ADR-0007 pass; its Nit (checkpoint blobs can be orphaned too) fixed.
+- Both ADRs `accepted`.
 - Verification Nit V1 (README `PRAXIS_SAMPLE_DB_URL`) fixed in the same change.
