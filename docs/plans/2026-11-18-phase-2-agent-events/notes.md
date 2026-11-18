@@ -6,7 +6,7 @@
   (per-attempt `seq`, emission under a lock). Only the DSH runner emits: tool events
   (`harness_activity/dsh/executor.py`), one `token` event per response and refused-tool events
   (`gateway.py`). `DshRunner` builds its own `AttemptEvents` from a per-worker sink that defaults to
-  `NoOpSink` (`harness_activity/dsh/runner.py:238`, `:360`); `workers/main.py` passes none.
+  `NoOpSink` (`harness_activity/dsh/runner.py:237`, `:360`); `workers/main.py` passes none.
   `openai_agents` emits none. `HarnessRunner.run` takes no events argument (`harness_activity/runner.py`).
 - `AgentEvent` (`common/schemas/events.py`): `seq`, timestamp, workflow, task, `attempt_id`
   (`task:turn:attempt`), type, content-free payload, optional `blob_ref`.
@@ -33,20 +33,38 @@
 
 Migration 0005, in the app database (the spike's `spike76` schema is not reused):
 
-- `event_logs (workflow_id PK, next_offset bigint default 1, retained_base bigint default 1)`.
+- `event_logs (workflow_id PK, next_offset bigint default 1, retained_base bigint default 1,
+  retention_class)`.
 - `agent_events (workflow_id, "offset", task_id, attempt_id, seq, type, payload jsonb, blob_ref jsonb,
-  emitted_at, stored_at; PK (workflow_id, "offset"))`. Columns mirror `AgentEvent`.
-- `event_batches (workflow_id, batch_id, seen_at; PK (workflow_id, batch_id))`. Each publish deletes
-  that workflow's rows older than 600 s (the spike's re-send horizon).
+  emitted_at, stored_at, retention_class; PK (workflow_id, "offset"))`. Columns mirror `AgentEvent`.
+- `event_batches (workflow_id, batch_id, seen_at, retention_class; PK (workflow_id, batch_id))`. Each
+  publish deletes that workflow's rows older than 600 s, the spike's re-send horizon; D2's re-sends
+  finish within ~2 s, so the horizon is ample.
+- Retention class `task` for all three (`common/persistence/retention.py`; design §4.13: every stored
+  row carries one from its first write).
 - `NOTIFY agent_events, <workflow_id>` per batch; following readers `LISTEN`, clear their wake-up before
   each fetch and poll every 1 s (spike `table.py`).
 - `LISTEN` needs a raw asyncpg connection from the SQLAlchemy engine; verify the SQLAlchemy 2.1 API
   before relying on it.
+- The workflow ID equals the task ID today (`orchestrator/submit.py`), so `tail TASK` needs no lookup;
+  the table is keyed by workflow ID so a later workflow-per-many-tasks change does not move offsets.
 
-## D2 · Publish order and cost
+## D2 · Publish order, the publisher and the final flush
 
-One transaction per batch: `_TASK_LOCK`; `_NO_NEWER_ATTEMPT` (refuse with `FenceRejected`); upsert and
-lock the `event_logs` row; batch-ID check; insert; advance `next_offset`; delete old batch rows;
-`NOTIFY`. Every other fenced write takes `_TASK_LOCK` first and never holds an `event_logs` row, so the
-order cannot invert. The flush runs in a background task; a refusal sets a flag that
-`before_model_call` and the final flush raise as `Superseded`, and the Activity skips its finish writes.
+- One transaction per batch: the task lock and newer-turn-or-attempt check from `fence.py`
+  (`FenceRejected` on refusal); upsert and lock the `event_logs` row; the batch-ID check; insert;
+  advance `next_offset`; delete old batch rows; `NOTIFY`. Every other fenced write takes the task lock
+  first and never holds an `event_logs` row, so the order cannot invert.
+- `BatchingPublisher`: `emit` appends under a lock and schedules a flush on the Activity's event loop
+  (`loop.call_soon_threadsafe`), so emitting from a thread is safe. One background task publishes
+  batches one at a time, in order; a database error re-sends the same batch ID with backoff
+  (0.25 s, 0.5 s, 1 s). After the last try the batch stays buffered for the next trigger.
+- `close()` (shielded): cancels the trigger timer, publishes everything buffered, awaits the background
+  task, and returns either nothing or `FenceRejected` or the last database error.
+- In `run_harness_turn` the success path is: runner returns; emit `status`; `close()`; on
+  `FenceRejected` raise `Superseded` (no finish checkpoint, no artifacts, no outcome row); on a
+  database error raise a retryable error; otherwise the finish checkpoint, artifacts and outcome as
+  today. Failure and cancel paths emit `status` with the failure, run `close()`, log a refusal or
+  database error, and re-raise the original exception (ADR-0007: the failure still propagates).
+- A refusal during a background flush needs no flag: `before_model_call` already stops a superseded
+  attempt, and the final flush refuses again.
