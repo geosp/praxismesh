@@ -40,3 +40,41 @@ Reviewers: fresh reader ✅ (attempt 1 read only ~41 of 316 lines and was retrie
 | F33 | Nit | fresh reader | R4, R9, R10, R11, R18, R19 each hold two rules | fixed: split into R4/R5, R10/R11, R12/R13, R26/R27; R24 and R28 kept as one rule each about one outcome |
 | F34 | Nit | fresh reader | Smaller undefined terms and rereads (DSH, `Superseded`, `PRAXIS_*`, profile, owner, task numbering); facts repeated across D9, D13, R19 | fixed: Terms; D9, D13 and R26 now state identity once each with distinct points |
 | F35 | Nit | fresh reader | Summary nits: R-number citations, wall-time trigger, idle completion status; R16 has no tolerance | fixed: Summary; R20 tolerance 60-65 s |
+
+## 2026-11-18 · design-review · plan · round 2 · changes-requested
+Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out ✅ (plan at 4c992ea; raw: docs/reviews/phase-2/raw/design-review-round-2-*.md). No round 1 finding came back.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F36 | Major | codebase fit, zoom out | `praxis_comms` is created only by `init.sh`, which never runs on an existing volume; it also needs `CONNECT` and schema `USAGE`; 0006 fails there | open |
+| F37 | Major | codebase fit, zoom out | `claim_inbox` returns message bodies into Workflow history (R28) | open |
+| F38 | Major | codebase fit | R19's refusal has no database path in `finish_task`, and `openai_agents` stops the run on any `finish_task` call | open |
+| F39 | Major | codebase fit | R11 (every refusal stored) contradicts R27 (fenced-out send stores nothing) | open |
+| F40 | Major | codebase fit | New profile and template fields never reach `ResolvedTask` or `comms_mcp`; task 2.2 edits templates before the schema accepts `max_wakes_cap`; new fields need defaults for R29 | open |
+| F41 | Major | codebase fit, zoom out | Cancelling a waiting task raises `CancelledError` in the wait, skipping `complete_task` and `cancel_for` (R24) | open |
+| F42 | Major | zoom out | A send to a task that then ends `done`, or rows claimed for a turn that never runs, are never delivered or closed (R13, R15) | open |
+| F43 | Major | zoom out | A task that ends by idle timeout or wall time completes `succeeded` with no artifacts; `waiting` has no finish record | open |
+| F44 | Major | zoom out | A retried attempt with a real model regenerates the send text, so the key differs and the message arrives twice; R13 holds only for the fake model | open |
+| F45 | Major | fresh reader | Summary omits the new `Superseded` ending and the cycle, end-of-task and ended-recipient rules | open |
+| F46 | Major | fresh reader | Profile, template, template version and registry are not in Terms | open |
+| F47 | Major | fresh reader | Why the Workflow patch is needed when rollout drains running tasks is not said | open |
+| F48 | Major | fresh reader | Who runs `cancel_for` and how waiters are woken is not in plan.md | open |
+| F49 | Major | fresh reader | What the `woken` flag changes is not said | open |
+| F50 | Major | fresh reader | What the dispatcher does when a Signal fails is not in plan.md | open |
+| F51 | Major | fresh reader | How `PRAXIS_TURN` and `PRAXIS_ATTEMPT` are set per attempt for both runners is not said | open |
+| F52 | Nit | codebase fit | "The Activity's tool-call hook" does not exist; `post_status` needs handling in both runners' tool paths | open |
+| F53 | Nit | codebase fit | `prepare_task` has no database access for `--join`'s check | open |
+| F54 | Nit | codebase fit | Nothing `NOTIFY`s on a `message_wakes` insert | open |
+| F55 | Nit | codebase fit | Terms' reader rule omits "fails on a repeated offset" | open |
+| F56 | Nit | codebase fit | Bound Continue-As-New by history length, not only by woken turns | open |
+| F57 | Nit | codebase fit | `PRAXIS_ATTEMPT` must be Temporal's attempt (the fence key) | open |
+| F58 | Nit | codebase fit | New variables also belong in `check-prereqs.sh` and the compose harness env | open |
+| F59 | Nit | codebase fit | `complete_task` runs `tasks.complete` and `cancel_for` with no stated order | open |
+| F60 | Nit | zoom out | `TaskState` must be an optional second `run` parameter for R29 | open |
+| F61 | Nit | zoom out | How to drain waiting tasks is not said | open |
+| F62 | Nit | zoom out | R19's "open" should exclude questions past their deadline | open |
+| F63 | Nit | zoom out | A finished workflow keeps its last batch rows until Phase 3A | open |
+| F64 | Nit | zoom out | A terminated workflow's `tasks` row stays `running`, so sends to it are accepted | open |
+| F65 | Nit | fresh reader | Smaller undefined terms, rereads, defaults stated twice, multi-rule requirements (R5, R6, R18, R21, R24, R28) | open |
+
+Round 1's Majors are resolved. Round 2's new Majors (F36-F44) are all in the messaging part (phase 02); none is in the event part (phase 01). The design review stops after two rounds (design-review skill) with these open.
