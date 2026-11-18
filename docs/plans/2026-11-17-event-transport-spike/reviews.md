@@ -45,3 +45,7 @@
 | F28 | Nit | targeted | R8 needs 3 runs of every requirement, but only the load is repeated. | fixed: phase 02 task 1.2 runs the suite 3 times too |
 | F29 | Nit | targeted | Whether the roll-over-off Streams run repeats 3 times is unclear. | fixed: one informational run (growth rate), not judged |
 | F30 | Nit | targeted | D2 gives no outcome when no option passes. | fixed: D2, a no-go report and the owner decides |
+
+## 2026-11-17 · approved · plan
+
+Approved by the owner after design review passed (2 rounds); phases 01 and 02 approved with it.

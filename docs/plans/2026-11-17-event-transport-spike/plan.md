@@ -1,10 +1,10 @@
 ---
 title: Choose Phase 2's event transport
-status: draft
+status: approved
 created: 2026-11-17
 updated: 2026-11-17
 design_review: { status: passed, rounds: 2, last: 2026-11-17 }
-approved: null
+approved: 2026-11-17
 adr_review: null
 ---
 
@@ -236,7 +236,7 @@ its volume. The spike project can be deleted at any time.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 01 | [Interface, suite and three transports](phases/01-interface-and-transports.md) | draft | 0/7 |
-| 02 | [Measure, decide and clean up](phases/02-measure-and-decide.md) | draft | 0/5 |
+| 01 | [Interface, suite and three transports](phases/01-interface-and-transports.md) | approved | 0/7 |
+| 02 | [Measure, decide and clean up](phases/02-measure-and-decide.md) | approved | 0/5 |
 
 ## Decision log

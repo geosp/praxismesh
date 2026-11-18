@@ -1,13 +1,13 @@
 ---
 phase: 1
 title: Interface, suite and three transports
-status: draft
+status: approved
 branch: null
 base: null
 delivers: [R1, R2, R3, R4, R7, R9]
 design_review: { status: passed, rounds: 2, last: 2026-11-17 }
 impl_review: { status: none, rounds: 0, last: null }
-approved: null
+approved: 2026-11-17
 ---
 
 # Phase 01 · Interface, suite and three transports
