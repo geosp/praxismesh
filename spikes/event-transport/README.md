@@ -3,8 +3,11 @@
 An isolated experiment for [issue #76](https://github.com/geosp/praxismesh/issues/76), following
 the approved plan
 [docs/plans/2026-11-17-event-transport-spike](../../docs/plans/2026-11-17-event-transport-spike/plan.md).
-It implements one `EventTransport` interface for Temporal Workflow Streams, a PostgreSQL event
-table and NATS JetStream, and runs one shared suite and two workloads against each. Production
+It implemented one `EventTransport` interface for Temporal Workflow Streams, a PostgreSQL event
+table and NATS JetStream, and ran one shared suite and two workloads against each. The owner
+chose the table ([ADR-0009](../../docs/adr/0009-use-a-postgresql-event-table-for-agent-events.md),
+[report](../../docs/spikes/event-transport.md)); only it and the in-memory reference remain. The
+other implementations are in git history at `1bfac67`. Production
 code, migrations, the registry and Compose services are unchanged.
 
 ## Layout

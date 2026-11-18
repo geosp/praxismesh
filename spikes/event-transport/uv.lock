@@ -47,15 +47,6 @@ wheels = [
 ]
 
 [[package]]
-name = "nats-py"
-version = "2.17.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ad/81/bb848a2b1a78e65be0a1127c6b3554fb3dffd9106111a21f7a466ef032a6/nats_py-2.17.0.tar.gz", hash = "sha256:d231b0915567777e283b3553dbe6b35df450c9ffaba65c8a6ca11e6a622bcc07", size = 83960, upload-time = "2026-11-17T14:09:21.97Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b4/5a/dbc821dce27cf8f322f36fc99ad2b5c61d37f0b6a96604077aae892ccffb/nats_py-2.17.0-py3-none-any.whl", hash = "sha256:fc7d01f68957462220d6bdce310cad1707eeb5fbd369903d84217b18ea341c0e", size = 97786, upload-time = "2026-11-17T14:09:20.486Z" },
-]
-
-[[package]]
 name = "nexus-rpc"
 version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -91,7 +82,6 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "asyncpg" },
-    { name = "nats-py" },
     { name = "pydantic" },
     { name = "temporalio" },
 ]
@@ -105,7 +95,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "asyncpg", specifier = "==0.32.0" },
-    { name = "nats-py", specifier = "==2.17.0" },
     { name = "pydantic", specifier = "==2.14.3" },
     { name = "temporalio", specifier = "==1.36.0" },
 ]

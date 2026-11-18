@@ -1,9 +1,8 @@
 # Probes
 
-Small scripts that answer questions the docs leave open. Run from `spikes/event-transport`
-with the disposable stack and the NATS project up:
-
-    PYTHONPATH=. uv run python probes/<script>.py
+Small scripts that answered questions the docs leave open. They exercised the Workflow Streams
+and NATS JetStream transports, which were removed after the decision (ADR-0009); the scripts are
+in git history at `1bfac67` (run from `spikes/event-transport` with `PYTHONPATH=.`).
 
 | Probe | Question | Observed (2026-11-18, nats-server 2.15.3, temporalio 1.36.0) |
 | --- | --- | --- |
@@ -14,3 +13,5 @@ From the pinned `temporalio` 1.36.0 source (design review round 2): `WorkflowStr
 catches the poll Update's `TruncatedOffset` and silently restarts at offset 0, so it cannot report
 expiry either. Both options meet R2 in the spike only because the reader checks the retained base
 before reading (plan D1).
+
+| `streams_update_limit.py` | How fast does a Streams hosting run grow with roll-over off? | Each run hit Temporal's 2,000-Updates-per-run limit after ~1.85 min (~500 publish, ~1,500 poll Updates with 3 tailers), at ~8,500 events and ~10.2 MB (`results/streams-growth-norollover.json`). |

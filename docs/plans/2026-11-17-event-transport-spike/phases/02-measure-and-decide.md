@@ -32,4 +32,4 @@ winner's code remains.
 
 ### 3. Clean up
 
-- [ ] 3.1 Delete the losing implementations and their dependencies from the spike, and reset the disposable projects (D6). Verify: the suite still passes for the winner; `git diff --stat main...HEAD -- . ':!spikes' ':!docs'` is empty (R9).
+- [x] 3.1 Delete the losing implementations and their dependencies from the spike, and reset the disposable projects (D6). Verify: the suite still passes for the winner; `git diff --stat main...HEAD -- . ':!spikes' ':!docs'` is empty (R9).

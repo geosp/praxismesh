@@ -1,5 +1,8 @@
 """How the suite builds each transport, by name (`SPIKE_TRANSPORTS`).
 
+After the decision (ADR-0009) only the reference and the PostgreSQL table remain; the
+Workflow Streams and NATS JetStream implementations are in git history at 1bfac67.
+
 `hosted` says whether the option keeps its log in a Temporal Workflow: R4 and R11
 apply only then; for the others they are reported as N/A (plan D2).
 """
@@ -31,21 +34,7 @@ async def _table(horizon_s: float) -> EventTransport:
     return await TableTransport.connect(horizon_s)
 
 
-async def _streams(horizon_s: float) -> EventTransport:
-    from event_transport.streams import StreamsTransport
-
-    return await StreamsTransport.connect(horizon_s)
-
-
-async def _nats(horizon_s: float) -> EventTransport:
-    from event_transport.jetstream import JetStreamTransport
-
-    return await JetStreamTransport.connect(horizon_s)
-
-
 OPTIONS: dict[str, Option] = {
-    "nats": Option("nats", hosted=False, build=_nats),
     "memory": Option("memory", hosted=False, build=_memory),
     "table": Option("table", hosted=False, build=_table),
-    "streams": Option("streams", hosted=True, build=_streams),
 }

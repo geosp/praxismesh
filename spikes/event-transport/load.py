@@ -1,7 +1,7 @@
 """The load runner (plan R5, R6, R11; notes.md#d3, #d5; phase 02 task 1.1).
 
     uv run python load.py <option> [--seconds 300] [--agents 4] [--tailers 3]
-                         [--no-roll] [--label run1]
+                         [--label run1]
 
 Each agent publishes from inside one long-running Activity (notes.md#d5, F32), the
 same for every option: ~50 `token` events/s with a ~40-byte text delta, plus a
@@ -13,7 +13,7 @@ resumed from its last offset every 60 s. Results go to
 Measured: publish-to-display latency of every event a tailer shows; per Streams
 hosting run, history events and bytes (split by publish and poll Updates) and the
 carried state's size; CPU and memory of the stack's database, Temporal and NATS
-containers. `--no-roll` turns Streams roll-over off (the informational growth run).
+containers. Streams' history and roll-over measurement is in git history at 1bfac67.
 """
 
 from __future__ import annotations
@@ -185,41 +185,6 @@ async def tail(t: EventTransport, tailer: Tailer, stop: asyncio.Event) -> None:
 # ---- measurements
 
 
-async def stream_runs(client: Client, workflow_id: str) -> list[dict[str, Any]]:
-    """History of every run of one Streams hosting Workflow."""
-    wid = f"spike76-stream-{workflow_id}"
-    runs = []
-    async for ex in client.list_workflows(f"WorkflowId = '{wid}'"):
-        handle = client.get_workflow_handle(wid, run_id=ex.run_id)
-        counts: dict[str, int] = {}
-        events = 0
-        size = 0
-        carried = 0
-        async for e in handle.fetch_history_events():
-            events += 1
-            size += e.ByteSize()
-            if e.HasField("workflow_execution_started_event_attributes"):
-                carried = sum(
-                    p.ByteSize()
-                    for p in e.workflow_execution_started_event_attributes.input.payloads
-                )
-            if e.HasField("workflow_execution_update_accepted_event_attributes"):
-                accepted = e.workflow_execution_update_accepted_event_attributes
-                name = accepted.accepted_request.input.name
-                counts[name] = counts.get(name, 0) + 1
-        runs.append(
-            {
-                "run_id": ex.run_id,
-                "started": str(ex.start_time),
-                "events": events,
-                "bytes": size,
-                "carried_input_bytes": carried,
-                "updates": counts,
-            }
-        )
-    return sorted(runs, key=lambda r: r["started"])
-
-
 def say(message: str) -> None:
     print(f"[load] {message}", file=sys.stderr, flush=True)
 
@@ -241,11 +206,8 @@ async def main(argv: list[str]) -> int:
     parser.add_argument("--seconds", type=float, default=300)
     parser.add_argument("--agents", type=int, default=4)
     parser.add_argument("--tailers", type=int, default=3)
-    parser.add_argument("--no-roll", action="store_true", help="Streams: roll-over off")
     parser.add_argument("--label", default="run")
     args = parser.parse_args(argv)
-    if args.no_roll:
-        os.environ["SPIKE_STREAMS_NO_ROLL"] = "1"
     option = OPTIONS[args.option]
     say("building transport")
     transport = await option.build(600.0)
@@ -295,8 +257,7 @@ async def main(argv: list[str]) -> int:
         await asyncio.gather(*tasks)
         stats_stop.set()
     elapsed = time.monotonic() - began
-    say("reading history")
-    runs = {wf: await stream_runs(client, wf) for wf in wfs} if option.hosted else {}
+    runs: dict[str, Any] = {}  # Streams hosting runs; none remain (ADR-0009)
     await transport.close()
 
     latencies = [ms for tl in tailers for ms in tl.latency_ms]
@@ -317,8 +278,6 @@ async def main(argv: list[str]) -> int:
         if not option.hosted
         else ("pass" if max_carried < LIMIT_PAYLOAD * 0.5 else "fail"),
     }
-    if args.no_roll:
-        judged = {k: "informational" for k in judged}
     report = {
         "option": args.option,
         "label": args.label,
@@ -333,7 +292,6 @@ async def main(argv: list[str]) -> int:
             "rate_per_s": RATE_PER_S,
             "batch_s": BATCH_S,
             "batch_max": BATCH_MAX,
-            "roll": not args.no_roll,
         },
         "elapsed_s": round(elapsed, 1),
         "requirements": judged,
