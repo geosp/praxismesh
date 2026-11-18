@@ -52,7 +52,7 @@ owner's running stack was not stopped or changed. Raw reports:
 | Tasks 1.1-2.2 | each task's Verify item (demo record, section "Independent verification") | as stated | as stated; the revert walkthrough's old task finished on `local-dsh` after a `lost` attempt, `usage_known: false`, orders once each | pass |
 | gitleaks, actionlint | not installed locally | — | run by CI on the PR | not run |
 | Evidence | commits; docs diff; secrets; transcripts | clean | both commits; `git diff --stat d55f3ad 06dd647 -- . ':!docs'` empty; secret scan matches only the scan's own pattern in docs; the only `.jsonl` files are the spike results already on `main` | pass |
-| Remote | `git branch -r --contains` both SHAs | on the remote | pending: the branch is pushed with the PR, after the owner approves | pending |
+| Remote | `git branch -r --contains` both SHAs | on the remote | both on `origin/feat/62-dsh-acceptance` (PR #71) | pass |
 
 ## As-built claims
 
@@ -83,4 +83,4 @@ the 06dd647 wording fixes, the follow-up confirmed each corrected statement
 
 **pass**: every acceptance test and demo item passed with observed output at d55f3ad, the as-built
 claims at 06dd647 are confirmed (two marked unverifiable here, with reasons), and the evidence
-checks are clean except the remote check, which follows the push. gitleaks and actionlint run in CI.
+checks are clean, with both SHAs on the remote. gitleaks and actionlint run in CI.
