@@ -27,8 +27,8 @@ winner's code remains.
 
 ### 2. Decide
 
-- [ ] 2.1 Write the operating-cost and fencing assessment per option: new components, backups, authentication and row or subject scoping, upgrades, the Kubernetes path, extra code beyond D5, and how a superseded attempt's events would be fenced or why not (D2, R10). Verify: every option has every heading filled, with sources.
-- [ ] 2.2 Write `docs/spikes/event-transport.md` with R1-R11 per option, the measurements and the choice by D2; draft a proposed ADR for the winner and a decision-log entry with the verified versions (D6). Verify: every number in the report traces to a committed results file (R8).
+- [x] 2.1 Write the operating-cost and fencing assessment per option: new components, backups, authentication and row or subject scoping, upgrades, the Kubernetes path, extra code beyond D5, and how a superseded attempt's events would be fenced or why not (D2, R10). Verify: every option has every heading filled, with sources.
+- [x] 2.2 Write `docs/spikes/event-transport.md` with R1-R11 per option, the measurements and the choice by D2; draft a proposed ADR for the winner and a decision-log entry with the verified versions (D6). Verify: every number in the report traces to a committed results file (R8).
 
 ### 3. Clean up
 

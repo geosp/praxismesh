@@ -17,3 +17,4 @@ One record per consequential architecture decision, written when the decision is
 | [0006](0006-per-attempt-isolation-boundary-for-dsh.md) | Isolate each DSH attempt by cgroup, UID and mount namespace in a paired container (amends 0005 condition 3) | accepted |
 | [0007](0007-fence-harness-attempts-in-one-transaction.md) | Fence every harness attempt's writes in one locked transaction per task | accepted |
 | [0008](0008-record-unobserved-model-usage-as-unknown.md) | Count ledgered model usage over every attempt, and record unobserved usage as unknown and charged, never as zero | accepted |
+| [0009](0009-use-temporal-workflow-streams-for-agent-events.md) | Carry agent progress events in Temporal Workflow Streams, behind an event-transport interface | proposed |
