@@ -34,8 +34,8 @@ async def test_r2_mid_read(transport: EventTransport) -> None:
 
 
 @pytest.mark.requirement("R3")
-async def test_r3_resend(transport: EventTransport, horizon_s: float) -> None:
-    await checks.check_r3_resend(transport, horizon_s)
+async def test_r3_resend(transport: EventTransport, horizon_s: float, option_name: str) -> None:
+    await checks.check_r3_resend(transport, horizon_s, OPTIONS[option_name].hosted)
 
 
 @pytest.mark.requirement("R4")

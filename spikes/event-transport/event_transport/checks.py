@@ -83,7 +83,7 @@ async def check_r2_expiry(t: EventTransport) -> None:
     assert offsets(items) == list(range(base, 21))
 
 
-async def check_r3_resend(t: EventTransport, horizon_s: float) -> None:
+async def check_r3_resend(t: EventTransport, horizon_s: float, hosted: bool = False) -> None:
     """R3: a batch re-sent at once, after a roll-over, and just inside the horizon is
     stored once."""
     wf = new_workflow()
@@ -91,7 +91,8 @@ async def check_r3_resend(t: EventTransport, horizon_s: float) -> None:
     await t.publish(wf, f"{wf}-b0", batch)
     await t.publish(wf, f"{wf}-b0", batch)
     assert await t.latest(wf) == 5
-    await t.roll_over(wf)  # the batch-ID set must survive it (no-op without a Workflow)
+    rolled = await t.roll_over(wf)  # the batch-ID set must survive it
+    assert rolled or not hosted, "roll_over did not start a new run"
     await t.publish(wf, f"{wf}-b0", batch)
     assert await t.latest(wf) == 5, "a re-send after a roll-over was stored again"
     await asyncio.sleep(max(horizon_s - 5, 0.1))
@@ -108,19 +109,19 @@ async def check_r2_mid_read(t: EventTransport) -> None:
     reader = t.read(wf, 0, follow=True).__aiter__()
     first = [await asyncio.wait_for(anext(reader), 30) for _ in range(5)]
     assert offsets(first) == [1, 2, 3, 4, 5]
-    # Published after the reader's last page, then removed before it reads again:
-    # events a reader already buffered may still be delivered.
+    # Published after the reader's last page, then removed before it reads again.
     await t.publish(wf, f"{wf}-b1", make_events(wf, 95, start=5))
     await t.expire_below(wf, 50)
     await t.publish(wf, f"{wf}-b2", make_events(wf, 10, start=100))
     rest: list[Item] = []
-    while len(offsets(rest)) < 61 and not (offsets(rest) and offsets(rest)[-1] == 110):
+    while not (offsets(rest) and offsets(rest)[-1] == 110):
         rest.append(await asyncio.wait_for(anext(reader), 30))
     await reader.aclose()
+    # The reader was suspended after offset 5, so nothing later was buffered: the
+    # report must name the real base, and every retained event must follow (R1, R2).
     expiries = [i for i in rest if isinstance(i, Expired)]
-    assert expiries and expiries[0].retained_base >= 6, rest[:3]
-    after_expiry = offsets(rest[rest.index(expiries[0]) + 1 :])
-    assert after_expiry == list(range(expiries[0].retained_base, 111)), after_expiry[:5]
+    assert expiries == [Expired(50)], rest[:3]
+    assert offsets(rest[rest.index(expiries[0]) + 1 :]) == list(range(50, 111))
 
 
 async def check_r4_roll_over(t: EventTransport, hosted: bool) -> None:

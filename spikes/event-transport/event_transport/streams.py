@@ -1,11 +1,11 @@
 """Temporal Workflow Streams transport (plan D5, notes.md#d5; task 2.2).
 
 Each spike workflow ID is one `SpikeEventStream` Workflow (see streams_workflow.py).
-Publishing sends one `publish_batch` Update per batch. Reading does not use
-`WorkflowStreamClient.subscribe()`, which hides truncation by restarting at 0
-(notes.md#verified); it calls the stream's poll Query (catch-up) and poll Update
-(follow) by Workflow ID, so it follows roll-over, maps `TruncatedOffset` to
-`Expired` through the `retained_base` Query, and adds 1 to stream offsets.
+Publishing sends one
+`publish_batch` Update per batch. Every read goes through the stream's poll Update
+by Workflow ID (not `WorkflowStreamClient.subscribe()`, which hides truncation by
+restarting at 0; notes.md#verified), so it follows roll-over, maps `TruncatedOffset`
+to the retained base, and adds 1 to stream offsets.
 """
 
 from __future__ import annotations

@@ -121,6 +121,8 @@ Clarifications from phase 01 impl review round 1:
 - **Parameters the implementations add (F45):** table connection pool up to 20 (each following
   reader holds one connection); JetStream consumers expire after 60 s idle. Phase 02 reports
   both if the load reaches them.
+  Streams adds a fixed task queue and a 2 h execution timeout per hosting run (round 2); the
+  report lists them with the others.
 - **To check in phase 02 (F47):** Temporal also limits Updates per run (`TOO_MANY_UPDATES`), and
   poll Updates count; the default and whether it, rather than 2,000 batches, triggers roll-over.
 - **Fragility (F44):** Streams decoding uses the preview package's private `_decode_payload`.

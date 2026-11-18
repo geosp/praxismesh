@@ -92,3 +92,19 @@ async def test_a_broken_transport_fails_its_check(
         args = (t, recorded_turn())
     with pytest.raises(AssertionError):
         await fn(*args)
+
+
+class ResumesPastBase(MemoryTransport):
+    """After a removal during a read, never delivers the first 9 retained events."""
+
+    async def _read(self, workflow_id: str, after: int, follow: bool) -> AsyncIterator[Item]:
+        log = self._log(workflow_id)
+        async for item in super()._read(workflow_id, after, follow):
+            if not isinstance(item, Expired) and 1 < log.base <= item[0] < log.base + 9:
+                continue  # a real bug: retained events are lost
+            yield item
+
+
+async def test_a_reader_that_skips_retained_events_fails_r2_mid_read() -> None:
+    with pytest.raises(AssertionError):
+        await checks.check_r2_mid_read(ResumesPastBase(HORIZON_S))

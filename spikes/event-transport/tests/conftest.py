@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,8 +22,22 @@ from event_transport.factories import OPTIONS
 from event_transport.transport import EventTransport
 
 SPIKE = Path(__file__).resolve().parents[1]
-RESULTS = SPIKE / "results"
+RESULTS = Path(os.environ.get("SPIKE_RESULTS", SPIKE / "results"))
 _outcomes: dict[str, dict[str, str]] = {}
+_ran: dict[str, set[str]] = {}  # option -> requirement tests that reported
+
+
+def _expected() -> set[str]:
+    """Every requirement test in tests/test_suite.py: a run missing any is partial."""
+    import ast
+
+    tree = ast.parse((SPIKE / "tests" / "test_suite.py").read_text())
+    return {
+        n.name
+        for n in tree.body
+        if isinstance(n, ast.AsyncFunctionDef | ast.FunctionDef)
+        and any("requirement" in ast.unparse(d) for d in n.decorator_list)
+    }
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -63,6 +78,8 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[Any]) -> 
     if marker is None or callspec is None or "option_name" not in callspec.params:
         return report
     name, rid = callspec.params["option_name"], marker.args[0]
+    if report.when == "call" or (report.when == "setup" and (report.failed or report.skipped)):
+        _ran.setdefault(name, set()).add(item.originalname)
     if rid == "R4" and not OPTIONS[name].hosted:
         outcome = "n/a"  # no Workflow to roll over: counts as passed (plan D2)
     elif report.when == "setup" and report.failed:
@@ -86,9 +103,8 @@ def _git(*args: str) -> str:
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     if not _outcomes:
         return
-    partial = bool(session.config.option.keyword or session.config.option.markexpr) or (
-        exitstatus not in (0, 1)
-    )
+    expected = _expected()
+    args = " ".join(sys.argv[1:])
     RESULTS.mkdir(exist_ok=True)
     for name, outcomes in _outcomes.items():
         (RESULTS / f"suite-{name}.json").write_text(
@@ -97,9 +113,9 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
                     "transport": name,
                     "commit": _git("rev-parse", "HEAD"),
                     "dirty": bool(_git("status", "--porcelain", "--", ".", ":!results")),
-                    "command": f"SPIKE_TRANSPORTS={name} SUITE_HORIZON_S="
-                    f"{os.environ.get('SUITE_HORIZON_S', '60')} pytest tests/test_suite.py",
-                    "partial": partial,
+                    "command": f"SPIKE_TRANSPORTS={os.environ.get('SPIKE_TRANSPORTS', 'memory')} "
+                    f"SUITE_HORIZON_S={os.environ.get('SUITE_HORIZON_S', '60')} pytest {args}",
+                    "partial": _ran.get(name, set()) != expected or exitstatus not in (0, 1),
                     "finished": datetime.now(UTC).isoformat(timespec="seconds"),
                     "requirements": dict(sorted(outcomes.items())),
                 },
