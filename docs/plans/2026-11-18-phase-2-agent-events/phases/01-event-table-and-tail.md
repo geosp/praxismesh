@@ -39,5 +39,5 @@ batching publisher, and `agentctl tail` follows a task live, resumes from an off
 
 ### 4. Demo and as-built
 
-- [ ] 4.1 Record a demo in `docs/demos/phase-2-events.md`: `tail` a live DSH task, stop and resume with `--after`, prune and show `Expired`, kill the worker mid-turn and show the next attempt's `reset` (R2, R3, R9). Verify: a dry run from a clean worktree whose `infra/.env` comes from `infra/.env.example`.
+- [x] 4.1 Record a demo in `docs/demos/phase-2-events.md`: `tail` a live DSH task, stop and resume with `--after`, prune and show `Expired`, kill the worker mid-turn and show the next attempt's `reset` (R2, R3, R9). Verify: a dry run from a clean worktree whose `infra/.env` comes from `infra/.env.example`.
 - [ ] 4.2 Add a "Phase 2 events" section to `docs/architecture/overview.md` (components, data, failure and recovery, limits). Verify: the verifier's as-built check.
