@@ -52,11 +52,11 @@ from common.observability.metrics import (
     HEARTBEAT_LAG_SECONDS,
     TOKENS,
 )
+from common.persistence.fence import FenceRejected
 from common.persistence.repositories import (
     AttemptRepository,
     Checkpoint,
     CheckpointRepository,
-    FenceRejected,
     TaskRepository,
     UsageLedgerRepository,
 )

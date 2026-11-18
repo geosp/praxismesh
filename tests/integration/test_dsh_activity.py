@@ -24,11 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from temporalio.testing import ActivityEnvironment
 
 from common.blob_store import MemoryBlobStore
+from common.persistence.fence import FenceRejected
 from common.persistence.repositories import (
     AttemptRepository,
     Checkpoint,
     CheckpointRepository,
-    FenceRejected,
     TaskRepository,
     UsageLedgerRepository,
     make_engine,

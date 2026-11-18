@@ -14,11 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from common.blob_store import MemoryBlobStore
 from common.errors import TaskAlreadyExists
+from common.persistence.fence import FenceRejected
 from common.persistence.repositories import (
     AttemptRepository,
     Checkpoint,
     CheckpointRepository,
-    FenceRejected,
     RecordingBlobStore,
     TaskRepository,
     make_engine,
