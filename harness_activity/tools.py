@@ -46,6 +46,8 @@ class TurnState:
     """Per-run state the tools write and the runner reads."""
 
     finish: FinishReport | None = None
+    # Why the task may not finish yet; from HarnessConfig.finish_check.
+    finish_check: Callable[[], list[str]] | None = None
     refused: list[str] = field(default_factory=list)
     failed_in_step: list[str] = field(default_factory=list)
 
@@ -210,6 +212,13 @@ def finish_task_body(
     summary: str,
     questions: list[str] | None = None,
 ) -> str:
+    if status != "waiting" and state.finish_check is not None:
+        blocking = state.finish_check()
+        if blocking:  # R19: the run goes on, so the model can wait instead
+            return (
+                "refused: you cannot finish while " + "; ".join(blocking) + ". Call finish_task "
+                'with status "waiting" to be woken with the answers.'
+            )
     state.finish = FinishReport(status, summary[:2000], list(questions or []))
     return "recorded"
 

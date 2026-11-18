@@ -24,6 +24,7 @@ from agents import (
     RunHooks,
     Runner,
     Tool,
+    ToolsToFinalOutputResult,
 )
 from agents.mcp import MCPServerStdio, create_static_tool_filter
 from agents.memory import Session
@@ -34,7 +35,7 @@ from opentelemetry.trace import Span, Tracer
 from common.observability.metrics import TOOL_CALLS, TOOL_ERRORS
 from harness_activity import skills
 from harness_activity.config import HarnessConfig
-from harness_activity.events import AttemptEvents
+from harness_activity.events import STATUS_TOOL, AttemptEvents, emit_agent_status
 from harness_activity.session_store import SessionStore
 from harness_activity.tools import FINISH_TOOL, TurnState, build_tools
 
@@ -219,6 +220,8 @@ class _Hooks(RunHooks[Any]):
         if failed or looks_failed(str(result)):
             TOOL_ERRORS.labels(template=self.template, tool=tool.name).inc()
         open_calls = self.calls.get(tool.name)
+        if tool.name == STATUS_TOOL and not looks_failed(str(result)):
+            emit_agent_status(self.events, str(result))
         self.events.emit(
             "tool_result",
             tool=tool.name,
@@ -229,6 +232,13 @@ class _Hooks(RunHooks[Any]):
         if span is not None:
             span.set_attribute("praxis.tool_failed", failed)
             span.end()
+
+
+def _stop_on_accepted_finish(state: TurnState) -> Any:
+    def decide(context: RunContextWrapper[Any], results: list[Any]) -> ToolsToFinalOutputResult:
+        return ToolsToFinalOutputResult(is_final_output=state.finish is not None)
+
+    return decide
 
 
 class OpenAIAgentsRunner:
@@ -245,7 +255,7 @@ class OpenAIAgentsRunner:
         usage: Usage,
         events: AttemptEvents,
     ) -> RunResult:
-        state = TurnState()
+        state = TurnState(finish_check=config.finish_check)
         instructions = config.instructions
         if config.skills_bundle is not None:
             mounted = skills.mount(config.skills_bundle, workspace)
@@ -272,7 +282,9 @@ class OpenAIAgentsRunner:
                 model=OpenAIChatCompletionsModel(model=config.model, openai_client=client),
                 tools=list(tools),
                 mcp_servers=list(servers),
-                tool_use_behavior={"stop_at_tool_names": [FINISH_TOOL]},
+                # Stop only on an accepted finish_task: a refused one (R19) lets the
+                # model take another step (Phase 2 messaging D8).
+                tool_use_behavior=_stop_on_accepted_finish(state),
             )
             try:
                 await Runner.run(

@@ -28,7 +28,7 @@ from agents.tool_context import ToolContext
 from common.observability.metrics import TOOL_CALLS, TOOL_ERRORS
 from harness_activity.config import HarnessConfig
 from harness_activity.dsh.gateway import Reply, json_reply
-from harness_activity.events import AttemptEvents
+from harness_activity.events import STATUS_TOOL, AttemptEvents, emit_agent_status
 from harness_activity.runner import Usage, looks_failed
 from harness_activity.tools import FINISH_TOOL, CommandRunner, TurnState, build_tools
 
@@ -61,7 +61,7 @@ class Executor:
     ) -> None:
         self.workspace, self.config, self.usage, self.events = workspace, config, usage, events
         self.after_write = after_write
-        self.state = TurnState()
+        self.state = TurnState(finish_check=config.finish_check)
         self.finished = False
         self.entries: list[dict[str, Any]] = []
         self.lock = asyncio.Lock()
@@ -147,6 +147,8 @@ class Executor:
             if error or reported:
                 TOOL_ERRORS.labels(template=self.config.template_ref, tool=name).inc()
             entry["outcome"] = "error" if failed else "ok"
+            if name == STATUS_TOOL and not failed and self.events is not None:
+                emit_agent_status(self.events, text)
             self._emit("tool_result", name, number, entry["outcome"])
             return text, error
 

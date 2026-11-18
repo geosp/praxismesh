@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
 
 from common.errors import CapabilityError
@@ -34,9 +36,20 @@ class HarnessConfig:
     skills_bundle: Path | None
     mcp: list[McpConfig] = field(default_factory=list)
     context_window: int | None = None  # charges unknown usage (DSH plan D9)
+    # Why the task may not finish yet (open questions, unread replies); callable from
+    # any thread. Set by run_harness_turn (Phase 2 messaging R19, D8).
+    finish_check: Callable[[], list[str]] | None = None
 
 
-def build_config(registry: Registry, loaded: LoadedTemplate, task_id: str) -> HarnessConfig:
+def build_config(
+    registry: Registry,
+    loaded: LoadedTemplate,
+    task_id: str,
+    *,
+    turn: int = 1,
+    attempt: int = 1,
+    max_ask_wait: timedelta = timedelta(minutes=10),
+) -> HarnessConfig:
     template = loaded.template
     base_url = os.environ.get(template.base_url_env, "")
     if not base_url:
@@ -51,6 +64,10 @@ def build_config(registry: Registry, loaded: LoadedTemplate, task_id: str) -> Ha
             "LANG": "C.UTF-8",
             **server.env,
             "PRAXIS_TASK_ID": task_id,
+            # The attempt's identity, the fence key, for comms_mcp (Phase 2 messaging D9).
+            "PRAXIS_TURN": str(turn),
+            "PRAXIS_ATTEMPT": str(attempt),
+            "PRAXIS_MAX_ASK_WAIT": str(int(max_ask_wait.total_seconds())),
         }
         for var in server.secret_env:  # granted by the template (checked when loaded)
             env[var] = os.environ.get(var, "")

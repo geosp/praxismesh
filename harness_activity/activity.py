@@ -54,6 +54,7 @@ from common.observability.metrics import (
     TOKENS,
 )
 from common.persistence.fence import FenceRejected
+from common.persistence.messages import MessageRepository, Sender
 from common.persistence.repositories import (
     AttemptRepository,
     Checkpoint,
@@ -482,7 +483,15 @@ class HarnessActivities:
     ) -> TurnOutcome:
         loaded = self.registry.templates[turn.template]
         template_ref = loaded.template.ref
-        config = build_config(self.registry, loaded, turn.task_id)
+        config = build_config(
+            self.registry,
+            loaded,
+            turn.task_id,
+            turn=turn.turn,
+            attempt=attempt,
+            max_ask_wait=turn.max_ask_wait,
+        )
+        config = dataclasses.replace(config, finish_check=self._finish_check(turn, attempt))
         store = attempt_store or self.session_store(turn.task_id, self.engine)
         session = store.session
         seq = 0
@@ -588,6 +597,19 @@ class HarnessActivities:
             publisher,
             finish_checkpoint=lambda: checkpoint(finish),
         )
+
+    def _finish_check(self, turn: TurnInput, attempt: int) -> Callable[[], list[str]]:
+        """The open-question check `finish_task` runs from a tool thread (Phase 2
+        messaging R19, D8): it runs on this Activity's event loop."""
+        loop = asyncio.get_running_loop()
+        messages = MessageRepository(self.engine)
+        sender = Sender(turn.task_id, turn.turn, attempt)
+
+        def check() -> list[str]:
+            future = asyncio.run_coroutine_threadsafe(messages.blocking_finish(sender), loop)
+            return future.result(timeout=30)
+
+        return check
 
     async def _fresh_start(self, task_id: str, workdir: Path) -> str:
         row = await self.tasks.get(task_id)

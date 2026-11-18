@@ -13,6 +13,7 @@ import shutil
 import sys
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import replace
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -496,9 +497,17 @@ def test_mcp_server_env_is_exactly_what_is_granted(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("CANARY_SECRET", "not-granted")
     registry = load_registry()
     _, loaded = registry.resolve("openai")
-    (server,) = build_config(registry, loaded, "task-env-00000001").mcp
-    assert set(server.env) == {"PATH", "LANG", "PRAXIS_TASK_ID", "PRAXIS_SAMPLE_DB_URL"}
+    (server,) = build_config(
+        registry, loaded, "task-env-00000001", turn=3, attempt=2, max_ask_wait=timedelta(minutes=2)
+    ).mcp
+    assert set(server.env) == {
+        "PATH", "LANG", "PRAXIS_TASK_ID", "PRAXIS_TURN", "PRAXIS_ATTEMPT", "PRAXIS_MAX_ASK_WAIT",
+        "PRAXIS_SAMPLE_DB_URL",
+    }  # fmt: skip
     assert server.env["PRAXIS_TASK_ID"] == "task-env-00000001"
+    # The attempt's identity for comms_mcp (Phase 2 messaging D9) and its ask cap (D14).
+    assert (server.env["PRAXIS_TURN"], server.env["PRAXIS_ATTEMPT"]) == ("3", "2")
+    assert server.env["PRAXIS_MAX_ASK_WAIT"] == "120"
     assert server.env["PRAXIS_SAMPLE_DB_URL"] == "postgresql+asyncpg://granted"
 
 
@@ -602,3 +611,40 @@ async def test_tool_and_token_events(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert all(counts <= keys <= counts | {"request_id"} for keys in tokens)
     dumped = json.dumps([e.payload for e in events])
     assert "37.50" not in dumped and "summary" not in dumped.lower().replace("summary.md", "")
+
+
+async def test_a_refused_finish_lets_the_model_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 2 messaging R19, D8: with an open question, finish_task("done") is
+    refused and the run goes on; the model then finishes waiting."""
+    with FakeModel(
+        script(
+            {"tool": "finish_task", "args": {"status": "done", "summary": "early"}},
+            {"tool": "finish_task", "args": {"status": "waiting", "summary": "asked B"}},
+        )
+    ) as fake:
+        config = replace(
+            config_for(fake, monkeypatch), finish_check=lambda: ["open question q1 to B"]
+        )
+        result = await make_runner().run(
+            config, tmp_path, make_store("refused-finish").session, "go", no_op, Usage(),
+            attempt_events(),
+        )  # fmt: skip
+    assert result.status == "waiting" and result.summary == "asked B"
+    assert len(fake.state.requests) == 2  # the refusal went back to the model
+    refusal = tool_results(fake)[0]
+    assert "refused" in refusal and "open question q1 to B" in refusal
+
+
+def test_a_status_result_becomes_a_status_event() -> None:
+    """Phase 2 messaging D15: only the validated stage and progress are published."""
+    from harness_activity.events import AttemptEvents, MemorySink, emit_agent_status
+
+    sink = MemorySink()
+    events = AttemptEvents(sink, "wf", "task", 1, 1)
+    emit_agent_status(events, '{"stage": "working", "progress": 40, "note": "secret"}')
+    emit_agent_status(events, "not json")
+    assert [(e.type, e.payload) for e in sink.events] == [
+        ("status", {"stage": "working", "progress": 40, "source": "agent"})
+    ]

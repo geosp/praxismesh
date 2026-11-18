@@ -910,3 +910,45 @@ async def test_a_lost_waiting_turn_keeps_its_outputs_without_rerunning(
     assert h.runner.seen.calls == 0
     assert outcome.status == "waiting" and outcome.summary == "asked B"
     assert [a.path for a in outcome.outputs] == ["order-summary.md"]
+
+
+class ChecksFinish(ScriptedRunner):
+    """Calls the config's finish check from a worker thread, as a tool body does."""
+
+    async def run(self, config: HarnessConfig, *args: Any) -> RunResult:  # type: ignore[override]
+        assert config.finish_check is not None
+        self.blocking = await asyncio.to_thread(config.finish_check)
+        usage: Usage = args[4]
+        return RunResult("waiting", usage, summary="asked")
+
+
+async def test_the_finish_check_reaches_the_inbox_from_a_tool_thread(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """Phase 2 messaging R19: the Activity's check, called from a thread, sees the
+    task's open question."""
+    from common.persistence.messages import MessageRepository, Sender, idempotency_key
+
+    h = await harness(engine, tmp_path, done)
+    async with engine.begin() as conn:
+        request = (await conn.execute(
+            text("SELECT request_id FROM tasks WHERE task_id = :t"), {"t": h.task_id}
+        )).scalar_one()  # fmt: skip
+    other = f"task-act-{run_id()}"
+    await TaskRepository(engine).record_task(
+        TaskStart(task_id=other, request_id=request, profile="openai", template="local-default",
+                  instructions_ref=await h.blobs.put(b"x", retention="task")),
+        workflow_id=other, run_id="run-1", template_version=1, template_hash="x",
+    )  # fmt: skip
+    await AttemptRepository(engine).start(h.task_id, 1, 1, "worker")
+    asked = await MessageRepository(engine).ask(
+        Sender(h.task_id, 1, 1), other, "price?",
+        key=idempotency_key(h.task_id, 1, "ask_agent", {}),
+        wait=timedelta(minutes=5), max_wait=timedelta(minutes=10),
+    )  # fmt: skip
+    assert asked.ok
+    runner = ChecksFinish(done)
+    h.acts.runner = runner
+    outcome = await h.run(attempt=2)
+    assert outcome.status == "waiting"
+    assert runner.blocking == [f"open question {asked.correlation_id} to {other}"]
