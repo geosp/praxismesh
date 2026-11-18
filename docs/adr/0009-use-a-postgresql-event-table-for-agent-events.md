@@ -1,7 +1,7 @@
 ---
 id: ADR-0009
 title: Carry agent progress events in a PostgreSQL event table, behind an event-transport interface
-status: proposed
+status: accepted
 date: 2026-11-18
 issue: "#76"
 related:
@@ -24,7 +24,8 @@ Temporal Workflow Streams "where supported and stable enough", with a fallback b
 interface. Streams is a Public Preview API whose expiry and history behaviour was not documented
 well enough to adopt it untested, so a spike (issue #76) compared it with a PostgreSQL event
 table and NATS JetStream against one shared test suite; Streams and the table also ran two
-workloads (a recorded DSH turn and a synthetic multi-agent load), and NATS ran the suite only.
+workloads (a recorded DSH turn and a synthetic multi-agent load), and NATS ran the suite only, which includes
+the recorded turn (R7) but not the synthetic load.
 
 ## Considered options
 
@@ -72,7 +73,9 @@ justification under ADR-0007.
 What Phase 2 commits to (from the spike report):
 - Batch IDs name the attempt (`<workflow>:<attempt>:<n>`): a retried publisher that reuses batch
   IDs has its new events dropped as re-sends. Dedup holds within a re-send horizon (600 s in the
-  spike), not forever.
+  spike's load runner; the suite checks it at 60 s), not forever.
+- A publish from a superseded attempt is refused as ADR-0007 refuses other attempt writes
+  (`FenceRejected`, then `Superseded`), never dropped silently.
 - Readers use both expiry checks: the retained-base check before a read (`expiry_for`) and the
   offset-jump check during it.
 - Events live outside Temporal history, so Continue-As-New carries no event state; offsets stay
@@ -111,7 +114,9 @@ What Phase 2 must still decide:
 ### Confirmation
 
 Phase 2 is to port the spike's shared suite (`spikes/event-transport/tests/test_suite.py`) and
-load runner (`spikes/event-transport/load.py`, as of commit `bfa210b`; the spike folder may be
+load runner (`spikes/event-transport/load.py`) and the notify test
+(`spikes/event-transport/tests/test_table_notify.py`, a notification during a fetch is not lost),
+as of commit `bfa210b`; the spike folder may be
 deleted later) into its own tests and run them against its implementation behind the same
 interface. The suite does not exercise the fence or attempt-named batch IDs, so Phase 2 adds tests
 for both, and its implementation review checks the reader rule, the batch dedup, the batch-ID

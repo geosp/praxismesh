@@ -6,7 +6,7 @@ Shared instructions for every coding agent working in this repository: Claude Co
 
 **PraxisMesh** is an open-source, self-hosted platform for durable orchestration of autonomous AI agents on Temporal. It exposes an OpenAI-compatible API. Requests are triaged, planned as a task DAG, dispatched to harness workers, verified, and delivered (repository work arrives as a GitHub pull request). See [PROJECT_PLAN.md](PROJECT_PLAN.md) §1.
 
-**Status:** Phases 0 and 1 are closed; Phase 1 (harness-in-Activity, single agent; issue #44) passed independent review and verification. See `docs/reviews/phase-1/closure.md`. The DSH migration (issue #62, `docs/plans/2026-11-15-dsh-production-harness`) is closed: the `default` profile runs on DSH and `openai` keeps `openai_agents`. Phase 2 is next and has not started. The Pre-0 spike decided **go** (see `docs/spikes/harness-vllm.md`).
+**Status:** Phases 0 and 1 are closed; Phase 1 (harness-in-Activity, single agent; issue #44) passed independent review and verification. See `docs/reviews/phase-1/closure.md`. The DSH migration (issue #62, `docs/plans/2026-11-15-dsh-production-harness`) is closed: the `default` profile runs on DSH and `openai` keeps `openai_agents`. The event-transport spike (issue #76, `docs/plans/2026-11-17-event-transport-spike`) is closed: Phase 2 carries agent events in a PostgreSQL event table behind an event-transport interface (ADR-0009). Phase 2 is next and has not started. The Pre-0 spike decided **go** (see `docs/spikes/harness-vllm.md`).
 
 ## Read this first: context loading (plan §9.7)
 

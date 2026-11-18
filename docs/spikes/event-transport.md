@@ -19,7 +19,7 @@ so D2 selects Streams. NATS passed the correctness suite (its load runs were not
 **Owner decision (2026-11-18): the PostgreSQL table.** The measurements below favour it on
 everything D2 did not weigh: cost under load, limits, API maturity, code size and fencing (see
 [Weighing the outcome](#weighing-the-outcome)). This departs deliberately from §4.4's preference
-and is recorded in ADR-0009 (proposed) and the decision log. The Streams and NATS implementations
+and is recorded in ADR-0009 and the decision log. The Streams and NATS implementations
 were then deleted from the spike (D6); they remain in git history at `1bfac67`.
 
 ## Requirements per option
@@ -171,4 +171,4 @@ D2 selected Workflow Streams; the table also passed everything. What the owner w
 - **For Streams:** the plan's §4.4 preference, no new storage, and Temporal-native reads that
   follow roll-over.
 
-The owner chose the table; ADR-0009 (proposed) records it with these numbers.
+The owner chose the table; ADR-0009 records it with these numbers.
