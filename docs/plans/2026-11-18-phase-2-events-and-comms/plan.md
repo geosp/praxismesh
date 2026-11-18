@@ -1,145 +1,94 @@
 ---
-title: Phase 2 - real-time events and the comms MCP
+title: Phase 2 messaging - comms MCP, inbox and waiting tasks
 status: draft
 created: 2026-11-18
 updated: 2026-11-18
-design_review: { status: changes-requested, rounds: 1, last: 2026-11-18 }
+design_review: { status: changes-requested, rounds: 2, last: 2026-11-18 }
 approved: null
 adr_review: null
 ---
 
-# Phase 2 - real-time events and the comms MCP
+# Phase 2 messaging - comms MCP, inbox and waiting tasks
 
 ## Summary
 
-Agents become observable and can talk to each other. Each harness attempt publishes its events in
-batches to a PostgreSQL event table (ADR-0009), and `agentctl tail` follows a task live, resumes from
-an offset and reports pruned events (R1-R8). A stdio MCP server, `comms_mcp`, lets an agent message or
-ask another task of its own request; tasks join a request with `task submit --join` (R10, D5). Messages
-are durable rows; a dispatcher wakes the recipient's `TaskWorkflow` with a Signal (D6). A turn may end
-`waiting`: the Workflow then checks its inbox and sleeps until a message, a question deadline, its idle
-timeout or its wall-time budget, and continues as new while it waits (D7, D11). An agent that asks is
-told to wait, and `finish_task` refuses `done` while its questions are open (D8). Woken turns have their
-own budget, `max_wakes` (D14). Three phases: events, then messaging, then acceptance and the demo.
+The second half of roadmap Phase 2: agents talk to each other. A stdio MCP server, `comms_mcp`, lets
+an agent message or ask another task of its own request; tasks join a request with `task submit
+--join` (R10, D5). Messages are durable rows in PostgreSQL; a dispatcher turns wake rows into `inbox`
+Signals (D6). A turn may end `waiting`: the Workflow claims its inbox, and sleeps only if nothing came,
+until a Signal, a question deadline, its idle timeout or its wall-time budget (D7). An asker is told to
+wait, and `finish_task` refuses to finish while its questions are open (R19, D8). Questions that would
+wait in a cycle are refused (R23). When a task ends, by any path including cancellation, its questions
+close, its waiters wake, and messages it never took are marked undelivered (R24, R30). Woken turns
+have their own budget, `max_wakes`, and long waits continue as new (D11, D14). Builds on the events
+plan (`docs/plans/2026-11-18-phase-2-agent-events`), which must merge first.
 
 ```text
-run_harness_turn --batches--> agent_events <--follow-- agentctl tail
-   |  comms_mcp --send/ask--> agent_messages + message_wakes --> dispatcher --Signal--> TaskWorkflow
-   |                                                                       (claim_inbox -> next turn)
+comms_mcp --send/ask (fenced)--> agent_messages + message_wakes --NOTIFY--> dispatcher --Signal--> TaskWorkflow
+                                        ^                                                    | claim_inbox (IDs only)
+                                        +-------------- run_harness_turn reads bodies <------+
 ```
 
-Risks: the fence lock on every event batch (measured in phase 01); a model that asks but never waits
-(D8's refusal). Rollout drains running tasks before workers switch, and rollback drains tasks started on
-the new code, because the old code cannot replay them (Rollout & rollback).
+Risks: a real model that regenerates a send after a crash delivers it twice (Assumptions); waiting
+tasks must be drained before workers switch, and a new database role needs a superuser step (Rollout).
 
 ## Why
 
-Roadmap Phase 2 (`docs/roadmap/phases/phase-2.md`) is next. Today events go to a no-op sink
-(`harness_activity/events.py`), only the DSH runner emits them, and nothing stores or shows them. A
-`TaskWorkflow` ends once its turns finish, so an agent cannot receive or wait for a message. The
-event-transport spike (issue #76) chose the table and left the fence's lock order and cost, scoping,
-keying and token text to this phase (ADR-0009). The owner settled seven behaviour questions on
-2026-11-18 (D3's token rule, D7, D8, D9, D14 and the budget and refusal rules in D7 and D8).
+Roadmap Phase 2 (`docs/roadmap/phases/phase-2.md`) asks for the comms MCP, a durable inbox, correlated
+replies, idle wake-up, timeouts and cycle protection. Today a `TaskWorkflow` ends once its turns
+finish, so an agent cannot receive or wait for a message, and every `task submit` starts a new request.
+The owner decided on 2026-11-18 that an idle agent waits between turns, that asking ends the asker's
+turn, that messaging stays inside a request, that woken turns have their own budget, that a waiting
+task out of wall time ends by its open questions, and that `finish_task` refuses to finish with open
+questions. Two design-review rounds shaped this revision (`reviews.md`).
 
 ## What changes
 
-- Migrations 0005 (event tables, phase 01) and 0006 (message tables and the `praxis_comms` grants, phase 02).
-- `common/events/`: the spike's interface, reader rule, in-memory reference and table transport (D1).
-- One per-attempt event publisher, owned by `run_harness_turn` and passed to both runners (D2, D3).
-- `agentctl`: a wrapper for the existing CLI, with `tail`, `events prune` and `task submit --join` (D4, D5).
+- Migration 0006: `agent_messages`, `message_wakes`, table grants for the `praxis_comms` role (D6, D13).
+- `infra/db/roles.sh`: creates `praxis_comms` and its `CONNECT` and `USAGE` grants; safe to rerun (D13).
 - `comms_mcp/` with `post_status`, `send_to_agent`, `ask_agent`, `get_task_context` (D8, D9, D13, D15).
-- `finish_task` gains `waiting`; `TaskWorkflow` waits, claims, wakes and continues as new (D7, D11, D12).
-- A dispatcher in the orchestrator worker (D6); profile fields `idle_timeout`, `max_ask_wait`, `max_wakes`.
-- The fake model scripts several agents (D16); new template versions grant `comms`; docs.
+- `finish_task` gains `waiting`; `TaskWorkflow` claims, waits, wakes and continues as new (D7, D11, D12).
+- The dispatcher in the orchestrator worker (D6); `task submit --join` (D5).
+- Profile fields `idle_timeout`, `max_ask_wait`, `max_wakes`; template field `max_wakes_cap` (D14).
+- The fake model scripts several agents (D16); new template versions grant `comms`; docs and demo.
 
 ### Non-goals
 
-- Model text in events, the gateway SSE endpoint (Phase 4), the UI (Phase 8), tenants (Phase 4).
-- Scheduled retention of events and messages, and blob garbage collection (Phase 3A, issue #74).
-- A planner that creates multi-agent tasks (Phase 3A); here tasks join a request through the CLI.
+- Event storage and `agentctl tail` (the events plan).
+- Tenants (Phase 4); scheduled retention of messages (Phase 3A); a planner that creates multi-agent tasks (Phase 3A).
 
 ## Terms
 
 - **Owner**: the project owner, who makes the decisions marked "owner decision".
+- **Registry**: the YAML files under `registry/` that define profiles, templates and MCP servers.
+- **Profile**: a registry entry a task is submitted with; it sets the task's limits and allowed templates.
+- **Template / template version**: a registry entry for a worker type (runner, model, MCP servers, caps); a worker serves one version of each template and refuses turns for another.
 - **Request**: one client submission (`request_id`); every task it starts shares it.
 - **Task / turn / attempt**: a task is one `TaskWorkflow`; it runs turns (Activity `run_harness_turn`); a turn runs as attempts (Temporal tries).
-- **Runner**: the harness that runs a turn, `DshRunner` (DeepSeek Harness, the default) or `openai_agents`.
-- **Checkpoint**: a row saving a turn's session position and workspace; an attempt restores the newest one, and a finished turn's checkpoint holds its finish report.
-- **`before_model_call`**: the hook every runner calls before each model request.
-- **Resolved task**: the task's template, limits and queue, fixed by `resolve_capabilities` when the task starts.
-- **Workflow ID**: a task's `TaskWorkflow` ID; it survives Continue-As-New.
-- **Offset**: an event's position in its workflow's log, from 1, with no gaps.
-- **Retained base**: the lowest offset still stored for a workflow.
-- **Batch / batch ID**: the events one publish stores together, named `<workflow>:<attempt_id>:<n>`.
-- **Reader rule**: a reader reports `Expired` when its offset is below the retained base, and when an offset jumps during a read.
-- **Fence**: ADR-0007's rule that an attempt's write is valid only while no newer turn or attempt of its task exists, checked under the per-task advisory lock.
-- **Superseded**: the exception that ends an attempt the fence refused.
-- **Message / question / reply**: an inbox row from one task to another; a question expects a reply by its deadline; a reply names the question it answers.
-- **Open question**: a question that is neither answered, expired nor cancelled.
+- **Runner**: the harness that runs a turn: `DshRunner` (DeepSeek Harness, the default) or `openai_agents`.
+- **Checkpoint**: a row saving a turn's session position and workspace; a finished turn's checkpoint holds its finish report.
+- **Resolved task**: the task's template, limits and queue, fixed by Activity `resolve_capabilities` at start.
+- **Fence**: ADR-0007's rule that an attempt's write is valid only while no newer turn or attempt of its task exists.
+- **Message / question / reply**: an inbox row from one task to another; a question expects a reply by its deadline and has a correlation ID; a reply names that ID.
+- **Open question**: a question not answered, expired or cancelled, whose deadline has not passed.
 - **Waiting**: a task between turns whose last turn ended with `finish_task(status="waiting")`.
-- **Wake**: a Signal telling a waiting task's Workflow to check its inbox; **woken turn**: a turn that a claim started.
-- **Claim**: Activity `claim_inbox`, which assigns a task's undelivered inbox rows to its next turn.
-- **Dispatcher**: the loop in the orchestrator worker that turns wake rows into Signals.
+- **Claim**: Activity `claim_inbox`, which assigns a task's pending inbox rows to its next turn and returns their IDs.
+- **Woken turn**: a turn started because a claim returned rows.
+- **Dispatcher**: the loop in the orchestrator worker that turns wake rows into `inbox` Signals.
+- **`cancel_for`**: the step, run when a task ends, that closes its questions and messages and wakes affected waiters.
 - **`TaskState`**: the compact state a waiting Workflow carries into its next run.
 - **Design §4.4**: the roadmap's design section on agent communications (`docs/roadmap/design-decisions.md`).
 
 ## Requirements
-
-### R1 · Each event is stored once, at a gap-free offset
-
-An accepted event is stored exactly once per workflow, and its workflow's offsets have no gaps.
-- **Given** a batch publish retried after a lost reply, **when** the retry lands, **then** the batch is stored once.
-- **Given** two attempts of one task publishing in turn, **when** both finish, **then** offsets run 1..N with no gap.
-
-### R2 · A reader resumes without gaps or repeats
-
-A reader that resumes after offset N gets every retained event above N, in order, each once.
-- **Given** `agentctl tail` stopped after offset 20, **when** it reconnects with `--after 20`, **then** it prints 21 onwards and nothing earlier.
-
-### R3 · Pruned events are reported, never skipped
-
-A reader asking for events below the retained base is told so before it gets any later event.
-- **Given** events pruned below 15, **when** a reader asks after 5, **then** it sees `Expired(15)` and then 15 onwards.
-
-### R4 · A superseded attempt's batch is refused
-
-A batch from an attempt that a newer attempt has replaced is never stored.
-- **Given** attempt 2 of a turn has started, **when** attempt 1 publishes, **then** nothing is stored.
-
-### R5 · A refused publish ends the attempt
-
-An attempt whose publish was refused ends `Superseded` at its next model call or when it finishes, whichever comes first, and writes nothing more.
-- **Given** a refused publish during a 60 s tool call, **when** the call returns and the turn finishes, **then** the attempt ends `Superseded` and stores no checkpoint.
-
-### R6 · Events never carry model text
-
-Event payloads hold only counts, names, IDs and statuses; a token event carries token counts.
-- **Given** a turn with three model responses, **when** it ends, **then** it stored three token events whose payloads hold counts only.
-
-### R7 · Events are batched
-
-An attempt publishes only when 64 events are buffered, 200 ms after its oldest unpublished event, or when it ends.
-- **Given** 640 events emitted at once, **when** the turn ends, **then** they were stored in 10 batches.
-- **Given** 3 events within 50 ms and then none, **when** 200 ms pass, **then** they were stored in one batch.
-
-### R8 · An ending attempt flushes its events
-
-Every event an attempt emitted before it ended is stored, unless the attempt was superseded (R4).
-- **Given** a turn that ends 10 ms after its last tool event, **when** it returns, **then** that event is stored.
-
-### R9 · Each attempt opens with a reset event
-
-An attempt's first event is a `reset` naming its attempt and the checkpoint it restored from.
-- **Given** a turn whose first attempt was lost, **when** attempt 2 starts, **then** `tail` shows its `reset` before its other events.
 
 ### R10 · Messages stay inside their request
 
 A task may message only tasks of its own request.
 - **Given** tasks in two requests, **when** one sends to the other, **then** the tool returns an error and nothing is delivered.
 
-### R11 · Refused messages are recorded
+### R11 · Rule refusals are recorded
 
-Every refused send or ask is stored as a `rejected` row with its reason.
+A send or ask refused by the request, recipient, cycle or deadline rules is stored as a `rejected` row with its reason.
 - **Given** a cross-request send, **when** it is refused, **then** a `rejected` row names the sender, the recipient and the reason.
 
 ### R12 · An accepted message is stored before the sender is told
@@ -147,11 +96,11 @@ Every refused send or ask is stored as a `rejected` row with its reason.
 `send_to_agent` and `ask_agent` return success only after the message row has committed.
 - **Given** the database fails during a send, **when** the tool returns, **then** it reports an error.
 
-### R13 · A message is delivered exactly once
+### R13 · A message reaches at most one turn
 
-An accepted message reaches exactly one turn of its recipient, even when sender or recipient attempts are retried.
-- **Given** a send and then a worker killed before the sender's turn ends, **when** the turn reruns and repeats the send, **then** the recipient gets one message.
-- **Given** a recipient attempt lost after its claim, **when** the turn reruns, **then** it gets the same messages again and no later turn gets them.
+An accepted message is delivered to at most one turn of its recipient, and a repeated identical send stores nothing.
+- **Given** a send, then the worker killed and the turn rerun with the same send, **when** the recipient claims, **then** it gets one message.
+- **Given** a recipient attempt lost after its claim, **when** the turn reruns, **then** it reads the same messages and no later turn gets them.
 
 ### R14 · A message wakes a waiting task
 
@@ -160,7 +109,7 @@ A message to a waiting task starts that task's next turn with the message in its
 
 ### R15 · A wake is never lost
 
-A message that arrives while its recipient is running, or before a Continue-As-New, is claimed before the recipient next sleeps.
+A message that arrives while its recipient runs, or before a Continue-As-New, is claimed before the recipient next sleeps.
 - **Given** a reply that lands while the asker's turn runs, **when** that turn ends `waiting`, **then** the next turn starts at once with the reply.
 
 ### R16 · A reply wakes the asker
@@ -175,43 +124,58 @@ A question with no reply by its deadline expires, and the asker's next turn is t
 
 ### R18 · A late reply is refused
 
-A reply to an expired or cancelled question, or after its deadline, is refused with an error to the replier.
+A reply to a question that is not open is refused with an error to the replier.
 - **Given** a question past its deadline, **when** the recipient replies, **then** the tool returns "question expired" and nothing is delivered.
 
 ### R19 · A task with open questions cannot finish
 
-`finish_task` with `done` or `needs_input` returns an error while the task has open questions (owner decision).
-- **Given** A has an open question, **when** A calls `finish_task("done")`, **then** the tool returns an error naming the question.
+`finish_task` with `done` or `needs_input` returns an error to the model while the task has open questions, and the run continues (owner decision).
+- **Given** A has an open question, **when** A calls `finish_task("done")` on either runner, **then** the tool returns an error naming the question and the model gets another step.
 
 ### R20 · An idle task completes after its idle timeout
 
 A waiting task with no open question and no message completes `succeeded` after its idle timeout.
 - **Given** an idle timeout of 60 s, **when** no message arrives, **then** the task completes `succeeded` within 60-65 s.
 
-### R21 · A waiting task out of wall time ends by its open questions
+### R21 · Out of wall time with no open question succeeds
 
-A waiting task whose wall-time budget runs out completes `succeeded` with no open question, and `failed` with one (owner decision).
+A waiting task whose wall-time budget runs out with no open question completes `succeeded` (owner decision).
+- **Given** a waiting task with no open question, **when** its wall time runs out, **then** it completes `succeeded`.
+
+### R31 · Out of wall time with an open question fails
+
+A waiting task whose wall-time budget runs out with an open question completes `failed` (owner decision).
 - **Given** a waiting task with an open question, **when** its wall time runs out, **then** it completes `failed` with "wall-time budget exhausted".
 
 ### R22 · Woken turns have their own budget
 
 Woken turns count against `max_wakes` and never against `max_turns` (owner decision).
-- **Given** `max_turns` 6 and `max_wakes` 50, **when** a task is woken 20 times, **then** it is not stopped by a turn budget.
+- **Given** `max_turns` 6 and `max_wakes` 50, **when** a task is woken 20 times, **then** no turn budget stops it.
 
 ### R23 · Questions never wait in a cycle
 
 A question whose recipient is waiting, directly or through others, on a question from the asker is refused.
 - **Given** A waits on a question to B, **when** B asks A, **then** B's ask is refused as a cycle.
 
-### R24 · A task's end reaches the tasks waiting on it
+### R24 · A task's end wakes the tasks waiting on it
 
-When a task ends, its open questions are cancelled, questions to it are cancelled, and every task waiting on one of them is woken.
-- **Given** A waits on a question to B, **when** B is cancelled, **then** A runs a turn saying B ended without replying.
+When a task ends by any path, including cancellation while it waits, every question to or from it closes and every task waiting on one of them is woken.
+- **Given** A waits on a question to B and B is waiting, **when** B is cancelled, **then** A runs a turn saying B ended without replying.
 
 ### R25 · Messages to an ended task are refused
 
 A send or ask to a task that has completed or failed is refused.
 - **Given** B has completed, **when** A asks B, **then** the tool returns "recipient ended" and A is not left waiting.
+
+### R30 · A message never taken is marked undelivered
+
+When a task ends, its pending and claimed-but-unread messages are marked `undelivered`, and `get_task_context` shows them to their senders.
+- **Given** A sends to B while B runs, **when** B's turn ends `done`, **then** the message is `undelivered` and A's `get_task_context` lists it.
+
+### R32 · A waiting task's result carries its outputs
+
+A task that ends while waiting returns the outputs of its last `waiting` turn.
+- **Given** a turn that writes an output and ends `waiting`, **when** the idle timeout ends the task, **then** its result lists that output.
 
 ### R26 · comms_mcp acts only as its own task
 
@@ -220,13 +184,18 @@ A send or ask to a task that has completed or failed is refused.
 
 ### R27 · comms_mcp writes are fenced
 
-A send, ask or reply from a superseded attempt is refused.
-- **Given** a stale attempt's `comms_mcp`, **when** it sends, **then** the send is refused and nothing is stored.
+A send, ask or reply from a superseded attempt is refused, and nothing is stored.
+- **Given** a stale attempt's `comms_mcp`, **when** it sends, **then** the tool returns an error and no row is written.
 
-### R28 · Temporal history stays bounded
+### R28 · Message bodies stay out of Temporal history
 
-Events and message bodies never enter Temporal history, and no run of a waiting task exceeds 2,000 history events.
-- **Given** a task woken 100 times (test registry, `max_wakes` 200), **when** its runs are inspected, **then** none exceeds 2,000 events.
+No message body enters Temporal history; claims and Signals carry only IDs and counts.
+- **Given** a woken turn with three 16 KB messages, **when** its run's history is inspected, **then** no event holds a body.
+
+### R33 · Waiting runs stay bounded
+
+No run of a waiting task exceeds 2,000 history events.
+- **Given** a task woken 100 times (test profile, `max_wakes` 200), **when** its runs are inspected, **then** none exceeds 2,000 events.
 
 ### R29 · In-flight Phase 1 tasks still replay
 
@@ -235,112 +204,85 @@ The changed `TaskWorkflow` replays histories recorded by the Phase 1 code withou
 
 ## Decisions
 
-### D1 · Port the spike's table; offsets per workflow ID
+### D5 · Joining a request from the CLI
 
-Move the interface, reader rule, in-memory reference and table transport into `common/events/`, on
-the app engine, with tables from migration 0005. Offsets are per workflow ID, which Continue-As-New
-keeps; `seq` (an event's number within its attempt) stays per attempt. A publish also deletes that
-workflow's batch rows older than 600 s. Rejected: per-task offsets (not what observers address);
-`seq` as offset (it restarts each attempt). Details: notes.md#d1
-
-### D2 · One publisher per attempt; fence with the task lock first
-
-`run_harness_turn` creates the attempt's `AttemptEvents` over a `BatchingPublisher` and passes it to
-the runner (`HarnessRunner.run` gains `events`). The publisher flushes per R7. A publish takes the task
-lock, checks for a newer attempt, then locks the counter row, the same order as every fenced write. A
-refusal is recorded; `before_model_call` and the attempt's final flush raise `Superseded` (R5).
-Rejected: the runner owning events (two `seq` counters per attempt); unfenced events (ADR-0007).
-Details: notes.md#d2
-
-### D3 · Events for both runners; token counts only
-
-The Activity emits `reset` at attempt start and `status` at turn end. `openai_agents` emits tool events
-and one `token` event per response through its run hooks; DSH already does both. Token events carry
-counts (owner decision). Rejected: model text in a blob per response (waits for Phase 4/8).
-
-### D4 · Manual pruning in Phase 2
-
-`agentctl events prune --task T (--below N | --older-than D)` deletes events and advances the retained
-base, so tests and the demo can show expiry. Rejected: a retention job now (Phase 3A owns retention).
-
-### D5 · `agentctl` wraps the existing CLI
-
-`./agentctl` runs `orchestrator.cli` with `infra/.env`. `tail TASK [--after N] [--no-follow]` prints
-one line per event and each `Expired`, and stops following when the task ends. `task submit --join REQ`
-puts the new task in an existing request; `--request` keeps its meaning (a JSON request file).
-Rejected: a console script (the project is not a package); letting clients name a new request ID.
+`task submit --join REQ` puts the new task in an existing request; the CLI checks a task with that
+request exists before submitting. `--request` keeps its meaning (a JSON request file). Rejected:
+letting clients name a new request ID (scope rests on requests, R10).
 
 ### D6 · Durable inbox, wake rows and a dispatcher
 
-A message and its wake row commit in one transaction, body in a `text` column (at most 16 KB). The
-dispatcher `LISTEN`s, polls every 1 s, takes rows `FOR UPDATE SKIP LOCKED`, Signals `inbox`, and deletes
-a row once the Signal is accepted. The Signal is only a hint (D7). Rejected: bodies in blobs (S3 access
-for `comms_mcp`, orphan blobs); Signals from `comms_mcp` (a Temporal client in a worker subprocess,
-against design §4.4); a long-polling Activity per waiting task (a worker slot each). Details: notes.md#d6
+A message, its wake row and a `NOTIFY message_wakes` commit in one transaction; the body is a `text`
+column (at most 16 KB). The dispatcher `LISTEN`s, polls every 1 s, takes rows `FOR UPDATE SKIP LOCKED`
+and Signals `inbox`. It deletes a row once the Signal is accepted, or when the Workflow is closed or
+missing (logged); other errors keep the row for the next poll. Rejected: bodies in blobs (S3 access
+for `comms_mcp`, orphans); Signals from `comms_mcp` (a Temporal client in a worker subprocess, against
+design §4.4); one long-polling Activity per waiting task (a worker slot each). Details: notes.md#d6
 
-### D7 · `waiting` turns, the claim and the wait loop
+### D7 · Claim before sleeping
 
-On a `waiting` outcome the Workflow runs `claim_inbox` first. A non-empty claim starts a woken turn
-at once; an empty one returns the next deadline among the task's open questions, and the Workflow
-waits for an `inbox` Signal, that deadline, the idle timeout or the wall-time deadline, then claims
-again. A Signal sets a `woken` flag at any time; `TaskState` carries it. Claims are keyed by task and
-turn, use the Workflow's time for expiry, and the woken turn's input lists the claimed rows. On idle
-timeout or wall time the task ends per R20 and R21. Rejected: keeping finished tasks open; a fresh
-task per message (owner). Details: notes.md#d7
+After a `waiting` turn the Workflow runs `claim_inbox`, which returns claimed row IDs, a count and the
+next deadline among the task's open questions, never bodies. A count above zero starts a woken turn,
+whose Activity reads the bodies by task and turn. Otherwise the Workflow sleeps until an `inbox`
+Signal, that deadline, the idle timeout or the wall-time deadline, then claims again. A `waiting` turn
+writes a finish record and its outputs; the Workflow keeps the latest outputs for its result (R32).
+Rejected: keeping finished tasks open; a fresh task per message (owner). Details: notes.md#d7
 
-### D8 · Asking: ask, then wait
+### D8 · Ask, then wait; `finish_task` checks open questions
 
-`ask_agent(task, text, wait?)` stores a question with a deadline (`wait`, default PT5M, at most
-`max_ask_wait`) and returns its correlation ID and an instruction to call `finish_task("waiting")`.
-`finish_task("done" | "needs_input")` is refused while questions are open (R19). A reply is
-`send_to_agent(task, text, reply_to=ID)`. Rejected: blocking in the tool call (owner: DSH calls time
-out at 150 s; a crash loses the wait); turning `done` into `waiting` silently (owner).
+`ask_agent(task, text, deadline_s?)` stores a question (default 300 s, at most `max_ask_wait`) and
+returns its correlation ID with an instruction to call `finish_task("waiting")`. The Activity gives
+`finish_task` an open-question check; a refusal leaves the run going. `openai_agents` stops on an
+accepted `finish_task` only (a `tool_use_behavior` function); DSH already does. Rejected: blocking in
+the tool call (owner: DSH calls time out at 150 s); turning `done` into `waiting` silently (owner).
 
 ### D9 · Request scope, identity from the worker
 
-A task may message only tasks with its `request_id` (owner decision). `comms_mcp` reads `PRAXIS_TASK_ID`,
-`PRAXIS_TURN` and `PRAXIS_ATTEMPT`, set by the worker. Rejected: profile allow lists (new registry
-fields now); audit only (does not reject).
+A task may message only tasks with its `request_id` (owner decision). `comms_mcp` reads
+`PRAXIS_TASK_ID`, `PRAXIS_TURN` and `PRAXIS_ATTEMPT`, which the worker sets when it starts the MCP
+servers for each attempt (both runners); the attempt is Temporal's attempt number, the fence key.
+Rejected: profile allow lists (new registry fields now); audit only (does not reject).
 
 ### D10 · Message writes in one lock order
 
-Every message write takes, in order: the sender's task lock (fence), then the request lock, a two-key
-advisory lock in its own namespace. Recipient status, the cycle check and `cancel_for` run under the
-request lock. Rejected: locking recipient tasks (two task locks in either order can deadlock).
+Every message write takes the sender's task lock and fence check, then a request lock (a two-key
+advisory lock in its own namespace). Recipient status, the cycle walk and `cancel_for` run under the
+request lock. Rejected: locking recipient tasks (two task locks taken in either order can deadlock).
 
 ### D11 · Continue-As-New while waiting
 
-Before sleeping, the Workflow continues as new when Temporal suggests it or after 40 woken turns in
-the run, carrying `TaskState` (resolved task, counters, usage, deadlines, `woken`). A continued run
-skips `resolve_capabilities` and `record_task` and claims first. Rejected: never continuing (R28 fails
-at ~100 wakes). Details: notes.md#d7
+Before sleeping, the Workflow continues as new when Temporal suggests it or its run's history passes
+1,000 events, carrying `TaskState` (resolved task, counters, usage, deadline, latest outputs) as an
+optional second `run` argument. A continued run skips `resolve_capabilities` and `record_task` and
+claims first. Rejected: never continuing (R33 fails at ~100 wakes). Details: notes.md#d7
 
 ### D12 · Patch the Workflow
 
-New Workflow behaviour sits behind `workflow.patched("phase2-wait")`; the existing `TaskWorkflow`
-replay test and its Phase 1 fixture must keep passing (R29). Rejected: a new Workflow type (callers
-and the CLI name `TaskWorkflow`).
+New Workflow behaviour sits behind `workflow.patched("phase2-wait")`, and the existing replay test
+keeps passing (R29). Rollout drains tasks, but a task the drain misses must still replay; the patch
+makes that safe. Rejected: a new Workflow type (callers and the CLI name `TaskWorkflow`).
 
-### D13 · `comms_mcp` as a stdio server like `sample_mcp`
+### D13 · `comms_mcp` as a scoped stdio server
 
-`comms_mcp/` is granted through `registry/mcp/comms.yaml`; templates `local-dsh` v2 and `local-default`
-v2 grant it. It connects with `PRAXIS_COMMS_DB_URL`, a `praxis_comms` role allowed only the message
-tables and reads of `tasks` and `task_attempts`. The idempotency key is the sender task, turn, tool and
-canonical arguments, so a retried attempt repeating a send stores nothing. Rejected: built-in tools in
-each runner (two copies); the app role (full write access). Details: notes.md#d6
+`comms_mcp/` is granted through `registry/mcp/comms.yaml`, like `sample_mcp` (the example shop server).
+It connects as `praxis_comms`, which may write only the message tables and read `tasks` and
+`task_attempts`. Its idempotency key is the sender task, turn, tool and canonical arguments.
+Rejected: built-in tools in each runner (two copies); the app role (full write access).
 
-### D14 · A wake budget
+### D14 · A wake budget and its path
 
-Profiles gain `max_wakes` (default 50, capped by the template's `max_wakes_cap`); woken turns count
-against it, not `max_turns` (owner decision). Tokens and wall time cover all turns. Rejected: woken
-turns as ordinary turns with raised caps (working and woken turns would compete for one budget).
+Profiles gain `idle_timeout`, `max_ask_wait` and `max_wakes`, with defaults; templates gain
+`max_wakes_cap`. `resolve_capabilities` puts them in the resolved task; the Activity passes
+`max_ask_wait` to `comms_mcp`. Woken turns count against `max_wakes`, not `max_turns` (owner).
+Rejected: woken turns as ordinary turns with raised caps (one budget for two kinds of turn).
 
 ### D15 · Status and context tools
 
-`post_status(stage, progress?)` takes a fixed stage name and a 0-100 percentage and returns them; the
-Activity's tool-call hook publishes them as a `status` event, so events keep one producer (D2).
-`get_task_context()` returns the request's tasks: IDs, profiles and statuses. Rejected: free-text
-status (model text in events, R6); `comms_mcp` publishing events (a second producer).
+`post_status(stage, progress?)` takes a stage from a fixed list (`planning`, `working`, `waiting`,
+`reviewing`, `done`) and a 0-100 percentage; both runners' tool-event paths publish it as a `status`
+event through the attempt's publisher. `get_task_context()` returns the request's tasks (IDs,
+profiles, statuses) and the caller's undelivered messages. Rejected: free-text status (model text in
+events); `comms_mcp` publishing events (a second producer per attempt).
 
 ### D16 · A multi-agent fake model
 
@@ -348,28 +290,35 @@ The fake model picks a script by a `[script:NAME]` marker in the task instructio
 `${result.N.field}` to reuse a field of an earlier tool result, such as a correlation ID. Rejected:
 one fake endpoint per agent (two templates for one test).
 
+### D17 · Ending a task closes its messages
+
+`complete_task` marks the task ended and runs `cancel_for` in one transaction under the request lock:
+questions to and from it are cancelled, its pending and claimed-but-unread messages become
+`undelivered`, and askers waiting on it get wake rows. The Workflow runs `complete_task` on every
+ending, including a cancellation caught during a wait. Rejected: leaving rows pending (senders never learn).
+
 ## Assumptions
 
 - One tenant; scoping is by request (D9). Tenant columns come with the Phase 4 gateway.
-- Defaults: `idle_timeout` PT10M, `max_ask_wait` PT10M, question deadline PT5M, `max_wakes` 50.
-- Each publish's task lock adds under 20 ms at the spike's load; phase 01 task 2.3 measures it, and the risk below names the limit that changes the plan.
-- Two identical sends in one turn are one message (D13's key).
+- Defaults: `idle_timeout` PT10M, `max_ask_wait` PT10M, `max_wakes` 50.
+- A model that regenerates a send after a crash writes different text, so the repeat is a new message; only identical repeats are deduplicated (R13).
+- A Workflow terminated (not cancelled) never runs `complete_task`; its task stays `running`, and sends to it are accepted until their deadlines.
 
 ## Risks
 
-- The fence lock slows publishing → phase 01 task 2.3 measures it; above 250 ms p95 the plan returns to design review to change R7's batching.
 - The dispatcher is down → wake rows wait for it; deadlines and idle timeouts still fire as Workflow timers.
-- A model ignores the ask-then-wait instruction → R19 refuses `done`; deadlines bound the wait.
+- A model ignores the ask-then-wait instruction → R19 keeps it from finishing; deadlines bound the wait.
 - Many waiting tasks → each holds a Workflow but no worker slot; Continue-As-New bounds history.
 
 ## Rollout & rollback
 
-Migrations 0005 and 0006 are additive. Order: stop new submissions and let running tasks finish;
-migrate; deploy the orchestrator worker (it decodes `waiting` and runs the patched Workflow); deploy
-harness workers with the v2 templates; then the CLI. Draining first matters because a worker serves
-one template version and refuses others (`registry/loader.py`). Rollback: drain every task started
-on the new code (the old code cannot replay their patched histories or `TaskState` inputs), delete
-leftover `message_wakes` rows, then redeploy the old workers. The new tables stay, unused.
+Prerequisite: the events plan is deployed. Order: stop new submissions; let running tasks finish, or
+cancel waiting ones with `temporal workflow cancel`; run `infra/db/roles.sh` as the database superuser
+(creates `praxis_comms`); migrate (0006 grants it the message tables); deploy the orchestrator worker,
+which accepts `waiting`; deploy harness workers with the v2 templates; then the CLI. Draining matters
+because a worker serves one template version (Terms). Rollback: drain tasks started on the new code,
+because the old code cannot replay their histories; delete leftover `message_wakes` rows; redeploy the
+old workers. The tables and role stay, unused.
 
 ## Open questions
 
@@ -377,22 +326,22 @@ leftover `message_wakes` rows, then redeploy the old workers. The new tables sta
 
 ## Impact
 
-- Packages / directories: `common/events/` (new), `common/persistence/`, `common/schemas/`, `harness_activity/`, `orchestrator/`, `workers/`, `comms_mcp/` (new), `registry/`, `tests/support/fake_model/`, `infra/`, `agentctl` (new), `tests/`, `docs/`.
-- Data: migration 0005 (`event_logs`, `agent_events`, `event_batches`); 0006 (`agent_messages`, `message_wakes`, `praxis_comms` grants).
-- Jobs / APIs: `TaskWorkflow` (patched), `run_harness_turn`, `HarnessRunner.run` (gains `events`), Activity `claim_inbox`, Signal `inbox`, the dispatcher, `finish_task` status `waiting`, profile and template fields.
+- Packages / directories: `comms_mcp/` (new), `common/persistence/`, `common/schemas/`, `harness_activity/`, `orchestrator/`, `workers/`, `registry/`, `tests/support/fake_model/`, `infra/db/`, `infra/`, `tests/`, `docs/`.
+- Data: migration 0006 (`agent_messages`, `message_wakes`, grants); role `praxis_comms`.
+- Jobs / APIs: `TaskWorkflow` (patched), `run_harness_turn`, `complete_task`, Activity `claim_inbox`, Signal `inbox`, the dispatcher, `finish_task` status `waiting`, profile and template fields, `task submit --join`.
 
 ## Links
 
-- ADR-0009 - events in a PostgreSQL table behind an event-transport interface; lists Phase 2's commitments and open items.
+- `docs/plans/2026-11-18-phase-2-agent-events` - the events half: the event table, publisher and `agentctl tail`.
 - ADR-0007 - every attempt write path takes the per-task fence.
-- `docs/spikes/event-transport.md` - the spike's measurements, reader rule and table mechanics.
-- Issue #79 - this phase; issue #74 - blob GC (Phase 3A).
+- ADR-0009 - events in a PostgreSQL table; message transport stays PostgreSQL per design §4.4.
+- Issue #79 - Phase 2.
 
 ## Phases
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 02 | Inbox, comms MCP and waiting tasks | draft | 0/12 |
-| 03 | Acceptance and demo | draft | 0/8 |
+| 02 | Inbox, comms MCP and waiting tasks | draft | 0/15 |
+| 03 | Acceptance and demo | draft | 0/7 |
 
 ## Decision log
