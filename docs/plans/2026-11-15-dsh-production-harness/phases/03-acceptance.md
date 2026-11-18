@@ -1,13 +1,21 @@
 ---
 phase: 3
 title: Acceptance and default switch
-status: in-progress
+status: done
 branch: feat/62-dsh-acceptance
 base: 285dd44034aef6c2bd4e40d6ae14811e546b7048
 delivers: [R4, R19, R20]
 design_review: { status: passed, rounds: 4, last: 2026-11-16 }
 impl_review: { status: passed, rounds: 2, last: 2026-11-17 }
 approved: 2026-11-15
+verification: { status: passed, last: 2026-11-17 }
+demo: { status: passed, last: 2026-11-17 }
+evidence:
+  code_sha: d55f3add6dcb9e2db2d4bf3047f3bb78be0cfdf7
+  docs_sha: 06dd64737ee280d33574422982a2dcd37504ea31
+  review: docs/plans/2026-11-15-dsh-production-harness/reviews.md
+  verification: docs/reviews/general-dsh-production-harness/verification-phase-03.md
+  demo: docs/demos/general-dsh-production-harness-03.md
 ---
 
 # Phase 03 · Acceptance and default switch
