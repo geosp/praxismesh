@@ -13,8 +13,9 @@ from common.schemas import InboxClaim, MessageEnvelope
 def envelope(**kw: object) -> MessageEnvelope:
     fields: dict[str, object] = {
         "message_id": "m1", "request_id": "req", "sender_task": "task-a",
-        "recipient_task": "task-b", "kind": "ask", "correlation_id": "m1", "status": "pending", "body": "price?",
-        "idempotency_key": "k", "created_at": datetime.now(UTC),
+        "recipient_task": "task-b", "kind": "ask", "correlation_id": "m1",
+        "status": "pending", "body": "price?", "idempotency_key": "k",
+        "created_at": datetime.now(UTC),
     } | kw  # fmt: skip
     return MessageEnvelope.model_validate(fields)
 

@@ -50,6 +50,18 @@ statuses only; never model or tool text):
 | `tool_result` | `tool`, `call`, `status` (`refused` for a tool the template does not grant; its name is capped at 64 characters) | both runners |
 | `status` | `status` (the runner's result, not the recorded outcome), `error` on failure | the Activity, last event of every attempt except a superseded one or one whose worker was killed |
 
+As built for the Phase 2 messaging plan (migration 0006, plan D6, D7, D13): messages
+between tasks of one request are rows of `task_messages`, mirrored by `MessageEnvelope`
+(`common/schemas/messages.py`). The body is inline text of at most 16 KB, not a blob
+reference; the authorization context is the request (`request_id`). A question has a
+`correlation_id` and a `deadline`; a reply names it in `reply_to`. Statuses: `pending`,
+`claimed` (assigned to a turn, `claimed_turn`), `read`, `answered`, `expired`,
+`cancelled` (the asker is told through `notice_turn`), `undelivered` and `rejected` (a
+refusal, with its `reason`). The idempotency key is the sender, turn, tool and
+arguments. `task_inbox` records whether a task is sleeping; `message_wakes` holds at
+most one pending wake per recipient. `claim_inbox` returns an `InboxClaim`: message
+IDs and the next deadline, never a body.
+
 ### `BlobStore` contract
 
 Provide a narrow async Python interface with `put`, `get/stream`, `delete`, `stat`, optional presigned/access-controlled URL operation, and typed error handling. The default adapter targets **SeaweedFS via S3-compatible API**. Ceph RGW uses the S3 adapter with configuration changes; GCS uses a dedicated adapter when enabled. Verify backend semantics for multipart uploads, versioning, conditional writes, signed URLs and integrity instead of assuming perfect interchangeability.
