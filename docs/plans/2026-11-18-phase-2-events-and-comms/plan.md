@@ -21,10 +21,10 @@ wait, and `finish_task` refuses to finish while its questions are open (R19, D8)
 wait in a cycle are refused (R23). When a task ends, by any path including cancellation, its questions
 close, its waiters wake, and messages it never took are marked undelivered (R24, R30). Woken turns
 have their own budget, `max_wakes`, and long waits continue as new (D11, D14). Builds on the events
-plan (`docs/plans/2026-11-18-phase-2-agent-events`), which must merge first.
+plan (`docs/plans/2026-11-18-phase-2-agent-events`), merged in PR #85.
 
 ```text
-comms_mcp --send/ask (fenced)--> agent_messages + message_wakes --NOTIFY--> dispatcher --Signal--> TaskWorkflow
+comms_mcp --send/ask (fenced)--> task_messages + message_wakes --NOTIFY--> dispatcher --Signal--> TaskWorkflow
                                         ^                                                    | claim_inbox (IDs only)
                                         +-------------- run_harness_turn reads bodies <------+
 ```
@@ -44,7 +44,7 @@ questions. Two design-review rounds shaped this revision (`reviews.md`).
 
 ## What changes
 
-- Migration 0006: `agent_messages`, `message_wakes`, table grants for the `praxis_comms` role (D6, D13).
+- Migration 0006: `task_messages`, `message_wakes`, table grants for the `praxis_comms` role (D6, D13).
 - `infra/db/roles.sh`: creates `praxis_comms` and its `CONNECT` and `USAGE` grants; safe to rerun (D13).
 - `comms_mcp/` with `post_status`, `send_to_agent`, `ask_agent`, `get_task_context` (D8, D9, D13, D15).
 - `finish_task` gains `waiting`; `TaskWorkflow` claims, waits, wakes and continues as new (D7, D11, D12).
@@ -327,7 +327,7 @@ old workers. The tables and role stay, unused.
 ## Impact
 
 - Packages / directories: `comms_mcp/` (new), `common/persistence/`, `common/schemas/`, `harness_activity/`, `orchestrator/`, `workers/`, `registry/`, `tests/support/fake_model/`, `infra/db/`, `infra/`, `tests/`, `docs/`.
-- Data: migration 0006 (`agent_messages`, `message_wakes`, grants); role `praxis_comms`.
+- Data: migration 0006 (`task_messages`, `message_wakes`, grants); role `praxis_comms`.
 - Jobs / APIs: `TaskWorkflow` (patched), `run_harness_turn`, `complete_task`, Activity `claim_inbox`, Signal `inbox`, the dispatcher, `finish_task` status `waiting`, profile and template fields, `task submit --join`.
 
 ## Links

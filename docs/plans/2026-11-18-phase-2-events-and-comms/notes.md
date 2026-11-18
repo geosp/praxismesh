@@ -3,19 +3,17 @@
 The event table, publisher and `agentctl tail` are in the events plan
 (`docs/plans/2026-11-18-phase-2-agent-events/notes.md`).
 
-## Evidence from the code (2026-11-18, main at 73801ea)
+## Evidence from the code (2026-11-18, main at 2f4b012, after the events plan)
 
-- Events: `harness_activity/events.py` has `EventSink`, `NoOpSink`, `MemorySink` and `AttemptEvents`
-  (per-attempt `seq`, emission under a lock). Only the DSH runner emits: tool events
-  (`harness_activity/dsh/executor.py`), one `token` event per response and refused-tool events
-  (`gateway.py`). `DshRunner` builds its own `AttemptEvents` from a per-worker sink that defaults to
-  `NoOpSink` (`harness_activity/dsh/runner.py:238`, `:360`); `workers/main.py` passes none.
-  `openai_agents` emits none. `HarnessRunner.run` takes no events argument (`harness_activity/runner.py`).
+- Events (events plan, merged in #85): `run_harness_turn` owns each attempt's `AttemptEvents` over a
+  `BatchingPublisher` and passes it to `HarnessRunner.run` (a required `events` argument); both
+  runners emit `token`, `tool_call` and `tool_result` (including `refused`); the Activity emits
+  `reset` first and `status` last; events go to `agent_events` (migration 0005) through
+  `common/events/TableTransport`. `post_status` (D15) adds `status` events on this path.
 - `AgentEvent` (`common/schemas/events.py`): `seq`, timestamp, workflow, task, `attempt_id`
   (`task:turn:attempt`), type, content-free payload, optional `blob_ref`.
-- Fence: `common/persistence/repositories.py` `_TASK_LOCK` (`pg_advisory_xact_lock(hashtext(task))`)
-  and `_NO_NEWER_ATTEMPT`, used by `AttemptRepository.start`, `assert_current` and
-  `CheckpointRepository.insert_fenced`; the Activity turns `FenceRejected` into `Superseded`.
+- Fence: `common/persistence/fence.py` (`TASK_LOCK`, `NO_NEWER_ATTEMPT`, `FenceRejected`), used by
+  every fenced write in `common/persistence/repositories.py` and by the event table.
 - `TaskWorkflow` (`orchestrator/workflow.py`): runs turns until `done`, `needs_input` or a budget
   (`max_turns` is `min(profile, template cap)`, 6 and 10 today); no Signals, no Continue-As-New.
   `TurnOutcome`, `RunResult` and `AttemptOutcome` statuses lack `waiting`.
@@ -34,12 +32,16 @@ The event table, publisher and `agentctl tail` are in the events plan
 
 ## D6 · Messages, wake rows and the comms role
 
-Migration 0006:
+Migration 0006. The inbox table is `task_messages`: `agent_messages` already exists (migration
+0003, the `openai_agents` session store's message rows).
 
-- `agent_messages (message_id PK, request_id, sender_task, recipient_task, kind send|ask|reply,
+- `task_messages (message_id PK, request_id, sender_task, recipient_task, kind send|ask|reply,
   correlation_id, reply_to, deadline, status pending|claimed|read|answered|expired|cancelled|
   undelivered|rejected, reason, body text (<= 16 KB), idempotency_key UNIQUE, claimed_turn, created_at)`.
   A claimed row becomes `read` when the woken turn's Activity has rendered it into the turn input.
+- The dispatcher waits on its notification with `common.events.transport.wait_set`, never
+  `asyncio.wait_for(event.wait(), ...)`: on Python 3.11 `wait_for` loses a cancellation that lands as
+  the event is set (found by the events plan's load benchmark).
 - `message_wakes (id, recipient_workflow, created_at)`. Each insert runs `NOTIFY message_wakes` in the
   same transaction. The dispatcher selects rows `FOR UPDATE SKIP LOCKED` (several orchestrator replicas
   are safe), Signals `inbox`, and deletes a row once the Signal returns, or on "workflow not found" or
@@ -48,7 +50,7 @@ Migration 0006:
   from `PRAXIS_COMMS_DB_PASSWORD`), and grants it `CONNECT` on `praxismesh` and `USAGE` on `public`
   (`init.sh` revokes `CONNECT` from `PUBLIC`). `init.sh` calls it on a fresh volume; operators run it
   once on an existing one (`make db-roles`). Migration 0006, run as the app role that owns the
-  tables, grants `SELECT, INSERT, UPDATE` on `agent_messages`, `INSERT` on `message_wakes`, `SELECT` on
+  tables, grants `SELECT, INSERT, UPDATE` on `task_messages`, `INSERT` on `message_wakes`, `SELECT` on
   `tasks` and `task_attempts`, and revokes them on downgrade.
 - Idempotency key: sha256 of sender task, turn, tool name and canonical arguments. Attempts of one turn
   share it, so a retried attempt that repeats a send stores nothing new and gets the stored result. A
