@@ -43,7 +43,8 @@ weigh:
   no per-run limit, while each Streams run holds at most 2,000 Updates and every observer adds one
   poll Update per batch.
 - A stable API and ~183 lines of code, against a Public Preview API with a private import and
-  ~314 lines of workarounds (batch-ID dedup, expiry reporting, cancellation).
+  ~314 lines in the spike's two Streams files, which needed workarounds for batch-ID dedup,
+  expiry reporting and cancellation.
 - Event writes can take ADR-0007's fence in the same transaction as the attempt rows.
 Latency did not decide it: at the spike's closed-loop load p95 was 187 ms for the table and 199 ms
 for Streams, but that generator gave Streams ~5% less load; an open-loop rerun showed the table
@@ -58,20 +59,23 @@ How it is used (from the spike):
   poll every 1 s as a fallback.
 - Every reader reports an offset jump as expiry and fails on a repeated offset.
 
-NATS JetStream passed the correctness suite and stays the upgrade path if event volume or fan-out
+NATS JetStream passed the correctness suite (a run that predates the cancel check) and stays the
+upgrade path if event volume or fan-out
 outgrows PostgreSQL; the interface keeps that switch contained.
 
 ### Consequences
 
-- Good, because no new component, no preview API, and the events share the application
-  database's backups, access control and Kubernetes path.
-- Good, because event writes can be fenced as ADR-0007 requires.
+- Good, because no new component and no preview API; the events will share the application
+  database's backups (Phase 3A), access control and Kubernetes path.
+- Good, because event writes can take ADR-0007's fence in the same transaction; the spike did not
+  implement it, and Phase 2 must.
 - Bad, because the table grows with every event and retention means `DELETE` churn: Phase 3A's
   retention work needs time-based partitioning or equivalent for it.
 - Bad, because each following reader holds a database connection while it follows (the spike's
-  pool allowed 20, so with the spike's 4 publishers sharing it, 17 or more followers in one process
-  would block them), and the spike
-  uses one global `NOTIFY` channel, so every follower wakes for every workflow's batch. Fan-out to
+  pool allowed 20, so with the spike's 4 publishers sharing it, beyond 16 followers in one process
+  the publishers queue for connections, and at 20 they all wait), and the spike uses one global
+  `NOTIFY` channel, so every follower's connection receives every workflow's notification (only
+  the matching workflow's reader fetches again). Fan-out to
   many observers (Phase 4 gateway, Phase 8 UI) needs a per-workflow channel or a reader that fans
   out in memory, or a pooler.
 - Bad, because it departs from the §4.4 preference; the decision log records why.
@@ -81,9 +85,9 @@ outgrows PostgreSQL; the interface keeps that switch contained.
 
 ### Confirmation
 
-The spike's shared suite (`spikes/event-transport/tests/test_suite.py`) and load runner
-(`spikes/event-transport/load.py`) run against the Phase 2 implementation behind the same
-interface; Phase 2's implementation review checks the reader rule, the batch dedup and the fence.
+Phase 2 is to run the spike's shared suite (`spikes/event-transport/tests/test_suite.py`) and load
+runner (`spikes/event-transport/load.py`) against its implementation behind the same interface,
+and its implementation review is to check the reader rule, the batch dedup and the fence.
 
 ## Links
 

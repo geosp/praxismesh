@@ -12,5 +12,6 @@ in git history at `1bfac67` (run from `spikes/event-transport` with `PYTHONPATH=
 
 From the pinned `temporalio` 1.36.0 source (design review round 2): `WorkflowStreamClient.subscribe()`
 catches the poll Update's `TruncatedOffset` and silently restarts at offset 0, so it cannot report
-expiry either. Both options meet R2 in the spike only because the reader checks the retained base
-before reading (plan D1).
+expiry either. The spike meets R2 with two checks: the reader compares its offset with the
+retained base before reading (`expiry_for`, plan D1), and `transport.guarded()` reports an offset
+that jumps during a read.

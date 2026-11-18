@@ -49,7 +49,7 @@ agent (one stopped and resumed every 60 s).
 
 | Metric | Workflow Streams (`c1fda62`) | Table (`c1fda62`) | Table, open-loop (`5854ca2`) |
 | --- | --- | --- | --- |
-| Events published (offered: 60,232) | 54,897 (54,889-54,956) | 58,002 (57,811-58,059) | 60,232 (all runs) |
+| Events published (open-loop offered load: 60,232; the closed-loop rate depended on publish time) | 54,897 (54,889-54,956) | 58,002 (57,811-58,059) | 60,232 (all runs) |
 | Publish time p50 | 13.4 (13.1-13.7) ms | 4.3 (4.3-4.4) ms | 4.3 (4.2-4.3) ms |
 | Publish time p95 | 23.8 (18.4-26.9) ms | 5.5 (5.4-6.1) ms | 5.7 (5.7-5.8) ms |
 | Latency p50 | 113 (113-114) ms | 92 (92-104) ms | 110 (109-110) ms |
@@ -115,13 +115,15 @@ because the batch-ID set had not reached its full horizon. Extrapolated to 600 s
 - **Neither third-party option reports expiry itself.** Streams' `subscribe()` silently restarts
   at offset 0 on a truncated offset (pinned source); a JetStream consumer starting below the first
   retained sequence silently delivers from it (probe, in git history at `1bfac67`). The spike meets
-  R2 for every option with one reader rule (`transport.guarded()`): an offset that jumps is reported
-  as `Expired`, a repeat raises. Phase 2 needs that rule.
+  R2 for every option with two checks: before reading, the reader compares its offset with the
+  transport's retained base (`expiry_for`); during a read, `transport.guarded()` reports an offset
+  that jumps as `Expired` and raises on a repeat. Phase 2 needs both.
 - **Token text has no place yet.** `AgentEvent` payloads must hold no model text
   (`common/schemas/events.py`), but streamed token deltas are model text. Phase 2 must decide where
   token text lives (a blob per turn, or an exception for token events).
-- **A removal through the end of the log** yields no expiry until a later event arrives (impl
-  review F55), the same for every option.
+- **A removal through the end of the log during a read** yields no expiry until a later event
+  arrives (impl review F55), the same for every option; a read that starts afterwards reports it
+  through the retained-base check.
 - **Batch IDs must name the attempt.** A retried publisher that reuses batch IDs has its new events
   dropped as re-sends; the runner now uses `<workflow>:<attempt>:<n>`.
 
@@ -132,7 +134,7 @@ because the batch-ID set had not reached its full horizon. Extrapolated to 600 s
 | New components | none (Temporal) | none (the application database) | a NATS server; the documented Kubernetes deployment is a 3-replica StatefulSet (Helm chart) |
 | API maturity | Public Preview / experimental; the spike imports a private decoder | stable | stable |
 | Backups | events live in Temporal history, kept for the namespace's retention (`TEMPORAL_RETENTION`) | in the application database's backups (Phase 3A) | its own volume |
-| Authentication and scoping | any Temporal client can query or update any Workflow: scoping must be in the gateway | the app role; scoping by workflow and tenant in queries | NATS accounts and per-subject permissions |
+| Authentication and scoping | any Temporal client can query or update any Workflow: scoping must be in the gateway | the app role; queries scope by workflow (no tenant column yet; tenant scoping is for Phase 2 to add) | NATS accounts and per-subject permissions |
 | Upgrades | the preview API may change between SDK releases | none new | NATS server releases |
 | Kubernetes path | Temporal's (already planned) | the application database's | a new StatefulSet |
 | Load on shared services | Temporal CPU ~20-23x the table's; Temporal's database 3.2x (1.7-4.1x) | small | its own |
@@ -151,8 +153,9 @@ ADR-0007 asks every new attempt write path to take the fence or justify why not.
   newer attempt exists. Phase 2 sets the lock order against the counter row and measures the cost
   (not measured here).
 - **Workflow Streams:** not in one transaction with the attempt rows (Temporal history against the
-  application database). The hosting Workflow can refuse batches from an attempt older than the
-  newest it has seen, which orders them but does not consult the fence. Justification needed:
+  application database). The hosting Workflow could be changed to refuse batches from an attempt
+  older than the newest it has seen (the spike's Workflow deduplicates by batch ID only), which
+  would order them but not consult the fence. Justification needed:
   events are for observation, and readers use `attempt_id` and `reset` events.
 - **NATS JetStream:** like Streams; no transaction with the attempt rows.
 

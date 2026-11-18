@@ -28,7 +28,7 @@ Checked 2026-11-17 against live docs and package indexes.
   /self-hosted-guide/defaults, self-hosted defaults, which apply since
   `infra/temporal/dynamicconfig.yaml` is empty):
   - Event History per run: error at 51,200 events or 50 MB; warning at 10,240 events or 10 MB.
-    R5's 10% bound is therefore 5,120 events and 5 MB per run.
+    R5's 10% bound is therefore 5,120 events and 5 MiB per run.
   - Payload (each argument, result and the Continue-As-New input): error at 2 MB; warning at
     256 KB. R11's 50% bound is therefore 1 MB.
   - Event History transaction: 4 MB. Temporal recommends "not exceeding a few thousand Events in
