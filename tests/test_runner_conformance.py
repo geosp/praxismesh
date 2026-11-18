@@ -586,8 +586,9 @@ async def test_tool_and_token_events(tmp_path: Path, monkeypatch: pytest.MonkeyP
     ]
     assert [e.payload["call"] for e in events if e.type == "tool_result"] == [1, 2, 3]
     assert {e.payload["status"] for e in events if e.type == "tool_result"} == {"ok"}
-    assert all(
-        set(e.payload) == {"input_tokens", "output_tokens"} for e in events if e.type == "token"
-    )
+    counts = {"input_tokens", "output_tokens"}
+    # DSH also names the gateway request (docs/roadmap/schemas.md); nothing else.
+    tokens = [set(e.payload) for e in events if e.type == "token"]
+    assert all(counts <= keys <= counts | {"request_id"} for keys in tokens)
     dumped = json.dumps([e.payload for e in events])
     assert "37.50" not in dumped and "summary" not in dumped.lower().replace("summary.md", "")

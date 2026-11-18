@@ -7,8 +7,9 @@ Plan: [docs/plans/2026-11-18-phase-2-agent-events](../plans/2026-11-18-phase-2-a
   `make migrate`, workers rebuilt with `make workers-up`; profile `default` (`local-dsh`, DSH)
   on the local model endpoint. Python 3.11, `temporalio` 1.36.0, SQLAlchemy 2.1.8, `asyncpg`
   0.32.0.
-- Reproduce: `sh infra/demo/phase-2-events.sh [OUT_DIR]` (needs `make workers-up` and a model
-  endpoint). The phase verification reruns it from a clean worktree.
+- Reproduce: `sh infra/demo/phase-2-events.sh [OUT_DIR]` (needs `make workers-up`, a model
+  endpoint, and `python3`, GNU `grep` (`-P`) and `timeout` on the host). The phase verification
+  reruns it from a clean worktree.
 
 | Step | Command or action | Expected | Observed | Result |
 |---|---|---|---|---|
