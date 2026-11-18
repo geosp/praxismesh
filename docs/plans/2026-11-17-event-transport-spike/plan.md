@@ -237,6 +237,6 @@ its volume. The spike project can be deleted at any time.
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
 | 01 | [Interface, suite and three transports](phases/01-interface-and-transports.md) | in-progress | 7/7 |
-| 02 | [Measure, decide and clean up](phases/02-measure-and-decide.md) | approved | 0/5 |
+| 02 | [Measure, decide and clean up](phases/02-measure-and-decide.md) | in-progress | 0/5 |
 
 ## Decision log

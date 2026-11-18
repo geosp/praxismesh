@@ -1,9 +1,9 @@
 ---
 phase: 2
 title: Measure, decide and clean up
-status: approved
-branch: null
-base: null
+status: in-progress
+branch: spike/76-event-transport
+base: 5371368db80b232b2f155fd5ef0a8c6dd3c0df16
 delivers: [R5, R6, R8, R10, R11]
 design_review: { status: passed, rounds: 2, last: 2026-11-17 }
 impl_review: { status: none, rounds: 0, last: null }

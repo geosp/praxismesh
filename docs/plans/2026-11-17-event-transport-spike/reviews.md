@@ -93,3 +93,7 @@ Approved by the owner after design review passed (2 rounds); phases 01 and 02 ap
 | F56 | Nit | contract | F40 and F41 have no failing test. | accepted: edge cases of test hooks outside the load path |
 | F57 | Nit | contract | capture.py's guard checks only the event count. | accepted: a failed turn raises before writing; a normal end with ≥ 10 events is a valid recording |
 | F58 | Nit | contract | Streams' fixed queue and 2 h run timeout are not listed with the other added parameters. | fixed: notes.md#d5 |
+
+## 2026-11-18 · phase 01 verification deferred
+
+Owner decision: phase 01 stays in-progress (impl review passed) and one `verify-phase` run covers both phases at the end of phase 02, which adds the load runs and the report that verification checks anyway.
