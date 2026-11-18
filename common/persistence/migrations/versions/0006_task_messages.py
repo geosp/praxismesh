@@ -71,7 +71,10 @@ def upgrade() -> None:
         sa.Column("reason", sa.Text),
         sa.Column("body", sa.Text, nullable=False),
         sa.Column("idempotency_key", sa.Text, nullable=False, unique=True),
+        # The recipient's turn that received the row, and for a question the asker's
+        # turn that was told it expired or was cancelled.
         sa.Column("claimed_turn", sa.Integer),
+        sa.Column("notice_turn", sa.Integer),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=NOW),
         *_retention("task"),
         sa.CheckConstraint("kind IN ('send', 'ask', 'reply')"),
