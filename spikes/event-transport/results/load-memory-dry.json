@@ -1,0 +1,226 @@
+{
+  "option": "memory",
+  "label": "dry",
+  "commit": "5ae07311955d83e129bd66d0ec044d1279d834d3",
+  "dirty": false,
+  "command": "uv run python load.py memory --seconds 30 --label dry",
+  "finished": "2026-11-18T05:31:27+00:00",
+  "params": {
+    "seconds": 30.0,
+    "agents": 4,
+    "tailers": 3,
+    "rate_per_s": 50,
+    "batch_s": 0.2,
+    "batch_max": 64,
+    "roll": true
+  },
+  "elapsed_s": 30.1,
+  "requirements": {
+    "R5": "n/a",
+    "R6": "pass",
+    "R11": "n/a"
+  },
+  "published": 5912,
+  "batches": 592,
+  "publish_ms": {
+    "p50": 0.038080994272604585,
+    "p95": 0.08237399742938578
+  },
+  "latency_ms": {
+    "p50": 101.17316246032715,
+    "p95": 182.94262886047363,
+    "p99": 183.7782859802246,
+    "max": 208.3606719970703,
+    "mean": 91.89498346562745
+  },
+  "tailers": [
+    {
+      "workflow": "load-6011e161-a0",
+      "killable": true,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-6011e161-a0",
+      "killable": false,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-6011e161-a0",
+      "killable": false,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-6011e161-a1",
+      "killable": true,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-6011e161-a1",
+      "killable": false,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-6011e161-a1",
+      "killable": false,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-6011e161-a2",
+      "killable": true,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-6011e161-a2",
+      "killable": false,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-6011e161-a2",
+      "killable": false,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-6011e161-a3",
+      "killable": true,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-6011e161-a3",
+      "killable": false,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    },
+    {
+      "workflow": "load-6011e161-a3",
+      "killable": false,
+      "shown": 1478,
+      "last": 1478,
+      "latest": 1478,
+      "restarts": 0,
+      "expired": [],
+      "error": null
+    }
+  ],
+  "complete": true,
+  "history": {
+    "limits": {
+      "events": 51200,
+      "bytes": 52428800,
+      "payload": 2097152
+    },
+    "max_run_events": null,
+    "max_run_bytes": null,
+    "max_carried_bytes": null,
+    "runs": {}
+  },
+  "containers": [
+    {
+      "t": 1794979859.7,
+      "name": "pmspike76-db-1",
+      "cpu": 6.32,
+      "mem": "172.5MiB"
+    },
+    {
+      "t": 1794979859.7,
+      "name": "pmspike76-temporal-1",
+      "cpu": 3.29,
+      "mem": "190.8MiB"
+    },
+    {
+      "t": 1794979859.7,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.12,
+      "mem": "14.86MiB"
+    },
+    {
+      "t": 1794979871.8,
+      "name": "pmspike76-db-1",
+      "cpu": 8.28,
+      "mem": "174.4MiB"
+    },
+    {
+      "t": 1794979871.8,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.48,
+      "mem": "190.4MiB"
+    },
+    {
+      "t": 1794979871.8,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.09,
+      "mem": "15.11MiB"
+    },
+    {
+      "t": 1794979883.8,
+      "name": "pmspike76-db-1",
+      "cpu": 8.14,
+      "mem": "174MiB"
+    },
+    {
+      "t": 1794979883.8,
+      "name": "pmspike76-temporal-1",
+      "cpu": 1.62,
+      "mem": "190MiB"
+    },
+    {
+      "t": 1794979883.8,
+      "name": "pmspike76-nats-nats-1",
+      "cpu": 0.09,
+      "mem": "14.75MiB"
+    }
+  ]
+}

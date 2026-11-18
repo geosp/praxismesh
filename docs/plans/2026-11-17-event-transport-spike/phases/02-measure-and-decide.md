@@ -22,7 +22,7 @@ winner's code remains.
 
 ### 1. Measure
 
-- [ ] 1.1 Add the load runner: the synthetic load of notes.md#d3, publish-to-display latency per event, Temporal history events and bytes per run, the size of each carried state, growth per minute per agent and per tailer, and database or broker resource use (R5, R6, R11). Verify: a 30 s dry run against the reference implementation writes a results file with every metric.
+- [x] 1.1 Add the load runner: the synthetic load of notes.md#d3, publish-to-display latency per event, Temporal history events and bytes per run, the size of each carried state, growth per minute per agent and per tailer, and database or broker resource use (R5, R6, R11). Verify: a 30 s dry run against the reference implementation writes a results file with every metric.
 - [ ] 1.2 For each measured option in a disposable project, with the parameters of notes.md#d5: run the shared suite 3 times and the load 3 times, plus for Streams one informational load run with roll-over off. Commit the raw results (R5, R6, R8, R11). Verify: each results file names its commit and command; every requirement's pass/fail matches across the 3 runs.
 
 ### 2. Decide
