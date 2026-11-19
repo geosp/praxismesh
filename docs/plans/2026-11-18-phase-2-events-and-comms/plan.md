@@ -312,8 +312,9 @@ events); `comms_mcp` publishing events (a second producer per attempt).
 ### D16 · A multi-agent fake model
 
 The fake model picks a script by a `[script:NAME]` marker in the task instructions, and a step may use
-`${result.N.field}` to reuse a field of an earlier tool result, such as a correlation ID. Rejected:
-one fake endpoint per agent (two templates for one test).
+`${result.N.field}` to reuse a field of an earlier tool result, such as a correlation ID, or
+`${input:REGEX}` to take a value from the task's input, such as a question's ID in a woken turn.
+Rejected: one fake endpoint per agent (two templates for one test).
 
 ### D17 · Ending a task closes its messages
 
@@ -378,9 +379,9 @@ in `phases/`.
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
 | 02 | Inbox, comms MCP and waiting tasks | impl-reviewed | 15/15 |
-| 03 | Acceptance and demo | approved | 0/7 |
+| 03 | Acceptance and demo | in-progress | 0/7 |
 
 ## Decision log
 
 - 2026-11-18 · D11 changed: the carried `TaskState` travels in `TaskStart.carried`, not as a second `run` argument, because Temporal drops type hints when a start passes fewer arguments than `run` declares (found in phase 02 task 4.3). Behaviour is unchanged.
-
+- 2026-11-19 · D16 extended: a step may also use `${input:REGEX}`, because a woken recipient learns a question's correlation ID from its input, not from a tool result (found in phase 03 task 1.1). Scripts files may name other script files, so the Compose fake model keeps its order script as the default.
