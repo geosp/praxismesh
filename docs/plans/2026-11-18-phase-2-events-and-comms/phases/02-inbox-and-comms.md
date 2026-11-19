@@ -48,4 +48,4 @@ closes its messages and wakes its waiters.
 
 ### 5. Docs
 
-- [ ] 5.1 Update `schemas.md`, the decision log and the runbook (`roles.sh`, joining a request, waiting tasks, draining, the dispatcher). Verify: `check_plans.py` and the link check pass.
+- [x] 5.1 Update `schemas.md`, the decision log and the runbook (`roles.sh`, joining a request, waiting tasks, draining, the dispatcher). Verify: `check_plans.py` and the link check pass.

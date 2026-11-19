@@ -95,6 +95,6 @@ Migration 0006. The inbox table is `task_messages`: `agent_messages` already exi
   wait -> `failed` "cancelled", after `complete_task`. Every ending runs `complete_task`, which runs
   `end_task`. The result's artifacts are the latest `waiting` turn's outputs.
 - `TaskState`: resolved task, turn and wake counters, usage totals, wall-time deadline, latest outputs
-  and summary. `run(start, state=None)`: a continued run skips `resolve_capabilities` and
+  and summary. `TaskStart.carried`: a continued run skips `resolve_capabilities` and
   `record_task` (which refuses a new run ID) and claims first. The patch marker and the optional
   argument keep Phase 1 histories replaying.

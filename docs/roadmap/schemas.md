@@ -60,7 +60,12 @@ reference; the authorization context is the request (`request_id`). A question h
 refusal, with its `reason`). The idempotency key is the sender, turn, tool and
 arguments. `task_inbox` records whether a task is sleeping; `message_wakes` holds at
 most one pending wake per recipient. `claim_inbox` returns an `InboxClaim`: message
-IDs and the next deadline, never a body.
+IDs and the next deadline, never a body. `finish_task`, `TurnOutcome` and attempt outcomes
+accept `waiting`. Profiles gain `idle_timeout`, `max_ask_wait` and `max_wakes`; templates
+gain `max_wakes_cap`; `ResolvedTask` carries all three (defaulted, so earlier payloads
+decode) and `TurnInput` carries `max_ask_wait`. `TaskRequest.join_request` puts a task
+in an existing request. A waiting `TaskWorkflow` continues as new with `TaskStart.carried`
+set to its `TaskState` (counters, usage, the wall-time deadline, the latest outputs).
 
 ### `BlobStore` contract
 

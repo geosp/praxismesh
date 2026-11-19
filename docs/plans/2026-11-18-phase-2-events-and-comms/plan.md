@@ -274,8 +274,8 @@ request lock; the claim and `cancel_for` run in the orchestrator, not an attempt
 ### D11 · Continue-As-New while waiting
 
 After every `waiting` outcome, before it claims, the Workflow continues as new when Temporal suggests
-it or its run's history passes 1,000 events, carrying `TaskState` (resolved task, counters, usage, deadline, latest outputs) as an
-optional second `run` argument. A continued run skips `resolve_capabilities` and `record_task` and
+it or its run's history passes 1,000 events, carrying `TaskState` (resolved task, counters, usage, deadline, latest outputs) in
+`TaskStart.carried`. A continued run skips `resolve_capabilities` and `record_task` and
 claims first. Rejected: never continuing (R33 fails at ~100 wakes). Details: notes.md#d7
 
 ### D12 · Patch the Workflow
@@ -381,3 +381,6 @@ in `phases/`.
 | 03 | Acceptance and demo | approved | 0/7 |
 
 ## Decision log
+
+- 2026-11-18 · D11 changed: the carried `TaskState` travels in `TaskStart.carried`, not as a second `run` argument, because Temporal drops type hints when a start passes fewer arguments than `run` declares (found in phase 02 task 4.3). Behaviour is unchanged.
+

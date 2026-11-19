@@ -179,6 +179,36 @@ running tasks need no drain, because `TaskWorkflow` did not change.
 If the database cannot store an attempt's last events, the attempt fails with
 the retryable `EventsUnavailable` and writes no finish; Temporal retries the turn.
 
+## Messaging between tasks
+
+Tasks of one request can message and ask each other through the `comms` MCP server
+([Phase 2 messaging plan](../plans/2026-11-18-phase-2-events-and-comms/plan.md)). The
+templates `local-dsh` v2 and `local-default` v2 grant it.
+
+**Setup.** The server connects as the `praxis_comms` role, which may write only the message
+tables. Set `PRAXIS_COMMS_DB_PASSWORD` (and `PRAXIS_COMMS_DB_URL` for tests run on the
+host) in `infra/.env` as in `infra/.env.example`. A fresh database volume creates the role
+at init; on an existing volume, recreate the `db` container so it sees the password
+(`make up`), then run `make db-roles` (safe to rerun) and `make migrate` (0006).
+Without the password the role is skipped and comms tools fail.
+
+**Joining a request.** `./agentctl task submit --join REQ ...` puts the new task in request
+`REQ`, which must already have a task; its tasks can then message each other.
+
+**Waiting tasks.** A task whose turn ends `waiting` stays open: its Workflow sleeps until a
+message (an `inbox` Signal from the dispatcher in the orchestrator worker), a question's
+deadline, its idle timeout (profile `idle_timeout`, default 10 min) or its wall-time budget,
+and runs a woken turn when its inbox has rows. Woken turns count against `max_wakes`
+(default 50, capped by the template's `max_wakes_cap`). If the dispatcher is down, wake rows
+wait in `message_wakes`; deadlines and timeouts still fire.
+
+**Deploying the change.** Stop submitting and let running tasks finish, because workers
+serve one template version and the v2 templates replace v1. Then `make db-roles`,
+`make migrate`, and `make workers-up` (the orchestrator worker accepts `waiting` first).
+To roll back, drain every task started on the new code first (cancel waiting ones with
+`temporal workflow cancel`): the old code cannot replay their histories. Then delete
+leftover `message_wakes` rows and redeploy the old workers.
+
 ## Known deviations
 
 Deferred on purpose; none blocks operation (plan notes.md#rollout):
