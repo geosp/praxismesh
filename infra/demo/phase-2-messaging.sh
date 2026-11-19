@@ -40,7 +40,11 @@ until_true() {  # until_true SECONDS WHAT COMMAND...
         sleep 0.5
     done
 }
-asleep() { [ "$(probe sleeping "$1")" = yes ]; }
+asleep() {  # stops the demo if the task ended instead of waiting
+    [ "$(probe sleeping "$1")" = yes ] && return 0
+    ended "$1" && { echo "error: $1 ended ($(task_status "$1")) instead of waiting" >&2; exit 1; }
+    return 1
+}
 ended() { s=$(task_status "$1"); [ "$s" != running ] && [ -n "$s" ]; }
 asked() { probe messages "$1" | grep -q " ask "; }
 
@@ -77,7 +81,7 @@ top=$(offsets "$OUT/tail-all.log" | sort -n | tail -1)
 log "observer saw $total lines, $unique distinct offsets, highest $top (each once and in order: $([ "$total" = "$unique" ] && [ "$unique" = "$top" ] && echo yes || echo no))"
 
 # 3. An unanswered question and a rejected message.
-d=$(submit --join "$req" --instructions "[script:demo-silent] Call finish_task with status \"waiting\". Never answer a question; whenever you are woken, call finish_task with status \"waiting\" again." | field "d['task_id']")
+d=$(submit --join "$req" --instructions "[script:demo-silent] This task's only job is to wait; there is no order to process. Do not call any tool except finish_task: call finish_task with status \"waiting\" and the summary \"waiting\" now. If you are woken, call finish_task with status \"waiting\" again. Never answer a question." | field "d['task_id']")
 log "D (silent): $d"
 until_true 300 "D is not waiting" asleep "$d"
 c=$(submit --join "$req" --instructions "[script:demo-asker] Please ask task $d the question \"What is the price of SKU-4?\" with ask_agent, within 20 s (deadline_seconds 20). Then call finish_task with status \"waiting\". When you are woken, call finish_task with status \"done\" and put what you were told in the summary." | field "d['task_id']")
