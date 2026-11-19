@@ -232,3 +232,30 @@ async def test_request_exists_for_join(engine: AsyncEngine) -> None:
     request = (await rows(engine, "SELECT request_id FROM tasks WHERE task_id = :a", a=a))[0][0]
     assert await TaskRepository(engine).request_exists(request)
     assert not await TaskRepository(engine).request_exists(f"req-{uuid.uuid4().hex}")
+
+
+async def test_the_claim_inbox_activity(engine: AsyncEngine) -> None:
+    """Phase 2 messaging task 4.2: a rerun returns the same IDs; a claim after the
+    deadline returns the expiry; the result holds no body (R28)."""
+    from temporalio.testing import ActivityEnvironment
+
+    from common.schemas import ClaimInboxInput, InboxClaim
+    from orchestrator.activities import OrchestratorActivities
+    from registry.loader import load_registry
+
+    m, a, b = await pair(engine)
+    asked = await m.ask(me(a), b, "price?", key=key(a, b, "q"), wait=timedelta(seconds=30),
+                        max_wait=MAX_WAIT)  # fmt: skip
+    sent = await m.send(me(b), a, "hello", key=key(b, a, "hi"))
+    assert asked.deadline is not None and sent.ok
+    acts = OrchestratorActivities(load_registry(), TaskRepository(engine))
+    env = ActivityEnvironment()
+    now = datetime.now(UTC)
+    first: InboxClaim = await env.run(acts.claim_inbox, ClaimInboxInput(task_id=a, turn=2, now=now))
+    again: InboxClaim = await env.run(acts.claim_inbox, ClaimInboxInput(task_id=a, turn=2, now=now))
+    assert first.message_ids == again.message_ids == [sent.message_id]
+    assert first.next_deadline == asked.deadline
+    later = ClaimInboxInput(task_id=a, turn=3, now=asked.deadline + timedelta(seconds=1))
+    expired: InboxClaim = await env.run(acts.claim_inbox, later)
+    assert expired.message_ids == [asked.message_id] and expired.next_deadline is None
+    assert "hello" not in first.model_dump_json() and "price" not in expired.model_dump_json()

@@ -7,13 +7,16 @@ import logging
 from temporalio import activity
 
 from common.observability import log_context
+from common.persistence.messages import MessageRepository
 from common.persistence.repositories import (
     AttemptRepository,
     TaskRepository,
     UsageLedgerRepository,
 )
 from common.schemas import (
+    ClaimInboxInput,
     CompleteTaskInput,
+    InboxClaim,
     RecordTaskInput,
     ResolvedTask,
     TaskResult,
@@ -105,6 +108,16 @@ class OrchestratorActivities:
             template_version=payload.resolved.template_version,
             template_hash=payload.resolved.template_hash,
         )
+
+    @activity.defn(name="claim_inbox")
+    async def claim_inbox(self, payload: ClaimInboxInput) -> InboxClaim:
+        """Expire the task's due questions, assign its pending inbox rows to `turn`
+        and record whether it sleeps (Phase 2 messaging D7). Safe to rerun for the
+        same turn; returns IDs and the next deadline, never a body (R28)."""
+        claim = await MessageRepository(self.tasks.engine).claim(
+            payload.task_id, payload.turn, payload.now
+        )
+        return InboxClaim(message_ids=claim.message_ids, next_deadline=claim.next_deadline)
 
     @activity.defn(name="complete_task")
     async def complete_task(self, payload: CompleteTaskInput) -> TaskResult:

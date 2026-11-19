@@ -40,6 +40,16 @@ class MessageEnvelope(Strict):
     created_at: datetime
 
 
+class ClaimInboxInput(Strict):
+    """`claim_inbox`'s input: `now` is the Workflow's time, so expiry agrees with its
+    timers (Phase 2 messaging D7)."""
+
+    schema_version: Literal[1] = 1
+    task_id: str
+    turn: int = Field(ge=1)
+    now: datetime
+
+
 class InboxClaim(Strict):
     schema_version: Literal[1] = 1
     message_ids: list[str] = []

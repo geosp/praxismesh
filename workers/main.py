@@ -138,7 +138,12 @@ async def build_worker(
             client,
             task_queue=orchestration_queue(),
             workflows=[TaskWorkflow],
-            activities=[acts.resolve_capabilities, acts.record_task, acts.complete_task],
+            activities=[
+                acts.resolve_capabilities,
+                acts.record_task,
+                acts.claim_inbox,
+                acts.complete_task,
+            ],
             identity=worker_identity("orchestrator"),
         )
     assert template is not None
