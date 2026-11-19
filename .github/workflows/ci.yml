@@ -102,7 +102,9 @@ jobs:
   # job: a skipped job fails ci-ok) on PRs that touch none of the stack paths.
   stack:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Phase 2 messaging's acceptance suites (real DSH containers, 100 wakes) took
+    # `make smoke` from about 6 to 17 minutes; the whole job needs about 32.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
