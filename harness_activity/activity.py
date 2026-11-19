@@ -54,7 +54,7 @@ from common.observability.metrics import (
     TOKENS,
 )
 from common.persistence.fence import FenceRejected
-from common.persistence.messages import MessageRepository, Sender
+from common.persistence.messages import Delivered, MessageRepository, Sender
 from common.persistence.repositories import (
     AttemptRepository,
     Checkpoint,
@@ -501,7 +501,9 @@ class HarnessActivities:
             await asyncio.to_thread(ws.unpack, data, workdir)
             await store.load(latest)
             heartbeat.checkpoint_id = latest.checkpoint_id
-            if latest.finish is not None:  # lost after finish_task: go straight to finish
+            # Lost after finish_task in this turn: go straight to finish. A finish of
+            # an earlier turn (a `waiting` one) starts a new turn (Phase 2 messaging).
+            if latest.finish is not None and latest.turn == turn.turn:
                 result = RunResult(
                     latest.finish["status"],
                     Usage(),
@@ -520,6 +522,9 @@ class HarnessActivities:
                     publisher,
                 )
             input_text = CONTINUE_MESSAGE
+            if latest.turn < turn.turn:  # a new turn; a rerun of this one already has them
+                woken = await self._woken_input(turn, attempt)
+                input_text = woken or input_text
         else:
             await store.load(None)
             input_text = await self._fresh_start(turn.task_id, workdir)
@@ -597,6 +602,14 @@ class HarnessActivities:
             publisher,
             finish_checkpoint=lambda: checkpoint(finish),
         )
+
+    async def _woken_input(self, turn: TurnInput, attempt: int) -> str | None:
+        """The input of a woken turn: the rows its claim assigned to it, read once
+        (a fenced write), or None when the turn was not started by a claim."""
+        delivered = await MessageRepository(self.engine).read_claimed(
+            Sender(turn.task_id, turn.turn, attempt)
+        )
+        return render_inbox(turn.task_id, delivered) if delivered else None
 
     def _finish_check(self, turn: TurnInput, attempt: int) -> Callable[[], list[str]]:
         """The open-question check `finish_task` runs from a tool thread (Phase 2
@@ -703,3 +716,31 @@ def _failure_status(error: BaseException) -> dict[str, str]:
     if isinstance(error, RunnerFailure):
         return {"status": "cancelled" if error.cancelled else "failed", "error": error.category}
     return {"status": "failed", "error": type(error).__name__}
+
+
+def render_inbox(task_id: str, delivered: list[Delivered]) -> str:
+    """The woken turn's input (Phase 2 messaging D7): each message, question, reply
+    and closed question, with the IDs the agent needs to answer."""
+    lines = ["You were woken because these arrived since your last turn:"]
+    for d in delivered:
+        if d.sender_task == task_id and d.kind == "ask":  # one of its own questions
+            why = (
+                "no answer came by the deadline"
+                if d.status == "expired"
+                else ("it was cancelled: the other task ended without replying")
+            )
+            lines.append(f"- Your question {d.correlation_id} to {d.recipient_task}: {why}.")
+        elif d.kind == "ask":
+            lines.append(
+                f"- Question {d.correlation_id} from {d.sender_task} (answer it with "
+                f'send_to_agent, reply_to="{d.correlation_id}"): {d.body}'
+            )
+        elif d.kind == "reply":
+            lines.append(f"- Reply from {d.sender_task} to your question {d.reply_to}: {d.body}")
+        else:
+            lines.append(f"- Message from {d.sender_task}: {d.body}")
+    lines.append(
+        "Continue the task. When you are done call finish_task, or call it with status "
+        '"waiting" if you expect more messages.'
+    )
+    return "\n".join(lines)

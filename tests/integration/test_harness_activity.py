@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -137,14 +137,14 @@ class Harness:
         return env
 
     def turn(
-        self, remaining_tokens: int = 1_000_000, template_hash: str | None = None
+        self, remaining_tokens: int = 1_000_000, template_hash: str | None = None, number: int = 1
     ) -> TurnInput:
         loaded = load_registry().templates["local-default"]
         return TurnInput(
             task_id=self.task_id,
-            turn=1,
+            turn=number,
             template="local-default",
-            template_version=1,
+            template_version=loaded.template.version,
             template_hash=template_hash or loaded.hash,
             remaining_tokens=remaining_tokens,
             remaining_wall_time=timedelta(minutes=10),
@@ -952,3 +952,40 @@ async def test_the_finish_check_reaches_the_inbox_from_a_tool_thread(
     outcome = await h.run(attempt=2)
     assert outcome.status == "waiting"
     assert runner.blocking == [f"open question {asked.correlation_id} to {other}"]
+
+
+async def test_a_woken_turn_runs_the_model_with_its_messages(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """Phase 2 messaging task 4.1: after a `waiting` turn 1, turn 2 is not the finish
+    shortcut; its input lists the rows claimed for it, and a rerun reads them again."""
+    from common.persistence.messages import MessageRepository, Sender, idempotency_key
+
+    h = await harness(engine, tmp_path, done)
+    async with engine.connect() as conn:
+        request = (await conn.execute(
+            text("SELECT request_id FROM tasks WHERE task_id = :t"), {"t": h.task_id}
+        )).scalar_one()  # fmt: skip
+    other = f"task-act-{run_id()}"
+    await TaskRepository(engine).record_task(
+        TaskStart(task_id=other, request_id=request, profile="openai", template="local-default",
+                  instructions_ref=await h.blobs.put(b"x", retention="task")),
+        workflow_id=other, run_id="run-1", template_version=1, template_hash="x",
+    )  # fmt: skip
+    await AttemptRepository(engine).start(h.task_id, 1, 1, "worker")
+    await add_checkpoint(
+        h, engine, position=0, files={"a.txt": "x"},
+        finish={"status": "waiting", "summary": "asked", "questions": []},
+    )  # fmt: skip
+    await AttemptRepository(engine).start(other, 1, 1, "worker")
+    messages = MessageRepository(engine)
+    sent = await messages.send(Sender(other, 1, 1), h.task_id, "SKU-1 costs 12.50",
+                               key=idempotency_key(other, 1, "send_to_agent", {}))  # fmt: skip
+    assert sent.ok
+    await messages.claim(h.task_id, 2, datetime.now(UTC))
+    outcome = await h.run(attempt=1, number=2)
+    assert h.runner.seen.calls == 1  # the model ran: not turn 1's finish
+    assert "SKU-1 costs 12.50" in h.runner.seen.input_text and other in h.runner.seen.input_text
+    assert outcome.status == "done"
+    again = await messages.read_claimed(Sender(h.task_id, 2, 1))
+    assert [d.body for d in again] == ["SKU-1 costs 12.50"]  # a rerun reads the same rows
