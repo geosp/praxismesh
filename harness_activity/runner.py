@@ -145,6 +145,16 @@ def looks_failed(result: str) -> bool:
     return head.startswith(("an error occurred", "error", "refused"))
 
 
+def tool_text(result: object) -> str:
+    """A tool result as text. The SDK returns an MCP tool's result as a text item, a
+    list of items, or (structured content) a JSON string; function tools return text."""
+    if isinstance(result, dict) and result.get("type") == "text":
+        return str(result.get("text", ""))
+    if isinstance(result, list):
+        return "".join(tool_text(item) for item in result)
+    return str(result)
+
+
 class _Hooks(RunHooks[Any]):
     """Counts usage, logs refusals, and adds trace spans for model and tool calls
     under the Activity's span (RFC: Observability baseline)."""
@@ -214,19 +224,20 @@ class _Hooks(RunHooks[Any]):
         )
 
     async def on_tool_end(self, context: Any, agent: Any, tool: Tool, result: object) -> None:
-        failed = tool.name != FINISH_TOOL and looks_failed(str(result))
+        text = tool_text(result)
+        failed = tool.name != FINISH_TOOL and looks_failed(text)
         if failed:
             self.state.failed_in_step.append(tool.name)
-        if failed or looks_failed(str(result)):
+        if failed or looks_failed(text):
             TOOL_ERRORS.labels(template=self.template, tool=tool.name).inc()
         open_calls = self.calls.get(tool.name)
-        if tool.name == STATUS_TOOL and not looks_failed(str(result)):
-            emit_agent_status(self.events, str(result))
+        if tool.name == STATUS_TOOL and not looks_failed(text):
+            emit_agent_status(self.events, text)
         self.events.emit(
             "tool_result",
             tool=tool.name,
             call=open_calls.pop(0) if open_calls else None,
-            status="failed" if looks_failed(str(result)) else "ok",
+            status="failed" if looks_failed(text) else "ok",
         )
         span = self.tool_spans.pop(tool.name, None)
         if span is not None:

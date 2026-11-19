@@ -660,3 +660,35 @@ def test_a_status_result_becomes_a_status_event() -> None:
     assert [(e.type, e.payload) for e in sink.events] == [
         ("status", {"stage": "working", "progress": 40, "source": "agent"})
     ]
+
+
+async def test_an_mcp_status_result_is_published_on_openai_agents() -> None:
+    """Review round 1: the SDK hands on_tool_end an MCP result as a text item (or a
+    list of them), not a string; post_status must still become a status event, and
+    an MCP error must still count as failed."""
+    from types import SimpleNamespace
+
+    from opentelemetry import trace
+
+    from harness_activity.events import AttemptEvents, MemorySink
+    from harness_activity.runner import _Hooks
+    from harness_activity.tools import TurnState
+
+    sink = MemorySink()
+
+    async def before(usage: Usage) -> None:
+        return None
+
+    hooks = _Hooks(
+        Usage(), set(), TurnState(), before, trace.get_tracer("t"), "t",
+        AttemptEvents(sink, "wf", "task", 1, 1),
+    )  # fmt: skip
+    status = SimpleNamespace(name="post_status")
+    text = '{"stage": "working", "progress": 40}'
+    await hooks.on_tool_end(None, None, status, {"type": "text", "text": text})  # type: ignore[arg-type]
+    await hooks.on_tool_end(None, None, status, [{"type": "text", "text": text}])  # type: ignore[arg-type]
+    failing = SimpleNamespace(name="send_to_agent")
+    await hooks.on_tool_end(None, None, failing, {"type": "text", "text": "Error: refused"})  # type: ignore[arg-type]
+    published = [(e.type, e.payload) for e in sink.events]
+    assert published.count(("status", {"stage": "working", "progress": 40, "source": "agent"})) == 2
+    assert ("tool_result", {"tool": "send_to_agent", "call": None, "status": "failed"}) in published
