@@ -10,7 +10,9 @@ Plan: [docs/plans/2026-11-18-phase-2-events-and-comms](../plans/2026-11-18-phase
   `temporalio` 1.36.0, SQLAlchemy 2.1.8, `asyncpg` 0.32.0.
 - Reproduce: `sh infra/demo/phase-2-messaging.sh [OUT_DIR]` (needs the setup above, a model
   endpoint, and `python3`, `uv` and `timeout` on the host). Each step's instructions carry a
-  `[script:NAME]` marker, so the same script runs on the fake model.
+  `[script:NAME]` marker, so the same script runs on the fake model: start the workers with
+  `VLLM_BASE_URL=http://fake-model:8765 make workers-check`, then
+  `VLLM_BASE_URL=http://fake-model:8765 make workers-up`, before the script.
 - Dry run: from a clean worktree at `a0faad5` whose `infra/.env` is `infra/.env.example` with only
   the project name and ports changed (a separate project beside the owner's), on the fake model
   (`VLLM_BASE_URL=http://fake-model:8765 make workers-check`, then `make workers-up` with the same
