@@ -144,7 +144,12 @@ class OrchestratorActivities:
         # Rows still open (for example after schedule_to_close expired, when no
         # Activity code ran) are closed with the task (gate F2).
         await self.attempts.close_unfinished(payload.task_id, None, "task_completed")
-        await self.tasks.complete(payload.task_id, payload.status, result.model_dump(mode="json"))
+        # The task's end and its messages close together (Phase 2 messaging D17):
+        # questions to and from it are cancelled, unread messages become
+        # undelivered, and tasks waiting on it are woken.
+        await MessageRepository(self.tasks.engine).end_task(
+            payload.task_id, payload.status, result.model_dump(mode="json")
+        )
         row = await self.tasks.get(payload.task_id)
         with log_context(**_ids(payload.task_id, (row or {}).get("request_id"))):
             log.info(

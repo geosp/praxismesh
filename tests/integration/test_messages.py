@@ -259,3 +259,34 @@ async def test_the_claim_inbox_activity(engine: AsyncEngine) -> None:
     expired: InboxClaim = await env.run(acts.claim_inbox, later)
     assert expired.message_ids == [asked.message_id] and expired.next_deadline is None
     assert "hello" not in first.model_dump_json() and "price" not in expired.model_dump_json()
+
+
+async def test_complete_task_closes_the_task_and_its_messages(engine: AsyncEngine) -> None:
+    """Phase 2 messaging task 4.4 (D17, R24, R30): B ends `done` with a message it never
+    read; A, waiting on a question to B, is woken and told."""
+    from temporalio.testing import ActivityEnvironment
+
+    from common.schemas import CompleteTaskInput, ResolvedTask
+    from orchestrator.activities import OrchestratorActivities
+    from registry.loader import load_registry
+
+    m, a, b = await pair(engine)
+    asked = await m.ask(me(a), b, "price?", key=key(a, b, "q"), wait=WAIT, max_wait=MAX_WAIT)
+    note = await m.send(me(a), b, "fyi", key=key(a, b, "fyi"))
+    await m.claim(a, 2, datetime.now(UTC))  # A sleeps
+    resolved = ResolvedTask(
+        template="local-dsh", template_version=2, template_hash="x", task_queue="tpl.local-dsh",
+        tier="local", max_turns=6, max_tokens=1000, max_wall_time=timedelta(minutes=30),
+        turn_timeout=timedelta(minutes=10), heartbeat_timeout=timedelta(seconds=30),
+    )  # fmt: skip
+    acts = OrchestratorActivities(load_registry(), TaskRepository(engine))
+    done = CompleteTaskInput(task_id=b, status="succeeded", resolved=resolved, turns=1,
+                             attempts=1, tokens_in=0, tokens_out=0)  # fmt: skip
+    await ActivityEnvironment().run(acts.complete_task, done)
+    status = dict(await rows(engine, "SELECT message_id, status FROM task_messages "
+                             "WHERE sender_task = :a", a=a))  # fmt: skip
+    assert status == {asked.message_id: "cancelled", note.message_id: "undelivered"}
+    assert (await rows(engine, "SELECT status FROM tasks WHERE task_id = :b", b=b))[0][0] == (
+        "succeeded"
+    )
+    assert await rows(engine, "SELECT 1 FROM message_wakes WHERE recipient_workflow = :a", a=a)
