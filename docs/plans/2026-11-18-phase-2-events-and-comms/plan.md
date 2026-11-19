@@ -1,11 +1,11 @@
 ---
 title: Phase 2 messaging - comms MCP, inbox and waiting tasks
-status: implemented
+status: closed
 created: 2026-11-18
 updated: 2026-11-19
 design_review: { status: passed, rounds: 3, last: 2026-11-18 }
 approved: 2026-11-18
-adr_review: null
+adr_review: 2026-11-19
 ---
 
 # Phase 2 messaging - comms MCP, inbox and waiting tasks
@@ -385,3 +385,4 @@ in `phases/`.
 
 - 2026-11-18 · D11 changed: the carried `TaskState` travels in `TaskStart.carried`, not as a second `run` argument, because Temporal drops type hints when a start passes fewer arguments than `run` declares (found in phase 02 task 4.3). Behaviour is unchanged.
 - 2026-11-19 · D16 extended: a step may also use `${input:REGEX}`, because a woken recipient learns a question's correlation ID from its input, not from a tool result (found in phase 03 task 1.1). Scripts files may name other script files, so the Compose fake model keeps its order script as the default.
+- 2026-11-19 · D13: the reason "two copies" for rejecting built-in tools does not hold (the runners share tool bodies); ADR-0011 records the reasons that do (the `mcp_servers` grant, no runner change, the confined role on the tools' own connection). Behaviour is unchanged.

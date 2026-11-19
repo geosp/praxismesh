@@ -18,5 +18,5 @@ One record per consequential architecture decision, written when the decision is
 | [0007](0007-fence-harness-attempts-in-one-transaction.md) | Fence every harness attempt's writes in one locked transaction per task | accepted |
 | [0008](0008-record-unobserved-model-usage-as-unknown.md) | Count ledgered model usage over every attempt, and record unobserved usage as unknown and charged, never as zero | accepted |
 | [0009](0009-use-a-postgresql-event-table-for-agent-events.md) | Carry agent progress events in a PostgreSQL event table, behind an event-transport interface | accepted |
-| [0010](0010-wake-agents-through-a-durable-inbox.md) | Keep agent messages in a durable PostgreSQL inbox, and use Temporal Signals only to wake the recipient | proposed |
-| [0011](0011-scope-agent-messaging-to-the-request.md) | Confine agent messaging to the sender's request, through a separate tool server that takes the sender from the worker | proposed |
+| [0010](0010-wake-agents-through-a-durable-inbox.md) | Keep agent messages in a durable PostgreSQL inbox, and use Temporal Signals only to wake the recipient | accepted |
+| [0011](0011-scope-agent-messaging-to-the-request.md) | Confine agent messaging to the sender's request, through a separate tool server that takes the sender from the worker | accepted |

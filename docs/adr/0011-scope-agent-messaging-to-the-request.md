@@ -1,7 +1,7 @@
 ---
 id: ADR-0011
 title: Confine agent messaging to the sender's request, through a separate tool server that takes the sender from the worker
-status: proposed
+status: accepted
 date: 2026-11-19
 issue: "#79"
 related:
@@ -56,8 +56,9 @@ Rejected:
   so a flaw in a messaging path could reach task, attempt and usage data.
 - Tools built into each runner on their own `praxis_comms` connection, which would confine their
   writes just as well (a role belongs to a connection, not a process), because they would be wired
-  into both runners and granted outside the registry, while an MCP server is granted per template
-  like any other and needs no runner change. Plan D13 gave "two copies" as the reason; the tool
+  into both runners and need a new template field to grant them (as `cli_tools` gates
+  `run_command`), while an MCP server uses the existing `mcp_servers` grant and needs no runner
+  change. Plan D13 gave "two copies" as the reason; the tool
   bodies could be shared (`harness_activity/tools.py` already shares bodies between runners), so
   that reason does not hold, and this ADR replaces it.
 
@@ -108,8 +109,9 @@ As built (plan D9, D10, D13; R10, R11, R23, R25-R27):
 `tests/integration/test_messages.py` checks the request scope, stored refusals, ended tasks,
 cycles and the fence; `tests/integration/test_comms_mcp.py` that an argument naming another
 sender is ignored and a cross-request send is refused through the MCP client;
-`tests/test_runner_conformance.py` that the harness config gives every MCP server the attempt's
-task, turn and attempt, and that both runners start an MCP server with the task ID in its
+`tests/test_runner_conformance.py` that the harness config gives an MCP server the attempt's task,
+turn and attempt (asserted on `sample-shop`; `harness_activity/config.py` does the same for every
+server), and that both runners start an MCP server with the task ID in its
 environment; `tests/integration/test_comms_role.py` that the role
 writes messages and reads tasks but cannot write `tasks` or read `checkpoints` (it does not list
 the role's full grant set); and `tests/integration/test_messaging_failures.py` a cross-request send

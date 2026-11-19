@@ -1,7 +1,7 @@
 ---
 id: ADR-0010
 title: Keep agent messages in a durable PostgreSQL inbox, and use Temporal Signals only to wake the recipient
-status: proposed
+status: accepted
 date: 2026-11-19
 issue: "#79"
 related:
