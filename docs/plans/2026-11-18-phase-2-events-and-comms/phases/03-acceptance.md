@@ -8,6 +8,14 @@ delivers: [R10, R13, R14, R16, R17, R19, R24, R30, R33]
 design_review: { status: passed, rounds: 3, last: 2026-11-18 }
 impl_review: { status: passed, rounds: 1, last: 2026-11-19 }
 approved: 2026-11-18
+verification: { status: passed, last: 2026-11-19 }
+demo: { status: passed, last: 2026-11-19 }
+evidence:
+  code_sha: 417c441c0f3c65ec637f873113a41d72aeda1e0e
+  docs_sha: 8e9802ad67a36d28fbf8785cf4dd2ab58e65d051
+  review: docs/plans/2026-11-18-phase-2-events-and-comms/reviews.md
+  verification: docs/reviews/phase-2/verification-messaging.md
+  demo: docs/demos/phase-2.md
 ---
 
 # Phase 03 · Acceptance and demo
