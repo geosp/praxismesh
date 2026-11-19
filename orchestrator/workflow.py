@@ -47,6 +47,7 @@ SHORT_RETRY = RetryPolicy(maximum_attempts=5, non_retryable_error_types=NON_RETR
 # of the right version will take later) do not use them up (review F7).
 TURN_ATTEMPTS = 0
 WAIT_PATCH = "phase2-wait"
+COMPLETE_RETRY = RetryPolicy(maximum_attempts=0, non_retryable_error_types=NON_RETRYABLE)
 # Continue as new before a run's history grows past this many events (D11, R33).
 HISTORY_LIMIT = 1000
 
@@ -249,7 +250,10 @@ class TaskWorkflow:
                     break
                 remaining_time = run.deadline - workflow.now()
                 if remaining_time <= timedelta(0):
-                    reason = "wall-time budget exhausted"
+                    if woken_turn:  # still waiting: end by open questions (R21, R31)
+                        status, reason = await self._ending_at_wall_time(start, run)
+                    else:
+                        reason = "wall-time budget exhausted"
                     break
                 run.turn += 1
                 if woken_turn:
@@ -332,7 +336,7 @@ class TaskWorkflow:
                 workflow.continue_as_new(start.model_copy(update={"carried": run.to_state()}))
             remaining = run.deadline - workflow.now()
             if remaining <= timedelta(0):
-                return self._out_of_wall_time(None)
+                return await self._ending_at_wall_time(start, run)
             self.woken = False  # a Signal from here on ends the sleep below
             try:
                 claim: InboxClaim = await workflow.execute_activity(
@@ -363,15 +367,26 @@ class TaskWorkflow:
             except TimeoutError:
                 now = workflow.now()
                 if now >= run.deadline:
-                    return self._out_of_wall_time(deadline)
+                    return await self._ending_at_wall_time(start, run)
                 if deadline is None:
                     return "succeeded", None  # idle timeout (R20)
                 # a question's deadline passed: claim again, which expires it (R17)
 
-    @staticmethod
-    def _out_of_wall_time(open_deadline: datetime | None) -> tuple[str, str | None]:
-        """R21, R31: with no open question the task succeeded; with one it failed."""
-        if open_deadline is None:
+    async def _ending_at_wall_time(self, start: TaskStart, run: _Run) -> tuple[str, str | None]:
+        """R21, R31: a waiting task out of wall time succeeded with no open question
+        and failed with one. One last claim learns which, whatever path reached the
+        deadline; if even that fails, the task failed."""
+        try:
+            claim: InboxClaim = await workflow.execute_activity(
+                "claim_inbox",
+                ClaimInboxInput(task_id=start.task_id, turn=run.turn + 1, now=workflow.now()),
+                result_type=InboxClaim,
+                start_to_close_timeout=SHORT,
+                schedule_to_close_timeout=SHORT * 2,
+            )
+        except ActivityError:
+            return "failed", "wall-time budget exhausted"
+        if claim.next_deadline is None:
             return "succeeded", None
         return "failed", "wall-time budget exhausted"
 
@@ -383,28 +398,37 @@ class TaskWorkflow:
         reason: str | None,
         questions: list[str],
     ) -> TaskResult:
-        result: TaskResult = await workflow.execute_activity(
-            "complete_task",
-            CompleteTaskInput(
-                task_id=start.task_id,
-                status=status,  # type: ignore[arg-type]
-                summary=run.summary,
-                artifacts=run.outputs,
-                questions=questions,
-                failure_reason=reason,
-                resolved=run.resolved,
-                turns=run.turn,
-                attempts=run.attempts,
-                tokens_in=run.tokens_in,
-                tokens_out=run.tokens_out,
-                inner_turns=run.inner_turns,
-                usage_known=run.usage_known,
-            ),
-            result_type=TaskResult,
-            start_to_close_timeout=SHORT,
-            retry_policy=SHORT_RETRY,
+        payload = CompleteTaskInput(
+            task_id=start.task_id,
+            status=status,  # type: ignore[arg-type]
+            summary=run.summary,
+            artifacts=run.outputs,
+            questions=questions,
+            failure_reason=reason,
+            resolved=run.resolved,
+            turns=run.turn,
+            attempts=run.attempts,
+            tokens_in=run.tokens_in,
+            tokens_out=run.tokens_out,
+            inner_turns=run.inner_turns,
+            usage_known=run.usage_known,
         )
-        return result
+        # Idempotent, so retried without limit: an ending during a database outage
+        # still closes the task's messages once it returns (D17, R24). A cancel that
+        # lands while it runs interrupts it only once.
+        for _ in range(2):
+            try:
+                result: TaskResult = await workflow.execute_activity(
+                    "complete_task",
+                    payload,
+                    result_type=TaskResult,
+                    start_to_close_timeout=SHORT,
+                    retry_policy=COMPLETE_RETRY,
+                )
+                return result
+            except asyncio.CancelledError:
+                continue
+        raise asyncio.CancelledError()
 
 
 @dataclasses.dataclass

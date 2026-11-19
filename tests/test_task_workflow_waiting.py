@@ -244,3 +244,57 @@ async def test_back_to_back_wakes_continue_as_new_and_stay_bounded() -> None:
     assert isinstance(result, TaskResult) and result.status == "succeeded"
     assert len(fakes.turn_inputs) == 101 and result.turns == 101
     assert len(lengths) >= 2 and max(lengths) < 2000, lengths
+
+
+class SlowWaiting(Fakes):
+    """The waiting turn returns after the wall-time budget is spent."""
+
+    def activities(self) -> list[Callable[..., Any]]:
+        acts = super().activities()
+
+        @activity.defn(name="run_harness_turn")
+        async def run_harness_turn(turn: TurnInput) -> TurnOutcome:
+            self.turn_inputs.append(turn)
+            await asyncio.sleep(2)  # real time: past a 1 s budget
+            return TurnOutcome(status="waiting", tokens_in=1, summary="asked")
+
+        return [run_harness_turn if a.__name__ == "run_harness_turn" else a for a in acts]
+
+
+async def test_a_waiting_turn_past_the_deadline_fails_with_an_open_question() -> None:
+    """R31: the ending looks at open questions even when the turn itself spent the
+    wall time; with none it succeeds (R21)."""
+    far = datetime.now(UTC) + timedelta(days=2)
+    budget = resolved(max_wall_time=timedelta(seconds=1))
+    open_question, _ = await run(SlowWaiting([], lambda c, a: rows(0, far), budget))
+    none_open, _ = await run(SlowWaiting([], lambda c, a: rows(0), budget))
+    assert isinstance(open_question, TaskResult) and open_question.status == "failed"
+    assert open_question.failure_reason == "wall-time budget exhausted"
+    assert isinstance(none_open, TaskResult) and none_open.status == "succeeded"
+
+
+async def test_complete_task_is_retried_until_it_succeeds() -> None:
+    """R24, D17: an ending during a database outage still completes through
+    complete_task, however many attempts that takes."""
+
+    class FlakyComplete(Fakes):
+        failures = 0
+
+        def activities(self) -> list[Callable[..., Any]]:
+            acts = super().activities()
+            original = next(a for a in acts if a.__name__ == "complete_task")
+
+            @activity.defn(name="complete_task")
+            async def complete_task(p: CompleteTaskInput) -> TaskResult:
+                if FlakyComplete.failures < 7:
+                    FlakyComplete.failures += 1
+                    raise RuntimeError("database unavailable")
+                result: TaskResult = await original(p)
+                return result
+
+            return [complete_task if a.__name__ == "complete_task" else a for a in acts]
+
+    fakes = FlakyComplete(["done"], lambda c, a: rows(0), resolved())
+    result, _ = await run(fakes)
+    assert isinstance(result, TaskResult) and result.status == "succeeded"
+    assert FlakyComplete.failures == 7 and len(fakes.completed) == 1
