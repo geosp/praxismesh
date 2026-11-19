@@ -379,7 +379,7 @@ in `phases/`.
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
 | 02 | Inbox, comms MCP and waiting tasks | impl-reviewed | 15/15 |
-| 03 | Acceptance and demo | in-progress | 6/7 |
+| 03 | Acceptance and demo | in-progress | 7/7 |
 
 ## Decision log
 
