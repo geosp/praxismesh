@@ -394,7 +394,9 @@ class TaskWorkflow:
                 start_to_close_timeout=SHORT,
                 schedule_to_close_timeout=SHORT * 2,
             )
-        except ActivityError:
+        except ActivityError as e:
+            if isinstance(e.cause, CancelledError):  # the caller ends it as cancelled
+                raise asyncio.CancelledError() from e
             return "failed", unavailable
         if claim.next_deadline is None:
             return "succeeded", None
@@ -425,7 +427,8 @@ class TaskWorkflow:
         )
         # Idempotent, so retried without limit: an ending during a database outage
         # still closes the task's messages once it returns (D17, R24). A cancel that
-        # lands while it runs interrupts it only once.
+        # lands while it runs interrupts it only once; Temporal reports it as an
+        # ActivityError caused by CancelledError, or rarely as asyncio.CancelledError.
         for _ in range(2):
             try:
                 result: TaskResult = await workflow.execute_activity(
@@ -438,6 +441,10 @@ class TaskWorkflow:
                 return result
             except asyncio.CancelledError:
                 continue
+            except ActivityError as e:
+                if isinstance(e.cause, CancelledError):
+                    continue
+                raise
         raise asyncio.CancelledError()
 
 

@@ -125,13 +125,18 @@ async def test_a_wake_for_a_closed_workflow_is_deleted_and_logged(
 
 
 class RacingDispatcher(Dispatcher):
-    """Signals nothing; while 'signalling', a sender wakes the same recipient."""
+    """Signals nothing; while 'signalling' `target` the first time, a sender wakes
+    it again (once: a real sender adds a wake only while the recipient sleeps)."""
 
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, target: str) -> None:
         super().__init__(engine, None)  # type: ignore[arg-type]
+        self.target = target
         self.sends: list[asyncio.Task[None]] = []
 
     async def _signal(self, workflow_id: str) -> bool:
+        if workflow_id != self.target or self.sends:
+            return workflow_id != self.target  # other tests' rows go; the new one stays
+
         async def send() -> None:
             async with self.engine.begin() as conn:  # the sender's insert (D6)
                 await conn.execute(
@@ -154,7 +159,7 @@ async def test_a_wake_sent_while_its_row_is_signalled_is_kept(engine: AsyncEngin
     """Review round 1: a send during the Signal must leave a wake for the next drain."""
     workflow_id = f"inbox-race-{uuid.uuid4().hex[:8]}"
     await wake(engine, workflow_id)
-    dispatcher = RacingDispatcher(engine)
+    dispatcher = RacingDispatcher(engine, workflow_id)
     await dispatcher.drain()
     await asyncio.gather(*dispatcher.sends)
     assert await pending(engine, workflow_id) == 1

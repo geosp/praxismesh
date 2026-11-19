@@ -4,8 +4,8 @@ Runs in the orchestrator worker. A send to a sleeping task commits a wake row an
 `NOTIFY message_wakes` with the message (common/persistence/messages.py). The
 dispatcher `LISTEN`s and also polls every second, takes rows with
 `FOR UPDATE SKIP LOCKED` (so several orchestrator replicas share the work), and for
-each row deletes it and then Signals the recipient's Workflow, in one transaction. A
-failed Signal rolls back its row's delete (a savepoint), so the row waits for the next
+each row deletes it and then Signals the recipient's Workflow, in that row's own
+transaction. A failed Signal rolls back the delete, so the row waits for the next
 poll; a closed or missing Workflow keeps the delete (logged). Deleting before the
 Signal matters: a sender's wake insert for the same recipient then waits for this
 transaction and adds a new row, instead of finding the old one and being dropped
@@ -31,14 +31,9 @@ from common.events.transport import wait_set
 log = logging.getLogger("praxis.dispatcher")
 CHANNEL = "message_wakes"
 POLL_S = 1.0
-BATCH = 50
 INBOX_SIGNAL = "inbox"
 # Senders to a row in the batch wait for the drain to commit: keep each Signal short.
 SIGNAL_TIMEOUT = timedelta(seconds=5)
-
-
-class _Keep(Exception):
-    """Rolls back one row's delete: its Signal failed."""
 
 
 class Dispatcher:
@@ -80,32 +75,31 @@ class Dispatcher:
                     await driver.remove_listener(CHANNEL, notified)
 
     async def drain(self) -> int:
-        """Signal every pending wake once; returns how many rows were deleted."""
-        deleted = 0
+        """Signal every pending wake once; returns how many rows were deleted.
+
+        One transaction per row: a sender to that recipient waits for it, so it is
+        held for one Signal (at most SIGNAL_TIMEOUT), never for a whole batch."""
+        deleted, kept = 0, [0]  # ids whose Signal failed in this drain; 0 is never an id
         while True:
             async with self.engine.begin() as conn:
-                rows = list(
+                row = (
                     await conn.execute(
                         text(
-                            "SELECT id, recipient_workflow FROM message_wakes ORDER BY id "
-                            "FOR UPDATE SKIP LOCKED LIMIT :n"
+                            "SELECT id, recipient_workflow FROM message_wakes "
+                            "WHERE id <> ALL(:kept) ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1"
                         ),
-                        {"n": BATCH},
+                        {"kept": kept},
                     )
-                )
-                done = 0
-                for row_id, workflow_id in rows:
-                    with contextlib.suppress(_Keep):
-                        async with conn.begin_nested():
-                            await conn.execute(
-                                text("DELETE FROM message_wakes WHERE id = :id"), {"id": row_id}
-                            )
-                            if not await self._signal(workflow_id):
-                                raise _Keep
-                            done += 1
-            deleted += done
-            if len(rows) < BATCH or not done:
-                return deleted
+                ).first()
+                if row is None:
+                    return deleted
+                row_id, workflow_id = row
+                await conn.execute(text("DELETE FROM message_wakes WHERE id = :id"), {"id": row_id})
+                if not await self._signal(workflow_id):
+                    await conn.rollback()  # keep the row for the next poll
+                    kept.append(row_id)
+                    continue
+            deleted += 1
 
     async def _signal(self, workflow_id: str) -> bool:
         """True when the row can go: the Signal was accepted, or the Workflow is gone."""

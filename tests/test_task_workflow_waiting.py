@@ -328,3 +328,52 @@ async def test_a_claim_cut_off_by_the_deadline_still_ends_by_open_questions() ->
     result, _ = await run(fakes)
     assert isinstance(result, TaskResult) and result.status == "succeeded", result
     assert len(fakes.completed) == 1
+
+
+async def test_a_cancel_while_complete_task_retries_still_completes_it() -> None:
+    """R24, D17 (review round 2): Temporal reports a cancel during complete_task as
+    an ActivityError; complete_task must still be run again and succeed."""
+    cancelled: list[bool] = []
+
+    class StuckComplete(Fakes):
+        attempts = 0
+
+        def activities(self) -> list[Callable[..., Any]]:
+            acts = super().activities()
+            original = next(a for a in acts if a.__name__ == "complete_task")
+
+            @activity.defn(name="complete_task")
+            async def complete_task(p: CompleteTaskInput) -> TaskResult:
+                StuckComplete.attempts += 1
+                if not cancelled:
+                    raise RuntimeError("database unavailable")
+                result: TaskResult = await original(p)
+                return result
+
+            return [complete_task if a.__name__ == "complete_task" else a for a in acts]
+
+    async def cancel(handle: WorkflowHandle[Any, Any], env: WorkflowEnvironment) -> None:
+        while StuckComplete.attempts < 2:
+            await asyncio.sleep(0.05)
+        cancelled.append(True)
+        await handle.cancel()
+
+    fakes = StuckComplete(["done"], lambda c, a: rows(0), resolved())
+    await run(fakes, cancel)
+    assert len(fakes.completed) == 1
+
+
+async def test_a_slow_claim_with_rows_at_the_deadline_runs_no_woken_turn() -> None:
+    """R21 (review round 2): a claim with rows cut off by the wall-time deadline
+    runs no woken turn; the final claim ends the task by its open questions."""
+
+    def slow_claim(c: ClaimInboxInput, attempt: int) -> InboxClaim:
+        import time
+
+        time.sleep(1.5)  # real time: the 1 s wall-time budget passes meanwhile
+        return rows(1)
+
+    fakes = Fakes(["waiting"], slow_claim, resolved(max_wall_time=timedelta(seconds=1)))
+    result, _ = await run(fakes)
+    assert isinstance(result, TaskResult) and result.status == "succeeded", result
+    assert len(fakes.turn_inputs) == 1  # no woken turn ran
