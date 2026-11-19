@@ -182,6 +182,10 @@ async def test_runner_conformance(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         "get_discount",
         "get_setting",
         "record_order",
+        "send_to_agent",
+        "ask_agent",
+        "post_status",
+        "get_task_context",
     }
     system = instructions_seen(first)
     assert "finish_task" in system and ".skills/order-desk/SKILL.md" in system
@@ -497,9 +501,17 @@ def test_mcp_server_env_is_exactly_what_is_granted(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("CANARY_SECRET", "not-granted")
     registry = load_registry()
     _, loaded = registry.resolve("openai")
-    (server,) = build_config(
-        registry, loaded, "task-env-00000001", turn=3, attempt=2, max_ask_wait=timedelta(minutes=2)
-    ).mcp
+    servers = {
+        s.name: s
+        for s in build_config(
+            registry, loaded, "task-env-00000001", turn=3, attempt=2,
+            max_ask_wait=timedelta(minutes=2),
+        ).mcp
+    }  # fmt: skip
+    server = servers["sample-shop"]
+    # Each server gets only its own grant: comms_mcp its database URL, not the shop's.
+    assert "PRAXIS_COMMS_DB_URL" in servers["comms"].env
+    assert "PRAXIS_SAMPLE_DB_URL" not in servers["comms"].env
     assert set(server.env) == {
         "PATH", "LANG", "PRAXIS_TASK_ID", "PRAXIS_TURN", "PRAXIS_ATTEMPT", "PRAXIS_MAX_ASK_WAIT",
         "PRAXIS_SAMPLE_DB_URL",
@@ -560,7 +572,7 @@ async def test_tool_errors_are_counted(tmp_path: Path, monkeypatch: pytest.Monke
     """Tool calls and errors are recorded per tool (worker metrics; gate F3)."""
     from prometheus_client import REGISTRY
 
-    labels = {"template": "local-default@1", "tool": "read_file"}
+    labels = {"template": "local-default@2", "tool": "read_file"}
     before = REGISTRY.get_sample_value("praxis_tool_errors_total", labels) or 0
     calls_before = REGISTRY.get_sample_value("praxis_tool_calls_total", labels) or 0
     await run(

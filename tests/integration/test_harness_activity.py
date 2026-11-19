@@ -500,7 +500,7 @@ async def test_activity_metrics_are_recorded(
         or 0
     )
     token_labels = [
-        {"template": "local-default@1", "direction": direction} for direction in ("in", "out")
+        {"template": "local-default@2", "direction": direction} for direction in ("in", "out")
     ]
     tokens_before = [REGISTRY.get_sample_value("praxis_tokens_total", t) or 0 for t in token_labels]
     cp_bytes_before = REGISTRY.get_sample_value("praxis_checkpoint_bytes_count") or 0

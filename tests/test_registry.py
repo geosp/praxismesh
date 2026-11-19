@@ -25,11 +25,12 @@ def test_loaders() -> None:
     registry = load_registry()
     profile, loaded = registry.resolve("openai")
     assert profile.name == "openai"
-    assert loaded.template.ref == "local-default@1"
+    assert loaded.template.ref == "local-default@2"
     assert loaded.hash.startswith("sha256:")
     assert "sample-shop" in registry.mcp_servers
     assert "order-desk" in registry.skills
     assert loaded.template.capabilities[0] == "mcp:sample-shop"
+    assert "comms" in registry.mcp_servers and "mcp:comms" in loaded.template.capabilities
 
 
 def test_registry_lock_is_current() -> None:
@@ -44,7 +45,7 @@ def test_changed_template_without_version_bump(registry_copy: Path) -> None:
 
 
 def test_changed_prompt_without_version_bump(registry_copy: Path) -> None:
-    prompt = registry_copy / "prompts" / "local-default.md"
+    prompt = registry_copy / "prompts" / "local-comms.md"  # the v2 templates' prompt
     prompt.write_text(prompt.read_text() + "\nAlso be brief.\n")
     with pytest.raises(RegistryError, match="changed but its version did not"):
         load_registry(registry_copy)
@@ -54,13 +55,13 @@ def test_new_version_needs_lock_entry(registry_copy: Path) -> None:
     template = registry_copy / "templates" / "local-default.yaml"
     template.write_text(
         template.read_text()
-        .replace("version: 1", "version: 2")
+        .replace("version: 2", "version: 3")
         .replace("inner_max_turns: 8", "inner_max_turns: 9")
     )
     with pytest.raises(RegistryError, match=r"not in registry\.lock"):
         load_registry(registry_copy)
     assert update(registry_copy, check=False) == []
-    assert load_registry(registry_copy).templates["local-default"].template.version == 2
+    assert load_registry(registry_copy).templates["local-default"].template.version == 3
 
 
 def test_lock_never_rewrites_an_existing_version(registry_copy: Path) -> None:
@@ -136,7 +137,9 @@ def test_unsupported_harness_template_rejected(registry_copy: Path) -> None:
 def test_mcp_secret_must_be_granted_by_template(registry_copy: Path) -> None:
     template = registry_copy / "templates" / "local-default.yaml"
     template.write_text(
-        template.read_text().replace("secret_refs: [PRAXIS_SAMPLE_DB_URL]", "secret_refs: []")
+        template.read_text().replace(
+            "secret_refs: [PRAXIS_SAMPLE_DB_URL, PRAXIS_COMMS_DB_URL]", "secret_refs: []"
+        )
     )
     with pytest.raises(RegistryError, match="needs secret_refs"):
         load_registry(registry_copy, check_lock=False)
