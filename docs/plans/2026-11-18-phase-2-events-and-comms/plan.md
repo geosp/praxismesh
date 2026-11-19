@@ -1,6 +1,6 @@
 ---
 title: Phase 2 messaging - comms MCP, inbox and waiting tasks
-status: in-progress
+status: implemented
 created: 2026-11-18
 updated: 2026-11-19
 design_review: { status: passed, rounds: 3, last: 2026-11-18 }
@@ -378,8 +378,8 @@ in `phases/`.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 02 | Inbox, comms MCP and waiting tasks | impl-reviewed | 15/15 |
-| 03 | Acceptance and demo | in-progress | 7/7 |
+| 02 | Inbox, comms MCP and waiting tasks | done | 15/15 |
+| 03 | Acceptance and demo | done | 7/7 |
 
 ## Decision log
 

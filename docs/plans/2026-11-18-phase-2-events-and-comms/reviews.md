@@ -202,3 +202,6 @@ Reviewers: contract ✅
 | F151 | Nit | contract | "Batching under a busy response" is shown only as 13 events in 7 batches | accepted: recorded under a busy response in `phase-2-events.md`, which the record links |
 
 After the fixes no Blocker or Major is open: phase 03's implementation review passes. Both Major fixes were confirmed by mutation: with no `inbox` Signal from the dispatcher, `test_two_agents` fails; with the question's deadline left out of the Workflow's sleep, the R17 test fails.
+
+## 2026-11-19 · verification · phases 02 and 03 · pass
+Gate verification at code `417c441`, docs `8e9802a`: [docs/reviews/phase-2/verification-messaging.md](../../reviews/phase-2/verification-messaging.md). Phases 02 and 03 done.

@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: Acceptance and demo
-status: in-progress
+status: done
 branch: feat/79-agent-messaging
 base: c1dbee715362602f959a36afd5aca4ecda3bd552
 delivers: [R10, R13, R14, R16, R17, R19, R24, R30, R33]
