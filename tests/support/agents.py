@@ -116,3 +116,24 @@ async def eventually(check: Any, what: str, timeout_s: float = 120) -> None:
 async def sleeping(task_id: str) -> bool:
     rows = await query("SELECT sleeping FROM task_inbox WHERE task_id = :t", t=task_id)
     return bool(rows and rows[0][0])
+
+
+async def inbox_signals(client: Client, task_id: str) -> int:
+    """`inbox` Signals in the task's current Workflow run."""
+    from temporalio.api.enums.v1 import EventType
+
+    history = await client.get_workflow_handle(task_id).fetch_history()
+    return sum(
+        1
+        for e in history.events
+        if e.event_type == EventType.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED
+        and e.workflow_execution_signaled_event_attributes.signal_name == "inbox"
+    )
+
+
+async def correlation_id(asker: str) -> str:
+    rows = await query(
+        "SELECT correlation_id FROM task_messages WHERE sender_task = :t AND kind = 'ask'",
+        t=asker,
+    )
+    return str(rows[0][0])

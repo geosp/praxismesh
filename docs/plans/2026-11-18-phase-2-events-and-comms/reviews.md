@@ -180,3 +180,23 @@ Reviewers: failure and retry ✅
 | F138 | Nit | failure | Phase front matter said passed while round 2 was running; plan.md disagreed | fixed: front matter and Phases table after this round |
 
 After the fixes, no Blocker or Major is open: the review passes. Per the impl-review skill, rounds stop at two.
+
+## 2026-11-19 · impl-review · phase 03 · round 1 · changes-requested
+Diff base: `c1dbee715362602f959a36afd5aca4ecda3bd552`; review commit `132e2df`. Report: `docs/reviews/phase-2/raw/messaging-impl-review-phase-03-round-1-contract.md`. One lens: the phase adds tests, test tooling, the demo and docs, so the contract lens (does each test prove its requirement, could it fail) is the one that applies; failure and scope lenses were not run.
+Reviewers: contract ✅
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F139 | Major | contract | `test_two_agents` never showed B waiting before A asked, so the R14 wake path was not observed | fixed: waits for B to sleep, asserts an `inbox` Signal in B's history; the R19 test waits too |
+| F140 | Major | contract | R17's 3 s deadline could expire before A slept, so the deadline timer was not observed | fixed: 20 s deadline; A is seen asleep with its question open before it expires |
+| F141 | Nit | contract | Task 1.5 reports event counts, not bytes | accepted: event count is the bound R33 sets; the demo probe reports bytes |
+| F142 | Nit | contract | R19 test did not check the refusal names the question | fixed: asserts `open question <id> to <B>` |
+| F143 | Nit | contract | R16 test did not check the reply carries A's correlation ID | fixed: asserts `your question <id>: 12.50` in A's woken input |
+| F144 | Nit | contract | R10 test did not check the refusal was an error result | accepted: the chat completions protocol carries no error flag to the model; `comms_mcp` raises `ToolError` (phase 02 tests) |
+| F145 | Nit | contract | The fake model's docstring claimed `${input}` keeps a value's type | fixed: docstring |
+| F146 | Nit | contract | A `}` in `${input:REGEX}` truncates it and the `re.error` escaped | fixed: `re.error` caught (placeholder stays as written); docstring says REGEX may not contain `}` |
+| F147 | Nit | contract | plan.md Phases table showed phase 03 at 0/7 | fixed: 6/7 |
+| F148 | Nit | contract | The overview section had no Deviations part | fixed: "Deviations from the plan" |
+| F149 | Nit | contract | The overview's Dispatcher row read as keeping the row for a closed Workflow | fixed: "the row is dropped (logged)" |
+| F150 | Nit | contract | The final demo script (`90ad371`) had no clean-worktree dry run | open: dry run of the final script, then the demo record |
+| F151 | Nit | contract | "Batching under a busy response" is shown only as 13 events in 7 batches | accepted: recorded under a busy response in `phase-2-events.md`, which the record links |

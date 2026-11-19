@@ -85,16 +85,23 @@ async def cancelled(handle: WorkflowHandle[Any, Any]) -> None:
 async def test_an_unanswered_question_times_out(
     container: DshContainer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """R17: no reply by the deadline; the asker is woken and told."""
+    """R17: no reply by the deadline; the sleeping asker is woken by the deadline
+    and told. The deadline is long enough for A to be seen asleep before it."""
     registry = load_registry(registry_in(tmp_path))
     with FakeModel(SCRIPTS) as fake:
         monkeypatch.setenv("VLLM_BASE_URL", fake.base_url)
         async with stack(registry, container, monkeypatch) as client:
             b, b_handle = await submit(client, registry, "[script:silent] Never answer.")
             a, a_handle = await submit(
-                client, registry, f"[script:asker] Please ask task {b.task_id} within 3 s.",
+                client, registry, f"[script:asker] Please ask task {b.task_id} within 20 s.",
                 join=b.request_id,
             )  # fmt: skip
+
+            async def a_asleep_with_its_question_open() -> bool:
+                rows = await messages(a.request_id)
+                return bool(rows) and rows[0][3] != "expired" and await sleeping(a.task_id)
+
+            await eventually(a_asleep_with_its_question_open, "A asleep before the deadline", 15)
             a_result = await result_of(a_handle)
             await cancelled(b_handle)
 

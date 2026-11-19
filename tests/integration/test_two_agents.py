@@ -17,9 +17,19 @@ from typing import Any
 import pytest
 
 from registry.loader import load_registry
-from tests.support.agents import finish, messages, result_of, stack, submit
+from tests.support.agents import (
+    correlation_id,
+    eventually,
+    finish,
+    inbox_signals,
+    messages,
+    result_of,
+    sleeping,
+    stack,
+    submit,
+)
 from tests.support.dsh import DshContainer, build_image, make_dsh_registry, start_container
-from tests.support.fake_model import FakeModel
+from tests.support.fake_model import FakeModel, text_of
 
 pytestmark = pytest.mark.integration
 PRICE = "12.50"
@@ -64,13 +74,27 @@ async def test_a_asks_b_and_resumes_with_the_answer(
             b, b_handle = await submit(
                 client, registry, "[script:answerer] Answer price questions."
             )
+
+            async def b_asleep() -> bool:
+                return await sleeping(b.task_id)
+
+            await eventually(b_asleep, "B to wait")  # R14: B is waiting when A asks
             a, a_handle = await submit(
                 client, registry, f"[script:asker] Please ask task {b.task_id} for the price.",
                 join=b.request_id,
             )  # fmt: skip
             a_result, b_result = await asyncio.gather(result_of(a_handle), result_of(b_handle))
+            b_signals = await inbox_signals(client, b.task_id)
+        question = await correlation_id(a.task_id)
+        # R16: A's woken turn was given the reply with its question's correlation ID.
+        woken_inputs = [
+            text_of(m) for r in fake.state.requests if "[script:asker]" in str(r["messages"])
+            for m in r["messages"] if m.get("role") == "user" and "Reply from" in text_of(m)
+        ]  # fmt: skip
 
     assert a.request_id == b.request_id
+    assert b_signals >= 1  # R14: the question woke the sleeping B through an inbox Signal
+    assert woken_inputs and f"your question {question}: {PRICE}" in woken_inputs[-1]
     # R16: A resumed with B's answer; R14: B slept until the question woke it.
     assert (a_result.status, a_result.summary) == ("succeeded", PRICE)
     assert (b_result.status, b_result.summary) == ("succeeded", "answered")

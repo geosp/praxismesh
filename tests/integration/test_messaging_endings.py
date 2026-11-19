@@ -19,7 +19,16 @@ from common.observability import disable_sdk_tracing
 from common.persistence.repositories import make_engine
 from orchestrator.dispatcher import Dispatcher
 from registry.loader import Registry, load_registry
-from tests.support.agents import eventually, finish, messages, result_of, stack, submit
+from tests.support.agents import (
+    correlation_id,
+    eventually,
+    finish,
+    messages,
+    result_of,
+    sleeping,
+    stack,
+    submit,
+)
 from tests.support.dsh import DshContainer, build_image, make_dsh_registry, start_container
 from tests.support.fake_model import FakeModel, text_of
 from tests.support.stack import run_id
@@ -121,17 +130,23 @@ async def test_done_with_an_open_question_is_refused_and_the_task_waits(
             b, b_handle = await submit(
                 client, registry, "[script:answerer] Answer price questions."
             )
+
+            async def b_asleep() -> bool:
+                return await sleeping(b.task_id)
+
+            await eventually(b_asleep, "B to wait")
             a, a_handle = await submit(
                 client, registry, f"[script:eager] Please ask task {b.task_id} for the price.",
                 join=b.request_id,
             )  # fmt: skip
             a_result, b_result = await asyncio.gather(result_of(a_handle), result_of(b_handle))
+        question = await correlation_id(a.task_id)
         told = [
             text_of(m) for request in fake.state.requests for m in request["messages"]
             if m.get("role") == "tool" and "cannot finish while" in text_of(m)
         ]  # fmt: skip
 
-    assert told and "open question" in told[0]
+    assert told and f"open question {question} to {b.task_id}" in told[0]  # names it (R19)
     assert (a_result.status, a_result.summary, a_result.turns) == ("succeeded", PRICE, 2)
     assert b_result.status == "succeeded"
     assert [(m[2], m[3]) for m in await messages(a.request_id)] == [

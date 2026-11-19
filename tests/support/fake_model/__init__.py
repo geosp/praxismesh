@@ -23,9 +23,11 @@ A request uses the one its messages name with a `[script:NAME]` marker, or
 "default". In a tool call's arguments, `${result.N.field}` is a field (a dotted
 path; list items by number) of the first tool result of step N, and
 `${input:REGEX}` is the first group of REGEX in the user and system messages,
-newest first. A string that is only a placeholder takes the value's own type. A
-scripts file may give a script as the name of another JSON file beside it
-(`load_scripts`).
+newest first (REGEX may not contain `}`). A string that is only a `${result...}`
+placeholder takes the field's own type; `${input:...}` always gives text, which
+the tools' argument validation converts (for example to an integer). A
+placeholder that cannot be resolved stays as written. A scripts file may give a
+script as the name of another JSON file beside it (`load_scripts`).
 
     from tests.support.fake_model import FakeModel
     with FakeModel(script) as fake: base_url = fake.base_url
@@ -126,7 +128,7 @@ def _resolve(value: Any, messages: list[dict[str, Any]]) -> Any:
                     found = pattern.search(text_of(m))
                     if found:
                         return found.group(1)
-        except (IndexError, KeyError, ValueError, TypeError):
+        except (IndexError, KeyError, ValueError, TypeError, re.error):
             pass
         return match.group(0)
 
