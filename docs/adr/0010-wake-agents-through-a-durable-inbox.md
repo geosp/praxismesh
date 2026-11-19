@@ -26,7 +26,8 @@ has rows. The answer has to hold under these requirements of the Phase 2 messagi
 
 - A message accepted by the sender is never lost, even when the recipient's worker or the
   dispatcher is down (R13, R14), and reaches at most one turn of the recipient (R13).
-- A woken turn sees every message that arrived before it started, and none twice (R13, R15).
+- A message that arrives while its recipient runs is claimed before the recipient next sleeps,
+  and no message reaches two turns (R13, R15).
 - A waiting task's Temporal history stays bounded however often it is woken or messaged
   (R33: no run above 2,000 events; R28: no message body in the history).
 - The tool server the agent calls (`comms_mcp`, a stdio subprocess per attempt) has no Temporal
@@ -40,6 +41,8 @@ has rows. The answer has to hold under these requirements of the Phase 2 messagi
 - Signals carry the messages: `comms_mcp` (or a service it calls) Signals the recipient's
   Workflow with the message.
 - One long-polling Activity per waiting task waits on the inbox until a row arrives.
+- The send path Signals the recipient directly, with no message in the Signal and no wake row or
+  dispatcher.
 
 ## Decision outcome
 
@@ -48,12 +51,16 @@ keeps every message durable before anyone is woken, keeps bodies out of Temporal
 no Temporal client in the tool server, and holds no worker slot while a task sleeps.
 
 Rejected:
-- Signals carrying the messages, because the tool server would need a Temporal client, against
-  design §4.4, and each message body and Signal would land in the recipient's history, against
-  R28 and R33.
+- Signals carrying the messages, because each message body and Signal would land in the
+  recipient's history, against R28 and R33; sent from `comms_mcp` itself, it would also need a
+  Temporal client in a worker subprocess, which design §4.4 avoids.
 - One long-polling Activity per waiting task, because each sleeping task would hold a worker slot
   (and its heartbeats) for as long as it waits, so waiting tasks would compete with running turns
   for worker capacity; a sleeping Workflow with a timer holds none.
+- A body-free Signal straight from the send path, because a Signal that fails after the message
+  commits would be lost with nothing to retry it, and the recipient would sleep on a message it
+  never claims (R15); a wake row is committed with the message and kept until its Signal is
+  accepted. It would also need the Temporal client in `comms_mcp`.
 
 As built (plan D6 and D7; the last bullet is context from D11 and D17, which this ADR does not
 decide):
@@ -79,10 +86,11 @@ decide):
   returns; wake rows wait for a stopped dispatcher, and deadlines and timeouts still fire.
 - Good, because histories hold only claim results and Signals: one task woken 100 times back to
   back ran in three runs of 1,009, 1,013 and 443 events, and 50 messages during one turn brought
-  no Signal (`tests/integration/test_messaging_history.py`).
+  no Signal (the gate verification run, `docs/reviews/phase-2/verification-messaging.md`;
+  `tests/integration/test_messaging_history.py` asserts the bounds).
 - Good, because every attempt's inbox write (a send, question, reply or marking rows read) shares
-  a transaction with ADR-0007's fence and the request lock, as ADR-0009's event table does; the
-  orchestrator's claim and `end_task` take the request lock only.
+  a transaction with ADR-0007's fence and the request lock, as ADR-0009's event writes share one
+  with the fence; the orchestrator's claim and `end_task` take the request lock only.
 - Bad, because waking takes two hops (wake row, then Signal) and adds a component, the
   dispatcher, which must run beside the orchestrator worker; while the dispatcher is down, a
   sleeping task is woken only by its next deadline or timeout.
