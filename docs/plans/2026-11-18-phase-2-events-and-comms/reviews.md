@@ -161,3 +161,22 @@ Reviewers: contract ✅ · failure and retry ✅ · scope and composition ✅
 | F126 | Nit | scope | The closed-workflow test uses a never-started workflow | accepted: closed and missing workflows both return NOT_FOUND on one path |
 | F127 | Nit | scope | The wake-budget test runs at a smaller scale than the plan's example (R22) | accepted: the counters do not depend on scale |
 | F128 | Nit | scope | The R13 rerun test calls `read_claimed` directly | accepted: `read_claimed` is keyed by turn, not attempt |
+
+## 2026-11-19 · impl-review · phase 02 · round 2 · changes-requested
+Targeted follow-up (docs/reviews/README.md rules 6 and 8): one failure-and-retry reviewer over the fixes, `3ca9f3d..bd10edc`, given the round 1 correction list. Report: `docs/reviews/phase-2/raw/messaging-impl-review-round-2-failure.md`. It confirmed F94-F97, F99, F100, F102 and F106-F108; F98's cancel half came back as F129.
+Reviewers: failure and retry ✅
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F129 | Major | failure | F98 reopened: a cancel during `complete_task` arrives as an `ActivityError` caused by `CancelledError`, so it was not rerun (R24, D17) | fixed: `_complete` reruns on it; `test_a_cancel_while_complete_task_retries_still_completes_it` |
+| F130 | Nit | failure | A cancel during the final wall-time claim ended as "wall-time budget exhausted" | fixed: `_ending_at_wall_time` re-raises it, so the task ends "cancelled" |
+| F131 | Nit | failure | A failed final claim fails a task that may have had no open question (R21) | accepted: the wall time did run out and the ending cannot be known; failing is the safe ending |
+| F132 | Nit | failure | `_run_v2`'s woken-turn branch at the deadline is untested (F109) | accepted: reachable only when the Workflow task that sees a claim's rows starts after the deadline; it uses the same `_ending_at_wall_time` as the tested paths (`test_a_slow_claim_with_rows_at_the_deadline_runs_no_woken_turn` covers the cut-off claim) |
+| F133 | Nit | failure | No `workflow.patched` marker for the new commands (D12) | accepted: the v2 path has run only on dev stacks and is unmerged; `phase2-wait` still guards Phase 1 histories |
+| F134 | Nit | failure | `complete_task` retries without a `schedule_to_close`, so a permanent bug keeps the Workflow open | accepted: by design for outages (D17); the failing attempts show as a pending Activity and in the worker log |
+| F135 | Nit | failure | The final claim can end up to 60 s after the deadline | accepted: R21 sets no timing |
+| F136 | Nit | failure | A batch's deletes stayed uncommitted, so senders could wait for many Signals (D6) | fixed: one transaction per wake row in `drain` |
+| F137 | Nit | failure | A non-RPC error from `_signal` rolled back the whole batch | fixed: F136 (only that row's transaction) |
+| F138 | Nit | failure | Phase front matter said passed while round 2 was running; plan.md disagreed | fixed: front matter and Phases table after this round |
+
+After the fixes, no Blocker or Major is open: the review passes. Per the impl-review skill, rounds stop at two.
