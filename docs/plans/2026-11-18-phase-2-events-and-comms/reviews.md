@@ -205,3 +205,12 @@ After the fixes no Blocker or Major is open: phase 03's implementation review pa
 
 ## 2026-11-19 · verification · phases 02 and 03 · pass
 Gate verification at code `417c441`, docs `8e9802a`: [docs/reviews/phase-2/verification-messaging.md](../../reviews/phase-2/verification-messaging.md). Phases 02 and 03 done.
+
+## 2026-11-19 · ADR review
+
+- In force, reviewed: ADR-0002, ADR-0003, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0009 (ADR-0001 and ADR-0004 are proposed).
+- Owner chose two ADRs: ADR-0010 from D6 and D7 (durable inbox, Signals only wake), ADR-0011 from D9, D10 and D13 (how the comms tools are confined). The rest are mechanics recorded here and in `docs/roadmap/schemas.md`: D5, D8, D10's lock order, D11, D12, D14-D18.
+- Independent review by fresh `design-reviewer` subagents, one at a time (raw: `docs/reviews/phase-2/raw/adr-review-001*.md`):
+  - ADR-0010 round 1 at 3f25169: changes-requested (the long-polling option had no reason for losing, and the rationale claimed no other option met its criteria); fixed in c9bffcc. Round 2 at c9bffcc: accept; its 5 Nits fixed in 34a2979 (R15 wording, the direct-Signal option, sources).
+  - ADR-0011 round 1 at 34a2979: changes-requested (guarantees overstated against threat model R1; bundled decisions; the "two copies" reason contradicted by the code); recast in d395bbd. Round 2 at d395bbd: changes-requested (the separate process was credited with confining the role; the built-in-tools-on-`praxis_comms` option was missing); fixed in 95758e9. Targeted follow-up at 95758e9: accept; its 2 Nits fixed.
+- ADR-0010 and ADR-0011 `accepted`. Follow-ups named in ADR-0011: a threat-model entry for the comms server's database boundary and the `praxis_comms` role; optionally, the registry loader refusing the identity variables in `secret_env`.
