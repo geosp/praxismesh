@@ -51,6 +51,7 @@ from harness_activity.dsh.runner import DshRunner
 from harness_activity.runner import OpenAIAgentsRunner, Unserviceable
 from orchestrator.activities import OrchestratorActivities
 from orchestrator.constants import orchestration_queue, template_queue
+from orchestrator.dispatcher import Dispatcher
 from orchestrator.workflow import TaskWorkflow
 from registry.loader import (
     REGISTRY_ROOT,
@@ -192,7 +193,15 @@ async def main(argv: Sequence[str]) -> int:
     provider = configure_tracing(f"praxis-{args.role}")
     client = await connect(f"praxis-{args.role}", provider)
     worker = await build_worker(client, args.role, args.template, provider)
-    await worker.run()
+    dispatching = None
+    if args.role == "orchestrator":
+        # Wake rows to inbox Signals, beside the Workflows (Phase 2 messaging D6).
+        dispatching = asyncio.create_task(Dispatcher(make_engine(), client).run())
+    try:
+        await worker.run()
+    finally:
+        if dispatching is not None:
+            dispatching.cancel()
     return EXIT_UNSERVICEABLE if UNSERVICEABLE else 0
 
 

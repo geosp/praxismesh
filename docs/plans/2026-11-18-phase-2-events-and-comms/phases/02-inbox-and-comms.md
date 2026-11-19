@@ -44,7 +44,7 @@ closes its messages and wakes its waiters.
 - [x] 4.2 Add Activity `claim_inbox(task, turn, now)`: returns IDs, a count and the next deadline (D7, R15, R17, R28). Verify: a rerun returns the same IDs; a claim after a deadline returns the expiry; the result holds no body.
 - [x] 4.3 Patch `TaskWorkflow`: Continue-As-New check after every `waiting` outcome, the claim (retried until the wall-time deadline), the `inbox` Signal, the wait timers, the R20, R21 and R31 endings, `max_wakes`, `complete_task` on every ending including a cancellation or failed claim during the wait, `TaskState` (D7, D11, D12, D14, D17, R14-R17, R20-R22, R24, R29, R31-R33). Verify: `tests/test_task_workflow.py` time-skipping tests for each scenario, including a cancel during the wait, a claim that keeps failing, and 100 back-to-back wakes with every run under 2,000 events; the replay test passes.
 - [x] 4.4 Make `complete_task` call `end_task` (D17, R24, R30). Verify: an integration test where B ends `done` with a pending message (marked `undelivered`) and A, waiting on B, is woken.
-- [ ] 4.5 Add the dispatcher to the orchestrator worker (D6, R14). Verify: an integration test stops the dispatcher, sends, restarts it, and the recipient wakes; a wake for a closed Workflow is deleted and logged.
+- [x] 4.5 Add the dispatcher to the orchestrator worker (D6, R14). Verify: an integration test stops the dispatcher, sends, restarts it, and the recipient wakes; a wake for a closed Workflow is deleted and logged.
 
 ### 5. Docs
 
