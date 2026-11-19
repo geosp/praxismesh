@@ -989,3 +989,41 @@ async def test_a_woken_turn_runs_the_model_with_its_messages(
     assert outcome.status == "done"
     again = await messages.read_claimed(Sender(h.task_id, 2, 1))
     assert [d.body for d in again] == ["SKU-1 costs 12.50"]  # a rerun reads the same rows
+
+
+async def test_a_done_alongside_a_same_step_ask_does_not_finish(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """Review round 1 (R19): with parallel tool calls, finish_task's check can run
+    before the same step's ask_agent commits. The Activity checks again after the
+    run, so the task does not end with the question open."""
+    from common.persistence.messages import MessageRepository, Sender, idempotency_key
+
+    other = f"task-act-{run_id()}"
+    holder: dict[str, str] = {}
+
+    async def ask_then_done(
+        seen: Seen, before: BeforeModelCall, usage: Usage, ws_: Path, s: Session
+    ) -> RunResult:
+        asked = await MessageRepository(engine).ask(  # the step's ask_agent, committed late
+            Sender(holder["task"], 1, 1), other, "price?",
+            key=idempotency_key(holder["task"], 1, "ask_agent", {}),
+            wait=timedelta(minutes=5), max_wait=timedelta(minutes=10),
+        )  # fmt: skip
+        assert asked.ok
+        return RunResult("done", usage, summary="finished too early")
+
+    h = await harness(engine, tmp_path, ask_then_done)
+    holder["task"] = h.task_id
+    async with engine.begin() as conn:
+        request = (await conn.execute(
+            text("SELECT request_id FROM tasks WHERE task_id = :t"), {"t": h.task_id}
+        )).scalar_one()  # fmt: skip
+    await TaskRepository(engine).record_task(
+        TaskStart(task_id=other, request_id=request, profile="openai", template="local-default",
+                  instructions_ref=await h.blobs.put(b"x", retention="task")),
+        workflow_id=other, run_id="run-1", template_version=1, template_hash="x",
+    )  # fmt: skip
+    outcome = await h.run()
+    assert outcome.status == "continue"
+    assert "open question" in outcome.summary

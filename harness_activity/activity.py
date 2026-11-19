@@ -578,6 +578,23 @@ class HarnessActivities:
             # outcome; Temporal discards this attempt's result (review F4).
             log.warning("attempt superseded; stopping without writing")
             raise
+        if result.status in ("done", "needs_input") and config.finish_check is not None:
+            # R19 again, now that every tool of the last step has returned: an
+            # ask_agent run in parallel with finish_task may have committed after
+            # finish_task's own check. The next turn's finish is then refused.
+            try:
+                blocking = await MessageRepository(self.engine).blocking_finish(
+                    Sender(turn.task_id, turn.turn, attempt)
+                )
+            except FenceRejected as e:  # a newer attempt owns the turn (review F5)
+                raise Superseded(str(e)) from e
+            if blocking:
+                result = dataclasses.replace(
+                    result,
+                    status="continue",
+                    summary="finish_task alongside " + "; ".join(blocking),
+                    questions=None,
+                )
         usage = result.usage
         TOKENS.labels(template=template_ref, direction="in").inc(usage.tokens_in)
         TOKENS.labels(template=template_ref, direction="out").inc(usage.tokens_out)
