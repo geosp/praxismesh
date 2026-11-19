@@ -14,6 +14,7 @@ from common.schemas.task import (
     TaskRequest,
     TaskResult,
     TaskStart,
+    TaskState,
     TurnInput,
     TurnOutcome,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "TaskRequest",
     "TaskResult",
     "TaskStart",
+    "TaskState",
     "TurnInput",
     "TurnOutcome",
     "WorkerTemplate",

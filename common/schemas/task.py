@@ -59,6 +59,10 @@ class TaskStart(Strict):
     instructions_ref: BlobRef
     input_refs: dict[WorkspacePath, BlobRef] = {}
     outputs: list[WorkspacePath] = []
+    # Set only by Continue-As-New: the waiting run's state (Phase 2 messaging D11).
+    # A field, not a second run argument: Temporal drops type hints when a start
+    # passes fewer arguments than `run` declares.
+    carried: TaskState | None = None
 
 
 class TurnInput(Strict):
@@ -166,6 +170,25 @@ class ResolvedTask(Strict):
     max_wakes: int = Field(default=50, ge=1)
 
 
+class TaskState(Strict):
+    """What a waiting `TaskWorkflow` carries into its next run (Phase 2 messaging
+    D11): counters, usage and the wall-time deadline, never a message body."""
+
+    schema_version: Literal[1] = 1
+    resolved: ResolvedTask
+    turn: int = Field(ge=0, description="the last turn number used")
+    work_turns: int = Field(ge=0)
+    wakes: int = Field(ge=0)
+    attempts: int = Field(ge=0)
+    tokens_in: int = Field(ge=0)
+    tokens_out: int = Field(ge=0)
+    inner_turns: int = Field(ge=0)
+    usage_known: bool = True
+    deadline: datetime
+    summary: str = Field(default="", max_length=SUMMARY_MAX)
+    outputs: list[Artifact] = []
+
+
 class RecordTaskInput(Strict):
     schema_version: Literal[1] = 1
     start: TaskStart
@@ -187,3 +210,6 @@ class CompleteTaskInput(Strict):
     tokens_out: int = Field(ge=0)
     inner_turns: int = Field(default=0, ge=0)
     usage_known: bool = True
+
+
+TaskStart.model_rebuild()  # `carried` names TaskState, defined after it
