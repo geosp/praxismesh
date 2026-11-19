@@ -95,6 +95,9 @@ async def test_each_tool_through_the_client(engine: AsyncEngine) -> None:
         assert ok and asked["correlation_id"] and "waiting" in asked["next"]
         deadline = datetime.fromisoformat(asked["deadline"])
         assert (deadline - datetime.now(UTC)).total_seconds() < 65  # capped at 60 s
+        for bad in (0, -5):
+            ok, error = await call(session, "ask_agent", task_id=b, text="?", deadline_seconds=bad)
+            assert not ok and "at least 1" in error
         ok, status = await call(session, "post_status", stage="working", progress=40)
         assert ok and status == {"stage": "working", "progress": 40}
         ok, _ = await call(session, "post_status", stage="working", progress=140)
@@ -121,7 +124,7 @@ async def test_the_sender_is_always_the_calling_task(engine: AsyncEngine) -> Non
         senders = {r[0] for r in await conn.execute(
             text("SELECT sender_task FROM task_messages WHERE recipient_task = :b"), {"b": b}
         )}  # fmt: skip
-    assert senders <= {a}
+    assert senders == {a}  # stored, and from the caller
 
 
 async def test_a_send_wakes_a_sleeping_recipient_as_the_comms_role(engine: AsyncEngine) -> None:

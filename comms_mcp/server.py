@@ -98,6 +98,8 @@ async def send_to_agent(task_id: str, text: str, reply_to: str | None = None) ->
     )
 )
 async def ask_agent(task_id: str, text: str, deadline_seconds: int | None = None) -> dict[str, Any]:
+    if deadline_seconds is not None and deadline_seconds < 1:
+        raise ToolError("deadline_seconds must be at least 1")
     sender = me()
     wait = timedelta(seconds=deadline_seconds or DEFAULT_WAIT_S)
     max_wait = timedelta(seconds=float(os.environ.get("PRAXIS_MAX_ASK_WAIT", "600")))
