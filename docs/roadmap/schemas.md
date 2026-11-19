@@ -52,8 +52,8 @@ statuses only; never model or tool text):
 
 As built for the Phase 2 messaging plan (migration 0006, plan D6, D7, D13): messages
 between tasks of one request are rows of `task_messages`, mirrored by `MessageEnvelope`
-(`common/schemas/messages.py`). The body is inline text of at most 16 KB, not a blob
-reference; the authorization context is the request (`request_id`). A question has a
+(`common/schemas/messages.py`). The body is inline text of at most 16,384 characters (`length(body)`,
+not bytes), not a blob reference; the authorization context is the request (`request_id`). A question has a
 `correlation_id` and a `deadline`; a reply names it in `reply_to`. Statuses: `pending`,
 `claimed` (assigned to a turn, `claimed_turn`), `read`, `answered`, `expired`,
 `cancelled` (the asker is told through `notice_turn`), `undelivered` and `rejected` (a

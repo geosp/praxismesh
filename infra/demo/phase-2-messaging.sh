@@ -13,8 +13,11 @@
 #    question expired. E, in another request, messages B: the send is rejected.
 # 4. Reports each Workflow's history (runs, events, bytes) and A's event batches.
 # Afterwards it cancels D. Instructions carry `[script:NAME]` markers for the
-# fake model (`make workers-check` points the workers at it); a real model may
-# ignore them. Output files go to OUT_DIR.
+# fake model; a real model may ignore them. To run on the fake model, start the
+# workers with it first:
+#     VLLM_BASE_URL=http://fake-model:8765 make workers-check
+#     VLLM_BASE_URL=http://fake-model:8765 make workers-up
+# Output files go to OUT_DIR.
 set -eu
 
 ENV_FILE=${ENV_FILE:-infra/.env}
