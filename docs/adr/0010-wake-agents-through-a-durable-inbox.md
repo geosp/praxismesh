@@ -44,10 +44,19 @@ has rows. The answer has to hold under these requirements of the Phase 2 messagi
 ## Decision outcome
 
 Chosen option: "The inbox is the source of truth, and a Signal is only a wake hint", because it
-is the only option that keeps every message durable before anyone is woken, keeps bodies out of
-Temporal histories, and needs no Temporal client in the tool server.
+keeps every message durable before anyone is woken, keeps bodies out of Temporal histories, needs
+no Temporal client in the tool server, and holds no worker slot while a task sleeps.
 
-As built (plan D6, D7, D11, D17):
+Rejected:
+- Signals carrying the messages, because the tool server would need a Temporal client, against
+  design §4.4, and each message body and Signal would land in the recipient's history, against
+  R28 and R33.
+- One long-polling Activity per waiting task, because each sleeping task would hold a worker slot
+  (and its heartbeats) for as long as it waits, so waiting tasks would compete with running turns
+  for worker capacity; a sleeping Workflow with a timer holds none.
+
+As built (plan D6 and D7; the last bullet is context from D11 and D17, which this ADR does not
+decide):
 - A send commits the message row with its body (at most 16,384 characters) under the request
   lock. Only when the recipient is marked sleeping does the same transaction add its one wake row
   (unique per recipient) and `NOTIFY message_wakes`, so Signals scale with sleeps, not messages.
@@ -71,15 +80,17 @@ As built (plan D6, D7, D11, D17):
 - Good, because histories hold only claim results and Signals: one task woken 100 times back to
   back ran in three runs of 1,009, 1,013 and 443 events, and 50 messages during one turn brought
   no Signal (`tests/integration/test_messaging_history.py`).
-- Good, because every inbox write can share a transaction with ADR-0007's fence and the request
-  lock, as ADR-0009's event table does.
+- Good, because every attempt's inbox write (a send, question, reply or marking rows read) shares
+  a transaction with ADR-0007's fence and the request lock, as ADR-0009's event table does; the
+  orchestrator's claim and `end_task` take the request lock only.
 - Bad, because waking takes two hops (wake row, then Signal) and adds a component, the
-  dispatcher, which must run beside the orchestrator worker; a task is woken late when it is
-  down, up to its next deadline or timeout.
+  dispatcher, which must run beside the orchestrator worker; while the dispatcher is down, a
+  sleeping task is woken only by its next deadline or timeout.
 - Bad, because the sleeping flag stays set until the next claim, so several sends during one
   sleep can add several wakes; each is only a hint, and the claim reads everything once.
-- Bad, because a Workflow that is terminated, not cancelled, never runs `complete_task`; its
-  messages stay open until their deadlines.
+- Bad, because a Workflow that is terminated, not cancelled, never runs `complete_task`: its task
+  stays `running`, new sends to it are still accepted, messages to it stay `pending`, and its
+  questions stay open until their deadlines.
 - Follow-up: Phase 3's multi-agent orchestration builds on this inbox and on `waiting` tasks;
   revisit this ADR if wake latency or dispatcher load matters there.
 
@@ -87,10 +98,11 @@ As built (plan D6, D7, D11, D17):
 
 The Phase 2 messaging acceptance suites check the decision: `tests/integration/test_two_agents.py`
 asserts that a sleeping recipient is woken by an `inbox` Signal and answers;
-`test_messaging_failures.py` that a send repeated after a killed worker is stored once;
-`test_dispatcher.py` that a wake sent while its row is being signalled is kept and that a stopped
-dispatcher's rows are delivered later; `test_messaging_history.py` the history bounds; and the
-Workflow tests in Temporal's time-skipping server (`tests/test_task_workflow_waiting.py`) the
+`tests/integration/test_messages.py` (`test_the_claim_inbox_activity`) that a claim returns IDs,
+never bodies (R28); `tests/integration/test_messaging_failures.py` that a send repeated after a
+killed worker is stored once; `tests/integration/test_dispatcher.py` that a wake sent while its
+row is being signalled is kept and that a stopped dispatcher's rows are delivered later;
+`tests/integration/test_messaging_history.py` the history bounds; and the Workflow tests in Temporal's time-skipping server (`tests/test_task_workflow_waiting.py`) the
 claim-before-sleep loop. Implementation reviews of later messaging changes check that no message
 body reaches a Workflow history and that no component other than the dispatcher sends `inbox`
 Signals.

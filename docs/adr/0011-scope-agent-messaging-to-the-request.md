@@ -43,6 +43,15 @@ request is the unit the owner chose for collaboration (plan D9), the worker is t
 knows which attempt is running, and a database role is enforced by PostgreSQL rather than by the
 server's own code.
 
+Rejected:
+- Profile allow lists, because they need new registry fields and a policy to write before anyone
+  knows which profiles should talk, and a request already groups the tasks that work together.
+- Audit only, because it records an unwanted message after the fact and never rejects it.
+- The application role, because it can write every table, so any flaw in the tool server, or a
+  leaked URL, would reach all task, attempt and usage data.
+- Tools built into each runner, because the two runners would carry two copies of the same
+  tools and checks, which could drift apart.
+
 As built (plan D9, D10, D13; R10, R11, R23, R25-R27):
 - A send, question or reply to a task of another request, to an ended task, or that would close a
   wait cycle is refused; the refusal is stored as a `rejected` row with its reason and returned to
