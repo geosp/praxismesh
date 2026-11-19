@@ -29,5 +29,5 @@ recorded, and the as-built overview describes what runs.
 
 ### 2. Demo and docs
 
-- [ ] 2.1 Write the demo walkthrough for the roadmap checklist with the local model (tail, ask, wake, reconnect, timeout, refused message, history bound) and record the run in `docs/demos/phase-2.md`. Verify: a dry run from a clean worktree whose `infra/.env` comes from `infra/.env.example`.
+- [x] 2.1 Write the demo walkthrough for the roadmap checklist with the local model (tail, ask, wake, reconnect, timeout, refused message, history bound) and record the run in `docs/demos/phase-2.md`. Verify: a dry run from a clean worktree whose `infra/.env` comes from `infra/.env.example`.
 - [ ] 2.2 Add the Phase 2 messaging section to `docs/architecture/overview.md` (components, data, failure and recovery, limits, deviations) and update the `AGENTS.md` and `PROJECT_PLAN.md` status lines after verification. Verify: the verifier's as-built check; `check_plans.py` passes.
