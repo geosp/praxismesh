@@ -268,7 +268,7 @@ services:
     profiles: [fake-model]
     image: praxismesh-worker:dev
     entrypoint: ["python", "-m", "tests.support.fake_model"]
-    command: ["--script", "/app/tests/support/fake_model/order_script.json", "--port", "8765"]
+    command: ["--script", "/app/tests/support/fake_model/scripts.json", "--port", "8765"]
 
   # Optional observability (profile `observability`): `make observability-up`.
   prometheus:
