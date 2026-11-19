@@ -98,6 +98,14 @@ class TaskRepository:
                 {"t": task_id, "s": status, "r": json.dumps(result)},
             )
 
+    async def request_exists(self, request_id: str) -> bool:
+        """Whether some task belongs to `request_id` (Phase 2 messaging D5)."""
+        async with self.engine.connect() as conn:
+            found = await conn.execute(
+                text("SELECT 1 FROM tasks WHERE request_id = :r LIMIT 1"), {"r": request_id}
+            )
+            return found.first() is not None
+
     async def sample_orders(self, task_id: str) -> list[dict[str, Any]]:
         """The sample MCP server's orders for a task (demo and status only)."""
         async with self.engine.connect() as conn:

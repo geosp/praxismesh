@@ -36,7 +36,7 @@ closes its messages and wakes its waiters.
 - [x] 3.1 Add `comms_mcp/` with the four tools and `registry/mcp/comms.yaml` (D8, D9, D13, D15, R26). Verify: tests through the MCP client for each tool, including a refused cross-request send and an ignored sender argument.
 - [x] 3.2 In `build_config`, pass `PRAXIS_TURN`, `PRAXIS_ATTEMPT` (Temporal's attempt) and `PRAXIS_MAX_ASK_WAIT` to MCP servers; publish `post_status` calls as `status` events in both runners' tool paths; give `finish_task` the open-question check; make `openai_agents` stop only on an accepted `finish_task` (D8, D9, D15, R19). Verify: conformance tests on both runners for a refused `finish_task("done")` that lets the model continue, and for a `status` event.
 - [x] 3.3 Add `local-dsh` v2 and `local-default` v2 granting `comms`, with `max_wakes_cap` and a new prompt file `registry/prompts/local-comms.md` holding the ask-then-wait text (the v1 prompt is under the lock); `make registry-lock` (D8, D13, D14). Verify: `tests/test_registry.py`; the DSH capability test lists the comms tools.
-- [ ] 3.4 Add `task submit --join REQ` with the existence check (D5). Verify: `tests/test_cli.py` and `tests/test_submit.py` cases, including an unknown request refused.
+- [x] 3.4 Add `task submit --join REQ` with the existence check (D5). Verify: `tests/test_cli.py` and `tests/test_submit.py` cases, including an unknown request refused.
 
 ### 4. Waiting tasks
 

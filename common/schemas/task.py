@@ -43,6 +43,9 @@ class TaskRequest(Strict):
     instructions: str = Field(min_length=1, max_length=100_000)
     input_files: list[str] = []
     outputs: list[WorkspacePath] = []
+    # Put the task in an existing request instead of a new one, so it may message the
+    # request's other tasks (Phase 2 messaging D5); the CLI checks it exists.
+    join_request: str | None = Field(default=None, pattern=r"^req-[A-Za-z0-9-]{1,80}$")
 
 
 class TaskStart(Strict):

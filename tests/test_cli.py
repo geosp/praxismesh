@@ -177,3 +177,23 @@ def test_tail_and_prune_parse() -> None:
     assert (args.group, args.task_id, args.after, args.follow) == ("tail", "task-1", 4, False)
     args = cli.parser().parse_args(["events", "prune", "--task", "task-1", "--below", "15"])
     assert (args.command, args.task, args.below, args.older_than) == ("prune", "task-1", 15, None)
+
+
+def test_join_refuses_an_unknown_request(monkeypatch: Any, capsys: Any) -> None:
+    """Phase 2 messaging D5: --join checks the request has a task before submitting."""
+    from common.persistence.repositories import TaskRepository
+
+    async def nothing(self: Any, request_id: str) -> bool:
+        return False
+
+    async def never(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("nothing is submitted for an unknown request")
+
+    monkeypatch.setattr(cli, "PROVIDER", _Provider())
+    monkeypatch.setattr(cli, "make_engine", _Engine)
+    monkeypatch.setattr(TaskRepository, "request_exists", nothing)
+    monkeypatch.setattr(cli, "prepare_task", never)
+    assert cli.main(["task", "submit", "--instructions", "hi", "--join", "req-nope"]) == 2
+    assert "request req-nope has no task to join" in capsys.readouterr().err
+    args = cli.parser().parse_args(["task", "submit", "--instructions", "x", "--join", "req-1"])
+    assert args.join == "req-1" and args.request is None

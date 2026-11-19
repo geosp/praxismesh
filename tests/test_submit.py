@@ -66,3 +66,21 @@ async def test_given_task_id_is_kept(tmp_path: Path) -> None:
         base_dir=tmp_path,
     )
     assert start.task_id == "task-demo-0001"
+
+
+async def test_a_joined_request_is_kept(tmp_path: Path) -> None:
+    """Phase 2 messaging D5: `join_request` puts the task in that request."""
+    start = await prepare_task(
+        {"profile": "openai", "instructions": "Help A.", "join_request": "req-abc-123"},
+        load_registry(),
+        MemoryBlobStore(),
+        base_dir=tmp_path,
+    )
+    assert start.request_id == "req-abc-123"
+    with pytest.raises(InvalidTaskInput, match="join_request"):
+        await prepare_task(
+            {"profile": "openai", "instructions": "x", "join_request": "not a request"},
+            load_registry(),
+            MemoryBlobStore(),
+            base_dir=tmp_path,
+        )

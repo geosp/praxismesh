@@ -224,3 +224,11 @@ async def test_an_ask_deadline_is_clamped_to_the_profile_cap(engine: AsyncEngine
                         max_wait=timedelta(minutes=2))  # fmt: skip
     assert asked.deadline is not None
     assert asked.deadline - datetime.now(UTC) < timedelta(minutes=2, seconds=5)
+
+
+async def test_request_exists_for_join(engine: AsyncEngine) -> None:
+    """Phase 2 messaging D5: --join may name only a request that has a task."""
+    _, a, _ = await pair(engine)
+    request = (await rows(engine, "SELECT request_id FROM tasks WHERE task_id = :a", a=a))[0][0]
+    assert await TaskRepository(engine).request_exists(request)
+    assert not await TaskRepository(engine).request_exists(f"req-{uuid.uuid4().hex}")
