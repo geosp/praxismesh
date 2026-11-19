@@ -1,11 +1,11 @@
 ---
 title: Phase 2 events - the event table and agentctl tail
-status: implemented
+status: closed
 created: 2026-11-18
-updated: 2026-11-18
+updated: 2026-11-19
 design_review: { status: passed, rounds: 2, last: 2026-11-18 }
 approved: 2026-11-18
-adr_review: null
+adr_review: 2026-11-19
 ---
 
 # Phase 2 events - the event table and agentctl tail
@@ -210,4 +210,4 @@ the previous workers; events stop being written and the tables stay, unused.
 
 ## Decision log
 
-- None yet (the plan is not approved).
+- None.

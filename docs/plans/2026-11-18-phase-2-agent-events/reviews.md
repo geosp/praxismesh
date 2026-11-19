@@ -107,3 +107,8 @@ Diff c7dcbcd..4463f52, one fresh impl-reviewer (raw: docs/reviews/phase-2/raw/ev
 ## 2026-11-18 · verification · phase 01 · pass
 
 Code 499eb63, docs 965e8e8. Report: docs/reviews/phase-2/verification-events.md (acceptance failed once on a test expectation, V1, fixed in 499eb63; re-run, as-built and follow-up passed). Demo: docs/demos/phase-2-events.md.
+
+## 2026-11-19 · ADR review
+
+- In force, reviewed: ADR-0002, ADR-0003, ADR-0005, ADR-0006, ADR-0007, ADR-0008, ADR-0009, ADR-0010, ADR-0011 (ADR-0001 and ADR-0004 are proposed).
+- None needed. ADR-0009 already records the decision this plan carried out (the PostgreSQL event table behind the event-transport interface) and lists the items its implementation had to settle. D1 (offsets per workflow ID), D2 (the fence and its lock order) and D3 (token counts only, no model text) settle them within ADR-0009 and ADR-0007, and are recorded in `docs/architecture/overview.md` and `docs/roadmap/schemas.md`. D3 leaves where model text lives to Phase 4 and Phase 8, which will need their own decision. D4 (manual pruning until Phase 3A) and D5 (`agentctl` wraps the CLI) are tactical.
