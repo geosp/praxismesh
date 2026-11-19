@@ -290,3 +290,18 @@ async def test_complete_task_closes_the_task_and_its_messages(engine: AsyncEngin
         "succeeded"
     )
     assert await rows(engine, "SELECT 1 FROM message_wakes WHERE recipient_workflow = :a", a=a)
+
+
+async def test_a_reply_must_go_to_the_asker(engine: AsyncEngine) -> None:
+    """R16, R11: a reply addressed to a third task is refused and the question stays
+    open for its asker."""
+    request = f"req-{uuid.uuid4().hex[:8]}"
+    m = MessageRepository(engine)
+    a, b, c = [await task(engine, request) for _ in range(3)]
+    asked = await m.ask(me(a), b, "price?", key=key(a, b, "q"), wait=WAIT, max_wait=MAX_WAIT)
+    await m.claim(b, 2, datetime.now(UTC))
+    wrong = await m.send(me(b), c, "12.50", key=key(b, c, "r"), reply_to=asked.correlation_id)
+    assert not wrong.ok and "asked by" in (wrong.reason or "")
+    status = await rows(engine, "SELECT status FROM task_messages WHERE message_id = :m",
+                        m=asked.message_id)  # fmt: skip
+    assert status[0][0] == "claimed"  # still open: A can still get its answer

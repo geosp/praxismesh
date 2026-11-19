@@ -119,7 +119,9 @@ class MessageRepository:
             refusal = await self._refusal(conn, sender.task_id, recipient, request, body)
             question = None
             if refusal is None and reply_to is not None:
-                question, refusal = await self._question_for_reply(conn, reply_to, sender.task_id)
+                question, refusal = await self._question_for_reply(
+                    conn, reply_to, sender.task_id, recipient
+                )
             kind = "reply" if reply_to is not None else "send"
             if refusal is not None:
                 return await self._reject(
@@ -391,13 +393,15 @@ class MessageRepository:
         return None
 
     async def _question_for_reply(
-        self, conn: AsyncConnection, correlation_id: str, replier: str
+        self, conn: AsyncConnection, correlation_id: str, replier: str, recipient: str
     ) -> tuple[str | None, str | None]:
-        """The question's message ID, or the refusal text (R18)."""
+        """The question's message ID, or the refusal text: a reply goes from the asked
+        task to the asker (R16) while the question is open (R18)."""
         row = (
             await conn.execute(
                 text(
-                    "SELECT message_id, recipient_task, status, deadline < now() AS late "
+                    "SELECT message_id, recipient_task, status, deadline < now() AS late, "
+                    "sender_task "
                     "FROM task_messages WHERE correlation_id = :c AND kind = 'ask'"
                 ),
                 {"c": correlation_id},
@@ -405,6 +409,8 @@ class MessageRepository:
         ).first()
         if row is None or row[1] != replier:
             return None, f"there is no question {correlation_id} to {replier}"
+        if row[4] != recipient:
+            return None, f"question {correlation_id} was asked by {row[4]}; reply to it"
         if row[2] not in OPEN or row[3]:
             return None, f"question {correlation_id} is {'expired' if row[3] else row[2]}"
         return str(row[0]), None
@@ -496,7 +502,7 @@ class MessageRepository:
 
     async def _wake_if_sleeping(self, conn: AsyncConnection, recipient: str) -> None:
         """One pending wake per sleeping recipient (D6); its workflow ID is its task ID."""
-        # No RETURNING: the comms role may insert wake rows but not read them.
+        # No RETURNING: it needs no wake row data back.
         woken = await conn.execute(
             text(
                 "INSERT INTO message_wakes (recipient_workflow) "
