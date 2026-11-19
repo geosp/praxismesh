@@ -53,11 +53,14 @@ Migration 0006. The inbox table is `task_messages`: `agent_messages` already exi
   from `PRAXIS_COMMS_DB_PASSWORD`), and grants it `CONNECT` on `praxismesh` and `USAGE` on `public`
   (`init.sh` revokes `CONNECT` from `PUBLIC`). `init.sh` calls it on a fresh volume; operators run it
   once on an existing one (`make db-roles`). Migration 0006, run as the app role that owns the
-  tables, grants `SELECT, INSERT, UPDATE` on `task_messages`, `SELECT, INSERT` on `message_wakes` (`ON CONFLICT` reads its target), `SELECT` on
-  `tasks` and `task_attempts`, `SELECT, INSERT, UPDATE` on `task_inbox`, and revokes them on downgrade.
-  `roles.sh` is mounted into the `db` service as `/docker-entrypoint-initdb.d/21_roles.sh` (it runs
-  after `20_praxismesh.sh`) and gets `PRAXIS_COMMS_DB_PASSWORD` from the service env; `make db-roles`
-  runs the same script through `docker compose exec db` on an existing volume.
+  tables, grants `SELECT, INSERT, UPDATE` on `task_messages`,
+  `SELECT, INSERT` on `message_wakes` (`ON CONFLICT` reads its target), and `SELECT` on `tasks`,
+  `task_attempts` and `task_inbox` (only claims, run as the app role, write it), and revokes them on
+  downgrade.
+  `roles.sh` is mounted into the `db` service as `/usr/local/bin/praxismesh-roles`; `init.sh` runs it
+  on a fresh volume, before its health marker, and it gets `PRAXIS_COMMS_DB_PASSWORD` from the service
+  env. `make db-roles` runs the same script as `postgres` through `docker compose exec` on an existing
+  volume.
 - Idempotency key: sha256 of sender task, turn, tool name and canonical arguments. Attempts of one turn
   share it, so a retried attempt that repeats a send stores nothing new and gets the stored result. A
   regenerated send (different text) is a new message.

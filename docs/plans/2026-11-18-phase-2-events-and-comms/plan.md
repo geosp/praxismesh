@@ -377,7 +377,7 @@ in `phases/`.
 
 | Phase | Title | Status | Tasks |
 | --- | --- | --- | --- |
-| 02 | Inbox, comms MCP and waiting tasks | in-progress | 0/15 |
+| 02 | Inbox, comms MCP and waiting tasks | in-progress | 15/15 |
 | 03 | Acceptance and demo | approved | 0/7 |
 
 ## Decision log

@@ -351,7 +351,15 @@ class TaskWorkflow:
             except ActivityError as e:
                 if isinstance(e.cause, CancelledError):
                     raise asyncio.CancelledError() from e
-                return "failed", f"inbox unavailable: {failure_category(e)}"
+                unavailable = f"inbox unavailable: {failure_category(e)}"
+                if isinstance(e.cause, ApplicationError) and e.cause.non_retryable:
+                    return "failed", unavailable
+                # Retries stop only when the next one would pass the wall-time deadline:
+                # wait for it, then end by open questions like any waiting task (R21).
+                left = run.deadline - workflow.now()
+                if left > timedelta(0):
+                    await workflow.sleep(left)
+                return await self._ending_at_wall_time(start, run, unavailable)
             if claim.count:
                 return None
             deadline = claim.next_deadline
@@ -372,10 +380,12 @@ class TaskWorkflow:
                     return "succeeded", None  # idle timeout (R20)
                 # a question's deadline passed: claim again, which expires it (R17)
 
-    async def _ending_at_wall_time(self, start: TaskStart, run: _Run) -> tuple[str, str | None]:
+    async def _ending_at_wall_time(
+        self, start: TaskStart, run: _Run, unavailable: str = "wall-time budget exhausted"
+    ) -> tuple[str, str | None]:
         """R21, R31: a waiting task out of wall time succeeded with no open question
         and failed with one. One last claim learns which, whatever path reached the
-        deadline; if even that fails, the task failed."""
+        deadline; if even that fails, the task failed (with `unavailable`)."""
         try:
             claim: InboxClaim = await workflow.execute_activity(
                 "claim_inbox",
@@ -385,7 +395,7 @@ class TaskWorkflow:
                 schedule_to_close_timeout=SHORT * 2,
             )
         except ActivityError:
-            return "failed", "wall-time budget exhausted"
+            return "failed", unavailable
         if claim.next_deadline is None:
             return "succeeded", None
         return "failed", "wall-time budget exhausted"

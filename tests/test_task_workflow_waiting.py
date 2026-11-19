@@ -311,3 +311,20 @@ async def test_a_continue_after_a_woken_turn_spends_max_turns() -> None:
     result, _ = await run(fakes)
     assert isinstance(result, TaskResult) and result.failure_reason == "turn budget exhausted"
     assert len(fakes.turn_inputs) == 3  # working, woken, working
+
+
+async def test_a_claim_cut_off_by_the_deadline_still_ends_by_open_questions() -> None:
+    """R21: a claim that times out at the wall-time deadline, with the inbox back,
+    ends the task by its open questions, not as "inbox unavailable"."""
+    first: list[datetime] = []
+
+    def claim(c: ClaimInboxInput, attempt: int) -> InboxClaim:
+        first.append(c.now)
+        if c.now < first[0] + timedelta(minutes=1):  # retries reuse the first input
+            raise RuntimeError("database unavailable")
+        return InboxClaim(message_ids=[], next_deadline=None)
+
+    fakes = Fakes(["waiting"], claim, resolved(max_wall_time=timedelta(minutes=3)))
+    result, _ = await run(fakes)
+    assert isinstance(result, TaskResult) and result.status == "succeeded", result
+    assert len(fakes.completed) == 1
