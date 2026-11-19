@@ -298,3 +298,16 @@ async def test_complete_task_is_retried_until_it_succeeds() -> None:
     result, _ = await run(fakes)
     assert isinstance(result, TaskResult) and result.status == "succeeded"
     assert FlakyComplete.failures == 7 and len(fakes.completed) == 1
+
+
+async def test_a_continue_after_a_woken_turn_spends_max_turns() -> None:
+    """D14: only the woken turn itself is free of max_turns; the continue turns it
+    leads to are working turns."""
+    fakes = Fakes(
+        ["waiting", "continue", "continue", "continue", "continue"],
+        lambda c, a: rows(1),
+        resolved(max_turns=2, max_wakes=50),
+    )
+    result, _ = await run(fakes)
+    assert isinstance(result, TaskResult) and result.failure_reason == "turn budget exhausted"
+    assert len(fakes.turn_inputs) == 3  # working, woken, working
