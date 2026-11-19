@@ -19,4 +19,4 @@ One record per consequential architecture decision, written when the decision is
 | [0008](0008-record-unobserved-model-usage-as-unknown.md) | Count ledgered model usage over every attempt, and record unobserved usage as unknown and charged, never as zero | accepted |
 | [0009](0009-use-a-postgresql-event-table-for-agent-events.md) | Carry agent progress events in a PostgreSQL event table, behind an event-transport interface | accepted |
 | [0010](0010-wake-agents-through-a-durable-inbox.md) | Keep agent messages in a durable PostgreSQL inbox, and use Temporal Signals only to wake the recipient | proposed |
-| [0011](0011-scope-agent-messaging-to-the-request.md) | Scope agent messaging to the request, take the sender's identity from the worker, and run the tool server as a least-privilege role | proposed |
+| [0011](0011-scope-agent-messaging-to-the-request.md) | Confine agent messaging to the sender's request, through a separate tool server that takes the sender from the worker | proposed |
