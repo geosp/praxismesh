@@ -198,5 +198,7 @@ Reviewers: contract ✅
 | F147 | Nit | contract | plan.md Phases table showed phase 03 at 0/7 | fixed: 6/7 |
 | F148 | Nit | contract | The overview section had no Deviations part | fixed: "Deviations from the plan" |
 | F149 | Nit | contract | The overview's Dispatcher row read as keeping the row for a closed Workflow | fixed: "the row is dropped (logged)" |
-| F150 | Nit | contract | The final demo script (`90ad371`) had no clean-worktree dry run | open: dry run of the final script, then the demo record |
+| F150 | Nit | contract | The final demo script (`90ad371`) had no clean-worktree dry run | fixed: dry run at `4b14066` passed every step (`docs/demos/phase-2.md`) |
 | F151 | Nit | contract | "Batching under a busy response" is shown only as 13 events in 7 batches | accepted: recorded under a busy response in `phase-2-events.md`, which the record links |
+
+After the fixes no Blocker or Major is open: phase 03's implementation review passes. Both Major fixes were confirmed by mutation: with no `inbox` Signal from the dispatcher, `test_two_agents` fails; with the question's deadline left out of the Workflow's sleep, the R17 test fails.

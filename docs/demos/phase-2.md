@@ -15,7 +15,9 @@ Plan: [docs/plans/2026-11-18-phase-2-events-and-comms](../plans/2026-11-18-phase
   the project name and ports changed (a separate project beside the owner's), on the fake model
   (`VLLM_BASE_URL=http://fake-model:8765 make workers-check`, then `make workers-up` with the same
   variable). It found that the probe could not import the repository's packages, fixed in
-  `5b68eb6`; the rerun at `5b68eb6` passed every step.
+  `5b68eb6`; the rerun at `5b68eb6` passed every step. After the recorded run's script change
+  (`90ad371`), a dry run of the final script at `4b14066` passed every step again (C told after
+  26 s; A's 13 events in 6 batches).
 
 | Step | Command or action | Expected | Observed | Result |
 |---|---|---|---|---|
