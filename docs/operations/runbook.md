@@ -200,8 +200,9 @@ message (an `inbox` Signal from the dispatcher in the orchestrator worker), a qu
 deadline, its idle timeout (profile `idle_timeout`, default 10 min; only while it has no open
 question) or its wall-time budget. After a Signal or a question's deadline it claims its
 inbox again and runs a woken turn when the inbox has rows. At the idle timeout the task ends
-`succeeded` without claiming; anything still unread then becomes `undelivered`, which its
-senders see in `get_task_context`. At the wall-time deadline one last claim decides: no open
+`succeeded` without claiming; its unread messages then become `undelivered`, which their
+senders see in `get_task_context`, and unanswered questions to it are cancelled, which wakes
+their askers. At the wall-time deadline one last claim decides: no open
 question ends it `succeeded`, an open one `failed`. Woken turns count against `max_wakes`
 (default 50, capped by the template's `max_wakes_cap`). If the dispatcher is down, wake rows
 wait in `message_wakes`; deadlines and timeouts still fire.
