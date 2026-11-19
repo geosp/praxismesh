@@ -37,6 +37,10 @@ psql -v ON_ERROR_STOP=1 -d praxismesh <<'EOSQL'
 CREATE EXTENSION IF NOT EXISTS pg_search CASCADE;
 EOSQL
 
+# The comms role (Phase 2 messaging D13), before the marker, so a healthy `db`
+# already has it when migration 0006 grants it the message tables.
+bash /usr/local/bin/praxismesh-roles
+
 psql -v ON_ERROR_STOP=1 -d postgres <<'EOSQL'
 COMMENT ON DATABASE postgres IS 'praxismesh-init-complete';
 EOSQL

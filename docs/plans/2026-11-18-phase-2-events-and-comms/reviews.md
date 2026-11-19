@@ -81,3 +81,127 @@ Round 1's Majors are resolved. Round 2's new Majors (F36-F44) are all in the mes
 
 ## 2026-11-18 · split
 Owner decision: the event part (R1-R9, D1-D5, phase 01) moved to `docs/plans/2026-11-18-phase-2-agent-events`, with the same IDs. This plan keeps messaging (phases 02 and 03) and is to be revised against round 2 before a fresh design review.
+
+## 2026-11-18 · design-review · plan · round 3 · passed
+After the split and rework, a fresh round (owner decision when splitting). Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out ✅ (plan at 88ea037; raw: docs/reviews/phase-2/raw/design-review-round-3-*.md). No earlier finding came back. Recorded changes-requested; every Major below was then fixed.
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F66 | Major | codebase fit, zoom out, fresh reader | Continue-As-New ran only before a sleep, so a task woken back to back never continued (R33) | fixed: D11 checks after every `waiting` outcome; R33 scenario "back to back"; task 4.3 test |
+| F67 | Major | zoom out | One wake row and Signal per message grows history during a long turn | fixed: D6, a wake only for a sleeping recipient, one per recipient (`task_inbox`, unique `message_wakes`); R33 second scenario; phase 03 task 1.5 |
+| F68 | Major | zoom out | A failed or cancelled claim ended the Workflow without `complete_task` (R24, R30) | fixed: D7 (claim retried until the wall-time deadline), D17 (every ending), R24, Risks; task 4.3 test |
+| F69 | Major | zoom out | R19 let a task finish with an unread reply, which was then discarded; an ask in the same step escaped the check | fixed: R19 and D8 add unread replies and run the check under the request lock (extends the owner decision; flagged to the owner) |
+| F70 | Major | codebase fit | `max_ask_wait` had no path to the Activity | fixed: D14, `TurnInput.max_ask_wait` with a default; task 1.1; Impact |
+| F71 | Major | codebase fit, zoom out | `praxis_comms` wiring: the `db` service lacks the password, `roles.sh` is not mounted, `make db-roles` does not exist | fixed: task 2.1, notes.md#d6, Rollout |
+| F72 | Major | fresh reader | R23's rule pointed the wrong way | fixed: R23 rewritten; self-ask refused |
+| F73 | Major | fresh reader | No expiry mechanism or read marker in plan.md | fixed: Terms (Claim, Unread reply), D7 (expiry, `read` marking as a fenced write) |
+| F74 | Major | fresh reader | `max_wakes` outcome and cap undefined | fixed: R22 (fails "wake budget exhausted"), D14 (cap default 100, the smaller applies; which turns count) |
+| F75 | Major | fresh reader | Idle-timeout start undefined | fixed: R20, D7 (restarted at each sleep) |
+| F76 | Major | fresh reader | Summary risks, R21/R31 outcomes and the rollback drain missing | fixed: Summary |
+| F77 | Major | fresh reader | Forward rollout drained `waiting` tasks that cannot exist yet | fixed: Rollout & rollback (forward drains running tasks; rollback cancels waiting ones) |
+| F78 | Major | fresh reader | `complete_task` and the wall-time budget undefined | fixed: Terms |
+| F79 | Major | fresh reader | Phases: no task content, phase 01 missing | fixed: Phases note (phase 01 is the events plan's; tasks in `phases/`) |
+| F80 | Nit | codebase fit | Which message writes are fenced | fixed: D10, task 2.2 |
+| F81 | Nit | codebase fit | Marking rows read is an attempt write | fixed: D7, D10 (fenced) |
+| F82 | Nit | codebase fit | v2 prompt must be a new file | fixed: D13, task 3.3 |
+| F83 | Nit | codebase fit, zoom out | Sequence grant for `message_wakes` | fixed: identity column (notes.md#d6) |
+| F84 | Nit | codebase fit | A stale attempt of an ended task could open a question | fixed: R25, notes.md#d6 (sender status) |
+| F85 | Nit | codebase fit | Cancel during the claim | fixed: F68 |
+| F86 | Nit | codebase fit | Which budget pays a `continue` after a woken turn | fixed: D14 |
+| F87 | Nit | codebase fit | Test profile needs a template cap of 200 | fixed: phase 03 task 1.5 |
+| F88 | Nit | codebase fit | R28 too broad | fixed: R28 limited to claims and Signals |
+| F89 | Nit | zoom out | D12's rationale wrong | fixed: D12 (guards command order on the restructured loop) |
+| F90 | Nit | zoom out | A rerun of the same turn would show claimed rows twice | fixed: task 4.1 |
+| F91 | Nit | zoom out | `openai_agents` `sh` can read the comms URL | accepted: Assumptions (the same holds for `PRAXIS_SAMPLE_DB_URL`; DSH isolates commands) |
+| F92 | Nit | fresh reader | Terms, multi-rule requirements, duplication, ordering, `post_status` mechanics, clamp vs refusal, late-reply recording, the `--join` race, submit gate | fixed: Terms, D8 (clamped), R11 (closed questions recorded), D15, Assumptions (`--join`), Rollout (no submit gate), requirements in ID order; multi-rule requirements R13, R19, R24, R30 accepted as one rule with its observable outcome |
+| F93 | Nit | fresh reader | plan.md is 375 lines (budget 250) | accepted: 24 requirements each with scenarios; mechanics are in notes.md |
+
+## 2026-11-18 · approved · plan (phases 02 and 03)
+
+Owner approved, including the two extensions flagged with round 3: finish_task also waits for unread replies (R19); a used-up wake budget fails the task (R22).
+
+## 2026-11-18 · impl-review · phase 02 · round 1 · changes-requested
+Diff base: `7f0ed8538119ca7de512a73d3341ef24d0a31cf7`. Reports: `docs/reviews/phase-2/raw/messaging-impl-review-round-1-{contract,failure,scope}.md`.
+Reviewers: contract ✅ · failure and retry ✅ · scope and composition ✅
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F94 | Major | contract | A reply's recipient was never checked against the question's asker (R16, R11) | fixed: `_question_for_reply` refuses a reply not sent to the asker; `test_messages.py` (734346a) |
+| F95 | Major | contract, failure, scope | Paths that reach the wall-time deadline after a `waiting` turn ended without looking at open questions (R21, R31) | fixed: `_ending_at_wall_time` runs one last claim on every path; `test_a_waiting_turn_past_the_deadline_fails_with_an_open_question` |
+| F96 | Major | contract, scope | `post_status` never became a `status` event on `openai_agents`: the SDK passes a text item, not a string (D15) | fixed: `tool_text` in `runner.py`; `test_an_mcp_status_result_is_published_on_openai_agents` (MCP failures now count as failed too) |
+| F97 | Major | contract, scope | With parallel tool calls, `finish_task`'s check could run before the same step's `ask_agent` committed (R19, D8) | fixed: the Activity checks again after the run and turns a blocked finish into `continue`; `test_a_done_alongside_a_same_step_ask_does_not_finish` |
+| F98 | Major | contract, failure, scope | `complete_task` gave up after 5 attempts, and a cancel during it was not rerun (R24, D17) | fixed: unlimited retries and one rerun after a cancel in `_complete`; `test_complete_task_is_retried_until_it_succeeds` |
+| F99 | Major | failure | The dispatcher dropped a wake sent while its old row was being signalled (D6, R14) | fixed: delete before the Signal, one savepoint per row, Signal RPC timeout; `test_a_wake_sent_while_its_row_is_signalled_is_kept` |
+| F100 | Major | failure, scope, contract | The dispatcher ended silently if its first connect failed (D6, Risks) | fixed: connect inside the retry loop; `tests/test_dispatcher_supervision.py` |
+| F101 | Nit | contract, scope | R26 test passed when nothing was stored | fixed: asserts `senders == {a}` |
+| F102 | Nit | contract, failure, scope | `deadline_seconds` 0 became 300 and a negative one gave a past deadline (D8) | fixed: refused below 1; `test_each_tool_through_the_client` |
+| F103 | Nit | contract, failure, scope | notes.md#d6 gave `task_inbox` more grants than migration 0006 | fixed: notes.md#d6 (SELECT only) |
+| F104 | Nit | contract | notes.md#d6 gave the wrong `roles.sh` mount | fixed: notes.md#d6 |
+| F105 | Nit | contract | Phases table showed 0/15 | fixed: plan.md Phases |
+| F106 | Nit | failure | `remove_listener` on a dead connection could mask the cancel | fixed: suppressed in `dispatcher.py` |
+| F107 | Nit | contract | No test that a `continue` after a woken turn spends `max_turns` (D14) | fixed: `test_a_continue_after_a_woken_turn_spends_max_turns` |
+| F108 | Nit | failure, scope | A claim cut off near the deadline ended "inbox unavailable" with the inbox back (R21) | fixed: waits for the deadline, then the F95 ending; `test_a_claim_cut_off_by_the_deadline_still_ends_by_open_questions` |
+| F109 | Nit | contract | A woken turn at the deadline failed with no open question (R21) | fixed: F95 |
+| F110 | Nit | contract | A comment said the comms role cannot read wake rows | fixed: the comment now gives the real reason (no RETURNING needed) |
+| F111 | Nit | contract, scope | R12: no test of a database fault during a send | accepted: the send returns inside its transaction, so success follows the commit |
+| F112 | Nit | contract, scope | R28: no history test with three 16 KB messages | accepted: phase 03's history test |
+| F113 | Nit | contract | R32: Workflow fakes carry no outputs | accepted: the Activity test covers it; phase 03's two-agent test checks artifacts end to end |
+| F114 | Nit | contract | R20: the 60-65 s window is not asserted | accepted: the ending is the idle timer, which the time-skipping test drives |
+| F115 | Nit | contract | `render_inbox` text for expired and cancelled questions is untested | accepted: phase 03's failure cases assert what the asker is told |
+| F116 | Nit | contract | Rejected rows asserted only for cross-request refusals (R11) | accepted: every refusal goes through the one `_refusal` path |
+| F117 | Nit | contract, failure | Rows a woken turn read stay `read` if the turn then fails (R30) | accepted: they were rendered into the model's input |
+| F118 | Nit | contract, scope | The 16 KB body limit counts characters, not bytes (D6) | accepted: it still bounds each row; characters are what the model sends |
+| F119 | Nit | contract, failure | A cancel during `record_task` skips `complete_task` (R24) | accepted: a narrow window unchanged since Phase 1 |
+| F120 | Nit | contract, scope | Sends during one sleep can add several wakes (R33) | accepted: bounded by the sends; a Signal is only a hint |
+| F121 | Nit | contract, failure, scope | Expiry uses `<` and the Workflow's clock, costing an extra claim (R17) | accepted: harmless, noted in notes.md |
+| F122 | Nit | failure, scope | A refusal is replayed for identical calls in the same turn (R13) | accepted: idempotency within a turn; the next turn's key differs |
+| F123 | Nit | failure | `tasks.run_id` keeps the first run's ID after continue-as-new (D11) | accepted: informational only |
+| F124 | Nit | scope | An idle timeout ends without a final claim (R20) | accepted: a late message becomes `undelivered`, which its sender sees |
+| F125 | Nit | scope | 50 rows that keep failing stop a drain (D6) | accepted: Signals fail together only when Temporal is down; the next poll retries |
+| F126 | Nit | scope | The closed-workflow test uses a never-started workflow | accepted: closed and missing workflows both return NOT_FOUND on one path |
+| F127 | Nit | scope | The wake-budget test runs at a smaller scale than the plan's example (R22) | accepted: the counters do not depend on scale |
+| F128 | Nit | scope | The R13 rerun test calls `read_claimed` directly | accepted: `read_claimed` is keyed by turn, not attempt |
+
+## 2026-11-19 · impl-review · phase 02 · round 2 · changes-requested
+Targeted follow-up (docs/reviews/README.md rules 6 and 8): one failure-and-retry reviewer over the fixes, `3ca9f3d..bd10edc`, given the round 1 correction list. Report: `docs/reviews/phase-2/raw/messaging-impl-review-round-2-failure.md`. It confirmed F94-F97, F99, F100, F102 and F106-F108; F98's cancel half came back as F129.
+Reviewers: failure and retry ✅
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F129 | Major | failure | F98 reopened: a cancel during `complete_task` arrives as an `ActivityError` caused by `CancelledError`, so it was not rerun (R24, D17) | fixed: `_complete` reruns on it; `test_a_cancel_while_complete_task_retries_still_completes_it` |
+| F130 | Nit | failure | A cancel during the final wall-time claim ended as "wall-time budget exhausted" | fixed: `_ending_at_wall_time` re-raises it, so the task ends "cancelled" |
+| F131 | Nit | failure | A failed final claim fails a task that may have had no open question (R21) | accepted: the wall time did run out and the ending cannot be known; failing is the safe ending |
+| F132 | Nit | failure | `_run_v2`'s woken-turn branch at the deadline is untested (F109) | accepted: reachable only when the Workflow task that sees a claim's rows starts after the deadline; it uses the same `_ending_at_wall_time` as the tested paths (`test_a_slow_claim_with_rows_at_the_deadline_runs_no_woken_turn` covers the cut-off claim) |
+| F133 | Nit | failure | No `workflow.patched` marker for the new commands (D12) | accepted: the v2 path has run only on dev stacks and is unmerged; `phase2-wait` still guards Phase 1 histories |
+| F134 | Nit | failure | `complete_task` retries without a `schedule_to_close`, so a permanent bug keeps the Workflow open | accepted: by design for outages (D17); the failing attempts show as a pending Activity and in the worker log |
+| F135 | Nit | failure | The final claim can end up to 60 s after the deadline | accepted: R21 sets no timing |
+| F136 | Nit | failure | A batch's deletes stayed uncommitted, so senders could wait for many Signals (D6) | fixed: one transaction per wake row in `drain` |
+| F137 | Nit | failure | A non-RPC error from `_signal` rolled back the whole batch | fixed: F136 (only that row's transaction) |
+| F138 | Nit | failure | Phase front matter said passed while round 2 was running; plan.md disagreed | fixed: front matter and Phases table after this round |
+
+After the fixes, no Blocker or Major is open: the review passes. Per the impl-review skill, rounds stop at two.
+
+## 2026-11-19 · impl-review · phase 03 · round 1 · changes-requested
+Diff base: `c1dbee715362602f959a36afd5aca4ecda3bd552`; review commit `132e2df`. Report: `docs/reviews/phase-2/raw/messaging-impl-review-phase-03-round-1-contract.md`. One lens: the phase adds tests, test tooling, the demo and docs, so the contract lens (does each test prove its requirement, could it fail) is the one that applies; failure and scope lenses were not run.
+Reviewers: contract ✅
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F139 | Major | contract | `test_two_agents` never showed B waiting before A asked, so the R14 wake path was not observed | fixed: waits for B to sleep, asserts an `inbox` Signal in B's history; the R19 test waits too |
+| F140 | Major | contract | R17's 3 s deadline could expire before A slept, so the deadline timer was not observed | fixed: 20 s deadline; A is seen asleep with its question open before it expires |
+| F141 | Nit | contract | Task 1.5 reports event counts, not bytes | accepted: event count is the bound R33 sets; the demo probe reports bytes |
+| F142 | Nit | contract | R19 test did not check the refusal names the question | fixed: asserts `open question <id> to <B>` |
+| F143 | Nit | contract | R16 test did not check the reply carries A's correlation ID | fixed: asserts `your question <id>: 12.50` in A's woken input |
+| F144 | Nit | contract | R10 test did not check the refusal was an error result | accepted: the chat completions protocol carries no error flag to the model; `comms_mcp` raises `ToolError` (phase 02 tests) |
+| F145 | Nit | contract | The fake model's docstring claimed `${input}` keeps a value's type | fixed: docstring |
+| F146 | Nit | contract | A `}` in `${input:REGEX}` truncates it and the `re.error` escaped | fixed: `re.error` caught (placeholder stays as written); docstring says REGEX may not contain `}` |
+| F147 | Nit | contract | plan.md Phases table showed phase 03 at 0/7 | fixed: 6/7 |
+| F148 | Nit | contract | The overview section had no Deviations part | fixed: "Deviations from the plan" |
+| F149 | Nit | contract | The overview's Dispatcher row read as keeping the row for a closed Workflow | fixed: "the row is dropped (logged)" |
+| F150 | Nit | contract | The final demo script (`90ad371`) had no clean-worktree dry run | fixed: dry run at `4b14066` passed every step (`docs/demos/phase-2.md`) |
+| F151 | Nit | contract | "Batching under a busy response" is shown only as 13 events in 7 batches | accepted: recorded under a busy response in `phase-2-events.md`, which the record links |
+
+After the fixes no Blocker or Major is open: phase 03's implementation review passes. Both Major fixes were confirmed by mutation: with no `inbox` Signal from the dispatcher, `test_two_agents` fails; with the question's deadline left out of the Workflow's sleep, the R17 test fails.
+
+## 2026-11-19 · verification · phases 02 and 03 · pass
+Gate verification at code `417c441`, docs `8e9802a`: [docs/reviews/phase-2/verification-messaging.md](../../reviews/phase-2/verification-messaging.md). Phases 02 and 03 done.

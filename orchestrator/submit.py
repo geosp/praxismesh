@@ -42,7 +42,7 @@ async def prepare_task(
         input_refs[path.name] = await blobs.put(path.read_bytes(), retention="task")
     return TaskStart(
         task_id=request.task_id or mint_task_id(),
-        request_id=f"req-{uuid.uuid4()}",
+        request_id=request.join_request or f"req-{uuid.uuid4()}",
         profile=request.profile,
         template=loaded.template.name,
         instructions_ref=instructions_ref,

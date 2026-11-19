@@ -18,6 +18,17 @@ completion) or "disconnect" (the connection closes with no response). A fault is
 one-shot too, so the retried request gets the step, unless the step adds
 "always": true.
 
+Several agents (Phase 2 messaging D16): the script may be a map of named scripts.
+A request uses the one its messages name with a `[script:NAME]` marker, or
+"default". In a tool call's arguments, `${result.N.field}` is a field (a dotted
+path; list items by number) of the first tool result of step N, and
+`${input:REGEX}` is the first group of REGEX in the user and system messages,
+newest first (REGEX may not contain `}`). A string that is only a `${result...}`
+placeholder takes the field's own type; `${input:...}` always gives text, which
+the tools' argument validation converts (for example to an integer). A
+placeholder that cannot be resolved stays as written. A scripts file may give a
+script as the name of another JSON file beside it (`load_scripts`).
+
     from tests.support.fake_model import FakeModel
     with FakeModel(script) as fake: base_url = fake.base_url
 
@@ -28,15 +39,20 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from types import TracebackType
 from typing import Any
 
 Step = dict[str, Any]
+Scripts = dict[str, list[Step]]
 FAULT_STATUS = {"overloaded": 429, "rejected": 400, "unavailable": 503}
+MARKER = re.compile(r"\[script:([\w.-]+)\]")
+PLACEHOLDER = re.compile(r"\$\{(result\.(\d+)\.([\w.]+)|input:(.+?))\}(?!\})")
 
 
 class Fault(Exception):
@@ -47,6 +63,89 @@ class Fault(Exception):
         self.kind = kind
 
 
+def load_scripts(path: Path) -> list[Step] | Scripts:
+    """A script file: one script, or named scripts, each a list of steps or the
+    name of a JSON file beside this one."""
+    data = json.loads(path.read_text())
+    if isinstance(data, list):
+        return data
+    return {
+        name: json.loads((path.parent / value).read_text()) if isinstance(value, str) else value
+        for name, value in data.items()
+    }
+
+
+def text_of(message: dict[str, Any]) -> str:
+    """A message's text: a string, or a list of text parts (MCP tool results)."""
+    content = message.get("content")
+    if isinstance(content, list):
+        return "".join(str(p.get("text", "")) for p in content if isinstance(p, dict))
+    return content if isinstance(content, str) else ""
+
+
+def _step_results(messages: list[dict[str, Any]]) -> list[str]:
+    """The text of the first tool result of each step that called tools."""
+    results: list[str] = []
+    for i, m in enumerate(messages):
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            first = m["tool_calls"][0].get("id")
+            found = next(
+                (
+                    text_of(r)
+                    for r in messages[i + 1 :]
+                    if r.get("role") == "tool" and r.get("tool_call_id") == first
+                ),
+                "",
+            )
+            results.append(found)
+    return results
+
+
+def _field(text: str, path: str) -> Any:
+    value: Any = json.loads(text)
+    for key in path.split("."):
+        value = value[int(key)] if isinstance(value, list) else value[key]
+    return value
+
+
+def _resolve(value: Any, messages: list[dict[str, Any]]) -> Any:
+    """Fill `${result.N.field}` and `${input:REGEX}` placeholders in tool arguments.
+    An unresolvable placeholder stays as it is, so a test sees what went wrong."""
+    if isinstance(value, dict):
+        return {k: _resolve(v, messages) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve(v, messages) for v in value]
+    if not isinstance(value, str):
+        return value
+
+    def lookup(match: re.Match[str]) -> Any:
+        try:
+            if match.group(2) is not None:
+                return _field(_step_results(messages)[int(match.group(2))], match.group(3))
+            pattern = re.compile(match.group(4), re.DOTALL)
+            for m in reversed(messages):
+                if m.get("role") in ("user", "system", "developer"):
+                    found = pattern.search(text_of(m))
+                    if found:
+                        return found.group(1)
+        except (IndexError, KeyError, ValueError, TypeError, re.error):
+            pass
+        return match.group(0)
+
+    whole = PLACEHOLDER.fullmatch(value)
+    if whole:
+        return lookup(whole)
+    return PLACEHOLDER.sub(lambda m: str(lookup(m)), value)
+
+
+def pick_script(scripts: Scripts, messages: list[dict[str, Any]]) -> str:
+    for m in messages:
+        found = MARKER.search(text_of(m))
+        if found and found.group(1) in scripts:
+            return found.group(1)
+    return "default"
+
+
 def tool_results(messages: list[dict[str, Any]]) -> int:
     """The number of model responses that called tools (several calls in one
     response count once), which is the script step to answer next."""
@@ -54,31 +153,33 @@ def tool_results(messages: list[dict[str, Any]]) -> int:
 
 
 class FakeModelState:
-    def __init__(self, script: list[Step]) -> None:
-        self.script = script
+    def __init__(self, script: list[Step] | Scripts) -> None:
+        self.scripts: Scripts = script if isinstance(script, dict) else {"default": script}
         self.requests: list[dict[str, Any]] = []
         self.served: list[int] = []
         self.paused_step: int | None = None
-        self.pauses_done: set[int] = set()
-        self.faults_done: set[int] = set()
+        self.pauses_done: set[tuple[str, int]] = set()
+        self.faults_done: set[tuple[str, int]] = set()
         self.release = threading.Event()
         self.lock = threading.Lock()
 
     def reply(self, body: dict[str, Any]) -> dict[str, Any]:
         messages = body.get("messages", [])
-        index = min(tool_results(messages), len(self.script) - 1)
-        step = self.script[index]
+        name = pick_script(self.scripts, messages)
+        script = self.scripts[name]
+        index = min(tool_results(messages), len(script) - 1)
+        step = script[index]
         with self.lock:
             self.requests.append(body)
             self.served.append(index)
-            pause = bool(step.get("pause")) and index not in self.pauses_done
+            pause = bool(step.get("pause")) and (name, index) not in self.pauses_done
             if pause:
-                self.pauses_done.add(index)
+                self.pauses_done.add((name, index))
                 self.paused_step = index
                 self.release.clear()
             fault = step.get("fault")
-            if fault and (step.get("always") or index not in self.faults_done):
-                self.faults_done.add(index)
+            if fault and (step.get("always") or (name, index) not in self.faults_done):
+                self.faults_done.add((name, index))
             else:
                 fault = None
         if pause:
@@ -96,7 +197,10 @@ class FakeModelState:
                     {
                         "id": f"call_{index}_{n}_{len(self.requests)}",
                         "type": "function",
-                        "function": {"name": c["tool"], "arguments": json.dumps(c["args"])},
+                        "function": {
+                            "name": c["tool"],
+                            "arguments": json.dumps(_resolve(c["args"], messages)),
+                        },
                     }
                     for n, c in enumerate(calls)
                 ],
@@ -179,7 +283,9 @@ def _handler(state: FakeModelState) -> type[BaseHTTPRequestHandler]:
 class FakeModel:
     """Run the fake model in a background thread."""
 
-    def __init__(self, script: list[Step], host: str = "127.0.0.1", port: int = 0) -> None:
+    def __init__(
+        self, script: list[Step] | Scripts, host: str = "127.0.0.1", port: int = 0
+    ) -> None:
         self.state = FakeModelState(script)
         self.server = ThreadingHTTPServer((host, port), _handler(self.state))
         self.server.daemon_threads = True

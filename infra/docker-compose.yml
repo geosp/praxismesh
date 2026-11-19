@@ -18,12 +18,15 @@ services:
       POSTGRES_DB: postgres
       TEMPORAL_DB_PASSWORD: ${TEMPORAL_DB_PASSWORD:?set TEMPORAL_DB_PASSWORD in infra/.env}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in infra/.env}
+      # Optional: the comms_mcp role (infra/db/roles.sh); without it comms is off.
+      PRAXIS_COMMS_DB_PASSWORD: ${PRAXIS_COMMS_DB_PASSWORD:-}
       # ParadeDB otherwise sizes shared_buffers to 25% of host RAM; keep the
       # stack inside its memory budget (RFC, Risks).
       PDB_TUNE: "false"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init.sh:/docker-entrypoint-initdb.d/20_praxismesh.sh:ro
+      - ./db/roles.sh:/usr/local/bin/praxismesh-roles:ro
       - ./db/healthcheck.sh:/usr/local/bin/praxismesh-healthcheck:ro
     ports:
       - "127.0.0.1:${DB_PORT:-5432}:5432"
@@ -147,6 +150,7 @@ services:
       VLLM_BASE_URL: ${VLLM_BASE_URL:-}
       VLLM_API_KEY: ${VLLM_API_KEY:-}
       PRAXIS_SAMPLE_DB_URL: postgresql+asyncpg://praxismesh:${APP_DB_PASSWORD}@db:5432/praxismesh
+      PRAXIS_COMMS_DB_URL: postgresql+asyncpg://praxis_comms:${PRAXIS_COMMS_DB_PASSWORD:-}@db:5432/praxismesh
       # Set OTEL_EXPORTER_OTLP_ENDPOINT in infra/.env (any value) to send worker
       # traces to the Jaeger service of the observability profile.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:+http://jaeger:4318}
@@ -264,7 +268,7 @@ services:
     profiles: [fake-model]
     image: praxismesh-worker:dev
     entrypoint: ["python", "-m", "tests.support.fake_model"]
-    command: ["--script", "/app/tests/support/fake_model/order_script.json", "--port", "8765"]
+    command: ["--script", "/app/tests/support/fake_model/scripts.json", "--port", "8765"]
 
   # Optional observability (profile `observability`): `make observability-up`.
   prometheus:

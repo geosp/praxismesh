@@ -4,6 +4,7 @@ from common.schemas.base import Harness, RetentionClass, Strict
 from common.schemas.blob import BlobRef
 from common.schemas.capability import AgentProfile, McpServer, WorkerTemplate
 from common.schemas.events import AgentEvent
+from common.schemas.messages import ClaimInboxInput, InboxClaim, MessageEnvelope
 from common.schemas.task import (
     Artifact,
     CompleteTaskInput,
@@ -13,6 +14,7 @@ from common.schemas.task import (
     TaskRequest,
     TaskResult,
     TaskStart,
+    TaskState,
     TurnInput,
     TurnOutcome,
 )
@@ -22,10 +24,13 @@ __all__ = [
     "AgentProfile",
     "Artifact",
     "BlobRef",
+    "ClaimInboxInput",
     "CompleteTaskInput",
     "ExecutionAttempt",
     "Harness",
+    "InboxClaim",
     "McpServer",
+    "MessageEnvelope",
     "RecordTaskInput",
     "ResolvedTask",
     "RetentionClass",
@@ -33,6 +38,7 @@ __all__ = [
     "TaskRequest",
     "TaskResult",
     "TaskStart",
+    "TaskState",
     "TurnInput",
     "TurnOutcome",
     "WorkerTemplate",

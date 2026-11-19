@@ -1,0 +1,20 @@
+{
+  "default": "order_script.json",
+  "demo-answerer": [
+    {"tool": "finish_task", "args": {"status": "waiting", "summary": "waiting for questions"}},
+    {"tool": "send_to_agent", "args": {"task_id": "${input:Question \\S+ from (\\S+)}", "text": "SKU-4 costs 12.50", "reply_to": "${input:Question (\\S+) from}"}},
+    {"tool": "finish_task", "args": {"status": "done", "summary": "answered"}}
+  ],
+  "demo-asker": [
+    {"tool": "ask_agent", "args": {"task_id": "${input:ask task (\\S+)}", "text": "What is the price of SKU-4?", "deadline_seconds": "${input:within (\\d+) s}"}},
+    {"tool": "finish_task", "args": {"status": "waiting", "summary": "asked"}},
+    {"tool": "finish_task", "args": {"status": "done", "summary": "${input:(?:Reply from \\S+ to your question \\S+|Your question \\S+ to \\S+): ([^\\n]*)}"}}
+  ],
+  "demo-silent": [
+    {"tool": "finish_task", "args": {"status": "waiting", "summary": "waiting"}}
+  ],
+  "demo-outsider": [
+    {"tool": "send_to_agent", "args": {"task_id": "${input:tell task (\\S+)}", "text": "hi"}},
+    {"tool": "finish_task", "args": {"status": "done", "summary": "tried"}}
+  ]
+}

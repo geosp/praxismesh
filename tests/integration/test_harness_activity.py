@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -137,14 +137,14 @@ class Harness:
         return env
 
     def turn(
-        self, remaining_tokens: int = 1_000_000, template_hash: str | None = None
+        self, remaining_tokens: int = 1_000_000, template_hash: str | None = None, number: int = 1
     ) -> TurnInput:
         loaded = load_registry().templates["local-default"]
         return TurnInput(
             task_id=self.task_id,
-            turn=1,
+            turn=number,
             template="local-default",
-            template_version=1,
+            template_version=loaded.template.version,
             template_hash=template_hash or loaded.hash,
             remaining_tokens=remaining_tokens,
             remaining_wall_time=timedelta(minutes=10),
@@ -500,7 +500,7 @@ async def test_activity_metrics_are_recorded(
         or 0
     )
     token_labels = [
-        {"template": "local-default@1", "direction": direction} for direction in ("in", "out")
+        {"template": "local-default@2", "direction": direction} for direction in ("in", "out")
     ]
     tokens_before = [REGISTRY.get_sample_value("praxis_tokens_total", t) or 0 for t in token_labels]
     cp_bytes_before = REGISTRY.get_sample_value("praxis_checkpoint_bytes_count") or 0
@@ -888,3 +888,142 @@ async def test_a_failed_checkpoint_lookup_still_opens_with_reset(
     events = await stored(t, h.task_id)
     assert [e.type for e in events] == ["reset", "status"]
     assert events[1].payload == {"status": "failed", "error": "ConnectionError"}
+
+
+async def test_a_lost_waiting_turn_keeps_its_outputs_without_rerunning(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """Phase 2 messaging D18: a `waiting` finish is recorded like `done`, so a lost
+    attempt after it goes straight to finish, with the turn's outputs."""
+    h = await harness(engine, tmp_path, done)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE tasks SET outputs = CAST(:o AS json) WHERE task_id = :t"),
+            {"o": '["order-summary.md"]', "t": h.task_id},
+        )
+    await AttemptRepository(engine).start(h.task_id, 1, 1, "lost-worker")
+    await add_checkpoint(
+        h, engine, position=0, files={"order-summary.md": "draft"},
+        finish={"status": "waiting", "summary": "asked B", "questions": []},
+    )  # fmt: skip
+    outcome = await h.run(attempt=2)
+    assert h.runner.seen.calls == 0
+    assert outcome.status == "waiting" and outcome.summary == "asked B"
+    assert [a.path for a in outcome.outputs] == ["order-summary.md"]
+
+
+class ChecksFinish(ScriptedRunner):
+    """Calls the config's finish check from a worker thread, as a tool body does."""
+
+    async def run(self, config: HarnessConfig, *args: Any) -> RunResult:
+        assert config.finish_check is not None
+        self.blocking = await asyncio.to_thread(config.finish_check)
+        usage: Usage = args[4]
+        return RunResult("waiting", usage, summary="asked")
+
+
+async def test_the_finish_check_reaches_the_inbox_from_a_tool_thread(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """Phase 2 messaging R19: the Activity's check, called from a thread, sees the
+    task's open question."""
+    from common.persistence.messages import MessageRepository, Sender, idempotency_key
+
+    h = await harness(engine, tmp_path, done)
+    async with engine.begin() as conn:
+        request = (await conn.execute(
+            text("SELECT request_id FROM tasks WHERE task_id = :t"), {"t": h.task_id}
+        )).scalar_one()  # fmt: skip
+    other = f"task-act-{run_id()}"
+    await TaskRepository(engine).record_task(
+        TaskStart(task_id=other, request_id=request, profile="openai", template="local-default",
+                  instructions_ref=await h.blobs.put(b"x", retention="task")),
+        workflow_id=other, run_id="run-1", template_version=1, template_hash="x",
+    )  # fmt: skip
+    await AttemptRepository(engine).start(h.task_id, 1, 1, "worker")
+    asked = await MessageRepository(engine).ask(
+        Sender(h.task_id, 1, 1), other, "price?",
+        key=idempotency_key(h.task_id, 1, "ask_agent", {}),
+        wait=timedelta(minutes=5), max_wait=timedelta(minutes=10),
+    )  # fmt: skip
+    assert asked.ok
+    runner = ChecksFinish(done)
+    h.acts.runner = runner
+    outcome = await h.run(attempt=2)
+    assert outcome.status == "waiting"
+    assert runner.blocking == [f"open question {asked.correlation_id} to {other}"]
+
+
+async def test_a_woken_turn_runs_the_model_with_its_messages(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """Phase 2 messaging task 4.1: after a `waiting` turn 1, turn 2 is not the finish
+    shortcut; its input lists the rows claimed for it, and a rerun reads them again."""
+    from common.persistence.messages import MessageRepository, Sender, idempotency_key
+
+    h = await harness(engine, tmp_path, done)
+    async with engine.connect() as conn:
+        request = (await conn.execute(
+            text("SELECT request_id FROM tasks WHERE task_id = :t"), {"t": h.task_id}
+        )).scalar_one()  # fmt: skip
+    other = f"task-act-{run_id()}"
+    await TaskRepository(engine).record_task(
+        TaskStart(task_id=other, request_id=request, profile="openai", template="local-default",
+                  instructions_ref=await h.blobs.put(b"x", retention="task")),
+        workflow_id=other, run_id="run-1", template_version=1, template_hash="x",
+    )  # fmt: skip
+    await AttemptRepository(engine).start(h.task_id, 1, 1, "worker")
+    await add_checkpoint(
+        h, engine, position=0, files={"a.txt": "x"},
+        finish={"status": "waiting", "summary": "asked", "questions": []},
+    )  # fmt: skip
+    await AttemptRepository(engine).start(other, 1, 1, "worker")
+    messages = MessageRepository(engine)
+    sent = await messages.send(Sender(other, 1, 1), h.task_id, "SKU-1 costs 12.50",
+                               key=idempotency_key(other, 1, "send_to_agent", {}))  # fmt: skip
+    assert sent.ok
+    await messages.claim(h.task_id, 2, datetime.now(UTC))
+    outcome = await h.run(attempt=1, number=2)
+    assert h.runner.seen.calls == 1  # the model ran: not turn 1's finish
+    assert "SKU-1 costs 12.50" in h.runner.seen.input_text and other in h.runner.seen.input_text
+    assert outcome.status == "done"
+    again = await messages.read_claimed(Sender(h.task_id, 2, 1))
+    assert [d.body for d in again] == ["SKU-1 costs 12.50"]  # a rerun reads the same rows
+
+
+async def test_a_done_alongside_a_same_step_ask_does_not_finish(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """Review round 1 (R19): with parallel tool calls, finish_task's check can run
+    before the same step's ask_agent commits. The Activity checks again after the
+    run, so the task does not end with the question open."""
+    from common.persistence.messages import MessageRepository, Sender, idempotency_key
+
+    other = f"task-act-{run_id()}"
+    holder: dict[str, str] = {}
+
+    async def ask_then_done(
+        seen: Seen, before: BeforeModelCall, usage: Usage, ws_: Path, s: Session
+    ) -> RunResult:
+        asked = await MessageRepository(engine).ask(  # the step's ask_agent, committed late
+            Sender(holder["task"], 1, 1), other, "price?",
+            key=idempotency_key(holder["task"], 1, "ask_agent", {}),
+            wait=timedelta(minutes=5), max_wait=timedelta(minutes=10),
+        )  # fmt: skip
+        assert asked.ok
+        return RunResult("done", usage, summary="finished too early")
+
+    h = await harness(engine, tmp_path, ask_then_done)
+    holder["task"] = h.task_id
+    async with engine.begin() as conn:
+        request = (await conn.execute(
+            text("SELECT request_id FROM tasks WHERE task_id = :t"), {"t": h.task_id}
+        )).scalar_one()  # fmt: skip
+    await TaskRepository(engine).record_task(
+        TaskStart(task_id=other, request_id=request, profile="openai", template="local-default",
+                  instructions_ref=await h.blobs.put(b"x", retention="task")),
+        workflow_id=other, run_id="run-1", template_version=1, template_hash="x",
+    )  # fmt: skip
+    outcome = await h.run()
+    assert outcome.status == "continue"
+    assert "open question" in outcome.summary

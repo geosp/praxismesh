@@ -43,6 +43,9 @@ class TaskRequest(Strict):
     instructions: str = Field(min_length=1, max_length=100_000)
     input_files: list[str] = []
     outputs: list[WorkspacePath] = []
+    # Put the task in an existing request instead of a new one, so it may message the
+    # request's other tasks (Phase 2 messaging D5); the CLI checks it exists.
+    join_request: str | None = Field(default=None, pattern=r"^req-[A-Za-z0-9-]{1,80}$")
 
 
 class TaskStart(Strict):
@@ -56,6 +59,10 @@ class TaskStart(Strict):
     instructions_ref: BlobRef
     input_refs: dict[WorkspacePath, BlobRef] = {}
     outputs: list[WorkspacePath] = []
+    # Set only by Continue-As-New: the waiting run's state (Phase 2 messaging D11).
+    # A field, not a second run argument: Temporal drops type hints when a start
+    # passes fewer arguments than `run` declares.
+    carried: TaskState | None = None
 
 
 class TurnInput(Strict):
@@ -68,11 +75,13 @@ class TurnInput(Strict):
     remaining_tokens: int = Field(ge=0)
     remaining_wall_time: timedelta
     request_id: str = ""
+    # Passed to comms_mcp, which caps an ask's deadline with it (Phase 2 messaging D14).
+    max_ask_wait: timedelta = timedelta(minutes=10)
 
 
 class TurnOutcome(Strict):
     schema_version: Literal[1] = 1
-    status: Literal["done", "continue", "needs_input"]
+    status: Literal["done", "continue", "needs_input", "waiting"]
     checkpoint_id: str | None = None
     tokens_in: int = Field(default=0, ge=0)
     tokens_out: int = Field(default=0, ge=0)
@@ -108,7 +117,15 @@ class TaskResult(Strict):
 
 
 AttemptOutcome = Literal[
-    "started", "done", "continue", "needs_input", "failed", "lost", "refused", "cancelled"
+    "started",
+    "done",
+    "continue",
+    "needs_input",
+    "waiting",
+    "failed",
+    "lost",
+    "refused",
+    "cancelled",
 ]
 
 
@@ -147,6 +164,29 @@ class ResolvedTask(Strict):
     max_wall_time: timedelta
     turn_timeout: timedelta
     heartbeat_timeout: timedelta
+    # Phase 2 messaging D14; defaults keep payloads recorded before them decoding.
+    idle_timeout: timedelta = timedelta(minutes=10)
+    max_ask_wait: timedelta = timedelta(minutes=10)
+    max_wakes: int = Field(default=50, ge=1)
+
+
+class TaskState(Strict):
+    """What a waiting `TaskWorkflow` carries into its next run (Phase 2 messaging
+    D11): counters, usage and the wall-time deadline, never a message body."""
+
+    schema_version: Literal[1] = 1
+    resolved: ResolvedTask
+    turn: int = Field(ge=0, description="the last turn number used")
+    work_turns: int = Field(ge=0)
+    wakes: int = Field(ge=0)
+    attempts: int = Field(ge=0)
+    tokens_in: int = Field(ge=0)
+    tokens_out: int = Field(ge=0)
+    inner_turns: int = Field(ge=0)
+    usage_known: bool = True
+    deadline: datetime
+    summary: str = Field(default="", max_length=SUMMARY_MAX)
+    outputs: list[Artifact] = []
 
 
 class RecordTaskInput(Strict):
@@ -170,3 +210,6 @@ class CompleteTaskInput(Strict):
     tokens_out: int = Field(ge=0)
     inner_turns: int = Field(default=0, ge=0)
     usage_known: bool = True
+
+
+TaskStart.model_rebuild()  # `carried` names TaskState, defined after it

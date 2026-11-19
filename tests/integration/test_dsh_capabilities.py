@@ -106,7 +106,9 @@ async def test_only_template_capabilities_reach_dsh(
     granted = {
         *("read_file", "write_file", "list_files", "finish_task", "run_command"),
         *registry.mcp_servers["sample-shop"].tools_allowed,
+        *registry.mcp_servers["comms"].tools_allowed,  # granted by local-dsh v2
     }
+    assert {"send_to_agent", "ask_agent", "post_status", "get_task_context"} <= granted
     for request in requests:
         # No native file, shell, job, delegation, MCP-resource or skill tool, and
         # no tool a workspace file or the task text asked for: exactly the grant.

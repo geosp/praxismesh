@@ -7,13 +7,16 @@ import logging
 from temporalio import activity
 
 from common.observability import log_context
+from common.persistence.messages import MessageRepository
 from common.persistence.repositories import (
     AttemptRepository,
     TaskRepository,
     UsageLedgerRepository,
 )
 from common.schemas import (
+    ClaimInboxInput,
     CompleteTaskInput,
+    InboxClaim,
     RecordTaskInput,
     ResolvedTask,
     TaskResult,
@@ -86,6 +89,9 @@ class OrchestratorActivities:
             max_wall_time=min(profile.max_wall_time, t.max_wall_time_cap),
             turn_timeout=t.turn_timeout,
             heartbeat_timeout=t.heartbeat_timeout,
+            idle_timeout=profile.idle_timeout,
+            max_ask_wait=profile.max_ask_wait,
+            max_wakes=min(profile.max_wakes, t.max_wakes_cap),
         )
 
     @activity.defn(name="record_task")
@@ -102,6 +108,16 @@ class OrchestratorActivities:
             template_version=payload.resolved.template_version,
             template_hash=payload.resolved.template_hash,
         )
+
+    @activity.defn(name="claim_inbox")
+    async def claim_inbox(self, payload: ClaimInboxInput) -> InboxClaim:
+        """Expire the task's due questions, assign its pending inbox rows to `turn`
+        and record whether it sleeps (Phase 2 messaging D7). Safe to rerun for the
+        same turn; returns IDs and the next deadline, never a body (R28)."""
+        claim = await MessageRepository(self.tasks.engine).claim(
+            payload.task_id, payload.turn, payload.now
+        )
+        return InboxClaim(message_ids=claim.message_ids, next_deadline=claim.next_deadline)
 
     @activity.defn(name="complete_task")
     async def complete_task(self, payload: CompleteTaskInput) -> TaskResult:
@@ -128,7 +144,12 @@ class OrchestratorActivities:
         # Rows still open (for example after schedule_to_close expired, when no
         # Activity code ran) are closed with the task (gate F2).
         await self.attempts.close_unfinished(payload.task_id, None, "task_completed")
-        await self.tasks.complete(payload.task_id, payload.status, result.model_dump(mode="json"))
+        # The task's end and its messages close together (Phase 2 messaging D17):
+        # questions to and from it are cancelled, unread messages become
+        # undelivered, and tasks waiting on it are woken.
+        await MessageRepository(self.tasks.engine).end_task(
+            payload.task_id, payload.status, result.model_dump(mode="json")
+        )
         row = await self.tasks.get(payload.task_id)
         with log_context(**_ids(payload.task_id, (row or {}).get("request_id"))):
             log.info(

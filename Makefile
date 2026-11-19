@@ -31,7 +31,7 @@ SERVICES := db temporal temporal-ui s3
 JOBS := temporal-schema temporal-namespace
 JOB_TIMEOUT := 120
 
-.PHONY: help check up down reset status migrate smoke restart-check unhealthy-check logs registry-lock workers-up workers-down workers-check recovery-check benchmark observability-up observability-down demo-worker-loss task task-status task-output
+.PHONY: help check up down reset status migrate db-roles smoke restart-check unhealthy-check logs registry-lock workers-up workers-down workers-check recovery-check benchmark observability-up observability-down demo-worker-loss task task-status task-output
 
 help:
 	@echo "make up              start the stack and wait until it is healthy"
@@ -39,6 +39,7 @@ help:
 	@echo "make reset           stop the stack and delete its data volumes"
 	@echo "make status          show service health and the model endpoint (fails if unhealthy)"
 	@echo "make migrate         apply application database migrations"
+	@echo "make db-roles        create the praxis_comms role on an existing database volume"
 	@echo "make smoke           run the integration tests against the stack"
 	@echo "make restart-check   check repeat starts, a retention change and a restart"
 	@echo "make unhealthy-check check that a stopped database is reported by name"
@@ -100,6 +101,9 @@ status: check
 
 migrate: check
 	@$(UV) alembic -c common/persistence/alembic.ini upgrade head
+
+db-roles: check
+	@$(COMPOSE) exec -T -u postgres db bash /usr/local/bin/praxismesh-roles
 
 smoke: check
 	@$(UV) pytest -m integration tests/integration --ignore=tests/integration/test_recovery.py

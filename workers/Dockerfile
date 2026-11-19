@@ -22,6 +22,7 @@ COPY registry registry
 COPY orchestrator orchestrator
 COPY harness_activity harness_activity
 COPY sample_mcp sample_mcp
+COPY comms_mcp comms_mcp
 COPY workers workers
 COPY tests/support tests/support
 RUN mkdir -p /scratch && chown praxis /scratch

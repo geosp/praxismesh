@@ -36,7 +36,7 @@ FINISH_TOOL = "finish_task"
 
 @dataclass
 class FinishReport:
-    status: Literal["done", "needs_input"]
+    status: Literal["done", "needs_input", "waiting"]
     summary: str
     questions: list[str] = field(default_factory=list)
 
@@ -46,6 +46,8 @@ class TurnState:
     """Per-run state the tools write and the runner reads."""
 
     finish: FinishReport | None = None
+    # Why the task may not finish yet; from HarnessConfig.finish_check.
+    finish_check: Callable[[], list[str]] | None = None
     refused: list[str] = field(default_factory=list)
     failed_in_step: list[str] = field(default_factory=list)
 
@@ -206,10 +208,17 @@ def list_files_body(workspace: Path, path: str = ".") -> list[str] | str:
 
 def finish_task_body(
     state: TurnState,
-    status: Literal["done", "needs_input"],
+    status: Literal["done", "needs_input", "waiting"],
     summary: str,
     questions: list[str] | None = None,
 ) -> str:
+    if status != "waiting" and state.finish_check is not None:
+        blocking = state.finish_check()
+        if blocking:  # R19: the run goes on, so the model can wait instead
+            return (
+                "refused: you cannot finish while " + "; ".join(blocking) + ". Call finish_task "
+                'with status "waiting" to be woken with the answers.'
+            )
     state.finish = FinishReport(status, summary[:2000], list(questions or []))
     return "recorded"
 
@@ -269,11 +278,14 @@ def build_tools(
 
     @function_tool
     def finish_task(
-        status: Literal["done", "needs_input"], summary: str, questions: list[str] | None = None
+        status: Literal["done", "needs_input", "waiting"],
+        summary: str,
+        questions: list[str] | None = None,
     ) -> str:
-        """Call exactly once: when the task is complete (status "done"), or when you
+        """Call exactly once: when the task is complete (status "done"), when you
         cannot continue without information from the user (status "needs_input",
-        with your questions)."""
+        with your questions), or when you are waiting for another task's message or
+        answer (status "waiting"); a waiting task is woken when one arrives."""
         return finish_task_body(state, status, summary, questions)
 
     tools: list[FunctionTool] = [read_file, write_file, list_files, finish_task]

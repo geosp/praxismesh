@@ -7,6 +7,7 @@ Runners emit `AgentEvent`s through an `AttemptEvents`, which hands them to a sin
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import threading
 import time
@@ -20,6 +21,26 @@ from common.schemas.events import AgentEvent, EventType
 
 log = logging.getLogger("praxis.events")
 CLOSE_TIMEOUT_S = 10.0  # the bound on an attempt's final flush (Phase 2 events plan D2)
+
+
+STATUS_TOOL = "post_status"  # comms_mcp's tool; the runners publish its result
+
+
+def emit_agent_status(events: AttemptEvents, result: str) -> None:
+    """Publish a `post_status` result as a `status` event (Phase 2 messaging D15):
+    only the validated stage and progress, never other text."""
+    try:
+        data = json.loads(result)
+    except ValueError:
+        return
+    if isinstance(data, dict) and isinstance(data.get("stage"), str):
+        progress = data.get("progress")
+        events.emit(
+            "status",
+            stage=data["stage"][:32],
+            progress=progress if isinstance(progress, int) else None,
+            source="agent",
+        )
 
 
 class EventSink(Protocol):

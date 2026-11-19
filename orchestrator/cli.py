@@ -2,6 +2,7 @@
 
     uv run --env-file infra/.env python -m orchestrator.cli task submit \\
         --profile default --instructions "..." [--input FILE] [--output PATH] [--task-id ID]
+        [--join REQ]
     uv run --env-file infra/.env python -m orchestrator.cli task status TASK_ID
     uv run --env-file infra/.env python -m orchestrator.cli task output TASK_ID PATH [--to FILE]
 
@@ -77,12 +78,17 @@ async def submit(args: argparse.Namespace) -> int:
         data["template"] = args.template
     data["input_files"] = args.input or []
     data["outputs"] = args.output or []
+    if args.join:
+        data["join_request"] = args.join
     return await _submit(data, args.wait)
 
 
 async def _submit(data: dict[str, Any], wait: bool) -> int:
     engine = make_engine()
     try:
+        joined = data.get("join_request")
+        if joined and not await TaskRepository(engine).request_exists(joined):
+            raise InvalidTaskInput(f"request {joined} has no task to join")
         s3 = S3BlobStore.from_env()
         await s3.ensure_bucket()
         start = await prepare_task(
@@ -296,6 +302,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--task-id")
     s.add_argument("--wait", action="store_true", help="wait for and print the TaskResult")
     s.add_argument("--request", help="submit this JSON request file instead of the flags")
+    s.add_argument("--join", metavar="REQ", help="add the task to an existing request")
     st = task.add_parser("status", help="show a task")
     st.add_argument("task_id")
     o = task.add_parser("output", help="download one of a task's output files")
