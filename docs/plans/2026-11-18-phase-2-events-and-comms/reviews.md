@@ -119,3 +119,45 @@ After the split and rework, a fresh round (owner decision when splitting). Revie
 ## 2026-11-18 · approved · plan (phases 02 and 03)
 
 Owner approved, including the two extensions flagged with round 3: finish_task also waits for unread replies (R19); a used-up wake budget fails the task (R22).
+
+## 2026-11-18 · impl-review · phase 02 · round 1 · changes-requested
+Diff base: `7f0ed8538119ca7de512a73d3341ef24d0a31cf7`. Reports: `docs/reviews/phase-2/raw/messaging-impl-review-round-1-{contract,failure,scope}.md`.
+Reviewers: contract ✅ · failure and retry ✅ · scope and composition ✅
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F94 | Major | contract | A reply's recipient was never checked against the question's asker (R16, R11) | fixed: `_question_for_reply` refuses a reply not sent to the asker; `test_messages.py` (734346a) |
+| F95 | Major | contract, failure, scope | Paths that reach the wall-time deadline after a `waiting` turn ended without looking at open questions (R21, R31) | fixed: `_ending_at_wall_time` runs one last claim on every path; `test_a_waiting_turn_past_the_deadline_fails_with_an_open_question` |
+| F96 | Major | contract, scope | `post_status` never became a `status` event on `openai_agents`: the SDK passes a text item, not a string (D15) | fixed: `tool_text` in `runner.py`; `test_an_mcp_status_result_is_published_on_openai_agents` (MCP failures now count as failed too) |
+| F97 | Major | contract, scope | With parallel tool calls, `finish_task`'s check could run before the same step's `ask_agent` committed (R19, D8) | fixed: the Activity checks again after the run and turns a blocked finish into `continue`; `test_a_done_alongside_a_same_step_ask_does_not_finish` |
+| F98 | Major | contract, failure, scope | `complete_task` gave up after 5 attempts, and a cancel during it was not rerun (R24, D17) | fixed: unlimited retries and one rerun after a cancel in `_complete`; `test_complete_task_is_retried_until_it_succeeds` |
+| F99 | Major | failure | The dispatcher dropped a wake sent while its old row was being signalled (D6, R14) | fixed: delete before the Signal, one savepoint per row, Signal RPC timeout; `test_a_wake_sent_while_its_row_is_signalled_is_kept` |
+| F100 | Major | failure, scope, contract | The dispatcher ended silently if its first connect failed (D6, Risks) | fixed: connect inside the retry loop; `tests/test_dispatcher_supervision.py` |
+| F101 | Nit | contract, scope | R26 test passed when nothing was stored | fixed: asserts `senders == {a}` |
+| F102 | Nit | contract, failure, scope | `deadline_seconds` 0 became 300 and a negative one gave a past deadline (D8) | fixed: refused below 1; `test_each_tool_through_the_client` |
+| F103 | Nit | contract, failure, scope | notes.md#d6 gave `task_inbox` more grants than migration 0006 | fixed: notes.md#d6 (SELECT only) |
+| F104 | Nit | contract | notes.md#d6 gave the wrong `roles.sh` mount | fixed: notes.md#d6 |
+| F105 | Nit | contract | Phases table showed 0/15 | fixed: plan.md Phases |
+| F106 | Nit | failure | `remove_listener` on a dead connection could mask the cancel | fixed: suppressed in `dispatcher.py` |
+| F107 | Nit | contract | No test that a `continue` after a woken turn spends `max_turns` (D14) | fixed: `test_a_continue_after_a_woken_turn_spends_max_turns` |
+| F108 | Nit | failure, scope | A claim cut off near the deadline ended "inbox unavailable" with the inbox back (R21) | fixed: waits for the deadline, then the F95 ending; `test_a_claim_cut_off_by_the_deadline_still_ends_by_open_questions` |
+| F109 | Nit | contract | A woken turn at the deadline failed with no open question (R21) | fixed: F95 |
+| F110 | Nit | contract | A comment said the comms role cannot read wake rows | fixed: the comment now gives the real reason (no RETURNING needed) |
+| F111 | Nit | contract, scope | R12: no test of a database fault during a send | accepted: the send returns inside its transaction, so success follows the commit |
+| F112 | Nit | contract, scope | R28: no history test with three 16 KB messages | accepted: phase 03's history test |
+| F113 | Nit | contract | R32: Workflow fakes carry no outputs | accepted: the Activity test covers it; phase 03's two-agent test checks artifacts end to end |
+| F114 | Nit | contract | R20: the 60-65 s window is not asserted | accepted: the ending is the idle timer, which the time-skipping test drives |
+| F115 | Nit | contract | `render_inbox` text for expired and cancelled questions is untested | accepted: phase 03's failure cases assert what the asker is told |
+| F116 | Nit | contract | Rejected rows asserted only for cross-request refusals (R11) | accepted: every refusal goes through the one `_refusal` path |
+| F117 | Nit | contract, failure | Rows a woken turn read stay `read` if the turn then fails (R30) | accepted: they were rendered into the model's input |
+| F118 | Nit | contract, scope | The 16 KB body limit counts characters, not bytes (D6) | accepted: it still bounds each row; characters are what the model sends |
+| F119 | Nit | contract, failure | A cancel during `record_task` skips `complete_task` (R24) | accepted: a narrow window unchanged since Phase 1 |
+| F120 | Nit | contract, scope | Sends during one sleep can add several wakes (R33) | accepted: bounded by the sends; a Signal is only a hint |
+| F121 | Nit | contract, failure, scope | Expiry uses `<` and the Workflow's clock, costing an extra claim (R17) | accepted: harmless, noted in notes.md |
+| F122 | Nit | failure, scope | A refusal is replayed for identical calls in the same turn (R13) | accepted: idempotency within a turn; the next turn's key differs |
+| F123 | Nit | failure | `tasks.run_id` keeps the first run's ID after continue-as-new (D11) | accepted: informational only |
+| F124 | Nit | scope | An idle timeout ends without a final claim (R20) | accepted: a late message becomes `undelivered`, which its sender sees |
+| F125 | Nit | scope | 50 rows that keep failing stop a drain (D6) | accepted: Signals fail together only when Temporal is down; the next poll retries |
+| F126 | Nit | scope | The closed-workflow test uses a never-started workflow | accepted: closed and missing workflows both return NOT_FOUND on one path |
+| F127 | Nit | scope | The wake-budget test runs at a smaller scale than the plan's example (R22) | accepted: the counters do not depend on scale |
+| F128 | Nit | scope | The R13 rerun test calls `read_claimed` directly | accepted: `read_claimed` is keyed by turn, not attempt |
