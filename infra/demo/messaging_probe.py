@@ -1,10 +1,10 @@
 """Read-only probes for the Phase 2 messaging demo (infra/demo/phase-2-messaging.sh).
 
-    uv run --env-file infra/.env python infra/demo/messaging_probe.py sleeping TASK
-    uv run --env-file infra/.env python infra/demo/messaging_probe.py messages TASK...
-    uv run --env-file infra/.env python infra/demo/messaging_probe.py history TASK...
-    uv run --env-file infra/.env python infra/demo/messaging_probe.py batches TASK
-    uv run --env-file infra/.env python infra/demo/messaging_probe.py cancel TASK
+    PYTHONPATH=. uv run --env-file infra/.env python infra/demo/messaging_probe.py sleeping TASK
+    PYTHONPATH=. uv run --env-file infra/.env python infra/demo/messaging_probe.py messages TASK...
+    PYTHONPATH=. uv run --env-file infra/.env python infra/demo/messaging_probe.py history TASK...
+    PYTHONPATH=. uv run --env-file infra/.env python infra/demo/messaging_probe.py batches TASK
+    PYTHONPATH=. uv run --env-file infra/.env python infra/demo/messaging_probe.py cancel TASK
 
 `sleeping` prints yes or no; `messages` prints the message rows sent by or to the
 tasks; `history` prints each run of each task's Workflow with its event count and

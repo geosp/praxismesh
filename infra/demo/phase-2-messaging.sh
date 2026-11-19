@@ -25,7 +25,7 @@ OUT=${1:-$(mktemp -d)}
 mkdir -p "$OUT"
 
 field() { python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
-probe() { uv run --env-file "$ENV_FILE" python infra/demo/messaging_probe.py "$@"; }
+probe() { PYTHONPATH=. uv run --env-file "$ENV_FILE" python infra/demo/messaging_probe.py "$@"; }
 submit() { $CTL task submit --profile "$PROFILE" "$@" 2>/dev/null; }
 task_status() { $CTL task status "$1" 2>/dev/null | field "d['task']['status']"; }
 offsets() { grep -E '^[0-9]+' "$1" | cut -f1; }
