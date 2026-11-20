@@ -17,6 +17,20 @@ Shared instructions for every coding agent working in this repository: Claude Co
 
 Do not load all of `docs/roadmap/` by default.
 
+## Code graph (when the `graphify-hub` MCP server is connected)
+
+`graphify-hub` serves a code graph of this repository: functions, classes and modules, and the calls and imports between them. If your session has its tools, use them first for structural questions such as who calls X, what X depends on, or how A reaches B. Use grep for text, configuration and docs. If your session doesn't have the tools, skip this section.
+
+- **Project.** `praxismesh` tracks `main`. If `list_projects` doesn't list it, call `register_project(name="praxismesh", repo_url="https://github.com/geosp/praxismesh")`. A pushed feature branch can be registered as `praxismesh-<issue>` with `branch="<branch>"`.
+- **Keep it fresh.** Do this before the first graph query of a task and after every push:
+  1. Run `git fetch` and compare `project_status(name).built_sha` with `git rev-parse origin/<branch>`.
+  2. If they differ, call `refresh_project(name)`.
+  3. Poll `project_status` until `status` is `ready` and `building` is false. A build takes a few seconds.
+
+  The hub also refreshes every 15 minutes.
+- **Unpushed work is not in the graph.** The graph covers pushed commits only. For files you changed locally, read the file or grep it instead.
+- **Answers are leads, not evidence.** Read the cited file and line before an answer goes into a review, a report or a commit.
+
 ## Working rules (summary; the plan is authoritative)
 
 - The plan governs scope, sequencing, constraints and gates (§4.16, §9.6). Record changes to constraints, APIs, architecture or acceptance criteria in [docs/roadmap/decision-log.md](docs/roadmap/decision-log.md).
