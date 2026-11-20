@@ -41,33 +41,35 @@ Pinned at c6efe44. Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out �
 
 | ID | Sev | Lens | Finding | Resolution |
 | --- | --- | --- | --- | --- |
-| F29 | Major | codebase fit, zoom out | Reopens F15: `_REQUEST_LOCK` is transaction-scoped, so batched deletes release it; a joining submit's upload references carry the request ID before `record_task` and get removed | open |
-| F30 | Major | codebase fit, zoom out | Reopens F11: `TableTransport.prune` opens its own transaction, has no batch limit and marks no references, so it cannot share D6's batch transaction | open |
-| F31 | Major | codebase fit | `message_wakes` as `ephemeral` from `created_at` deletes undelivered wakes, contradicting ADR-0010 | open |
-| F32 | Major | codebase fit, zoom out | References written after `end_task` (stale attempts, issue #74) never get an expiry | open |
-| F33 | Major | codebase fit, zoom out | "No `tasks` row after 24 h" cannot tell a queued Workflow from one that never started; its inputs are removed | open |
-| F34 | Major | zoom out | Backfilling `last_put_at` from `created_at` makes recently re-put blobs look old | open |
-| F35 | Major | codebase fit | A rerun cannot tell which marked blobs are still in the bucket; work grows without bound | open |
-| F36 | Major | codebase fit, zoom out | Bucket objects with no `blob_objects` row are invisible to GC and reconcile, though notes#d8 relies on GC removing them | open |
-| F37 | Major | codebase fit | Restore's drop-and-recreate loses the database grants of `init.sh` and `roles.sh` (`praxis_comms` CONNECT) | open |
-| F38 | Major | zoom out | Downgrade fails once new code wrote new classes (old `RetentionClass`, histories, `RETENTION_ORDER`); the CLI version is not in Rollout | open |
-| F39 | Major | fresh reader | Summary omits the Temporal history residual, the `questions` truncation and 64 KiB test, and the stop-workers rollout | open |
-| F40 | Major | fresh reader | `end_task` and the session, message and tool-result tables are never introduced | open |
-| F41 | Major | fresh reader | Lifetime anchors, the redaction list and which rows a delete removes or redacts live only in notes.md | open |
-| F42 | Major | fresh reader | D5 vs D2: an upload reference of a task with no row is live yet has no stated expiry | open |
-| F43 | Major | fresh reader | Terms describes `blob_objects` upload times and removal mark as existing; Impact lists them as new | open |
-| F44 | Major | fresh reader | Impact's "no Workflow code changes" vs R5's decoding of `task`; where the type widens is unsaid | open |
-| F45 | Nit | codebase fit | `event_batches` has `seen_at`, not `created_at`, and publish already deletes its rows after 600 s | open |
-| F46 | Nit | codebase fit | A string marker in `result.questions` (a list) or a `None` `failure_reason` breaks `TaskResult` validation | open |
-| F47 | Nit | codebase fit | The demo's "expired read" after a delete never reaches `BlobExpired` (artifacts emptied); only GC does | open |
-| F48 | Nit | codebase fit | ADR-0007 asks new attempt write paths to take the fence or justify; the unfenced upload reference is not justified | open |
-| F49 | Nit | codebase fit, zoom out | `put`'s new task argument and forced upload change the `BlobStore` protocol and `MemoryBlobStore`; not in What changes | open |
-| F50 | Nit | codebase fit, zoom out | Reopens F8: "S3 object metadata is left as written" is false; `put` still rewrites it via `copy_object` | open |
-| F51 | Nit | codebase fit | `put` locks `blob_objects` then `blob_refs`; a removal does the reverse; no fixed lock order | open |
-| F52 | Nit | codebase fit | The existing `agentctl events prune` removes indexed holders without marks or tombstones | open |
-| F53 | Nit | codebase fit, zoom out | D4's lock must be session-level and its key named; `backup.sh` cannot hold it from a shell | open |
-| F54 | Nit | codebase fit | A second Compose project in the CI `stack` job exceeds its 45-minute budget (about 32 used) | open |
-| F55 | Nit | zoom out | notes#d3 says `blob_objects` and `blob_refs` expire "with its references"; marked rows must stay | open |
-| F56 | Nit | zoom out | One task uploading the same bytes under two classes keeps the first class; the stronger should win | open |
-| F57 | Nit | zoom out | R23's refusal checks only `tasks` and the bucket, not the `temporal` database | open |
-| F58 | Nit | fresh reader | Readability and terms: Summary cites R21 for the wrong clause; multi-rule R1, R6, R7, R13, R17, R20, R22; minor undefined names (`RecordingBlobStore`, `finish_task_body`, `make reset`, `schemas.md` path); plan vs roadmap phase numbering; owner date repeated | open |
+| F29 | Major | codebase fit, zoom out | Reopens F15: `_REQUEST_LOCK` is transaction-scoped, so batched deletes release it; a joining submit's upload references carry the request ID before `record_task` and get removed | fixed: D12, R24, notes#redact (session-level request lock, fixed task list, select by list), phase 02 task 3.2 |
+| F30 | Major | codebase fit, zoom out | Reopens F11: `TableTransport.prune` opens its own transaction, has no batch limit and marks no references, so it cannot share D6's batch transaction | fixed: D11, notes#d6, phase 02 task 1.4 (`prune` takes the connection, a limit, marks references) |
+| F31 | Major | codebase fit | `message_wakes` as `ephemeral` from `created_at` deletes undelivered wakes, contradicting ADR-0010 | fixed: D3, notes#d3 (wake rows expire after the recipient ends) |
+| F32 | Major | codebase fit, zoom out | References written after `end_task` (stale attempts, issue #74) never get an expiry | fixed: D2, notes#d2 (expiry computed at GC time), R20 narrowed, R6 scenario |
+| F33 | Major | codebase fit, zoom out | "No `tasks` row after 24 h" cannot tell a queued Workflow from one that never started; its inputs are removed | fixed: D5, notes#d2 (Temporal describe before expiring row-less uploads), R7 scenario, phase 02 task 2.1 |
+| F34 | Major | zoom out | Backfilling `last_put_at` from `created_at` makes recently re-put blobs look old | fixed: notes#d2, Rollout (`last_put_at` backfilled to the migration time) |
+| F35 | Major | codebase fit | A rerun cannot tell which marked blobs are still in the bucket; work grows without bound | fixed: `bucket_deleted_at` (What changes, D6, notes#d6, notes#revive) |
+| F36 | Major | codebase fit, zoom out | Bucket objects with no `blob_objects` row are invisible to GC and reconcile, though notes#d8 relies on GC removing them | fixed: Terms (orphaned = bucket object), notes#d2 checks and reindex, notes#d8, R8, phase 01 task 1.4 |
+| F37 | Major | codebase fit | Restore's drop-and-recreate loses the database grants of `init.sh` and `roles.sh` (`praxis_comms` CONNECT) | fixed: D8, notes#d8 (`infra/db/databases.sh`, `roles.sh` rerun), R16 scenario, phase 03 task 2.2 |
+| F38 | Major | zoom out | Downgrade fails once new code wrote new classes (old `RetentionClass`, histories, `RETENTION_ORDER`); the CLI version is not in Rollout | fixed: Rollout (backup first; downgrade only before new writes, otherwise restore) |
+| F39 | Major | fresh reader | Summary omits the Temporal history residual, the `questions` truncation and 64 KiB test, and the stop-workers rollout | fixed: Summary |
+| F40 | Major | fresh reader | `end_task` and the session, message and tool-result tables are never introduced | fixed: Terms (`end_task`, content tables, request lock) |
+| F41 | Major | fresh reader | Lifetime anchors, the redaction list and which rows a delete removes or redacts live only in notes.md | fixed: D3 (anchors), D12 (removed vs redacted), R11 points to D12 |
+| F42 | Major | fresh reader | D5 vs D2: an upload reference of a task with no row is live yet has no stated expiry | fixed: D5, notes#d2 |
+| F43 | Major | fresh reader | Terms describes `blob_objects` upload times and removal mark as existing; Impact lists them as new | fixed: What changes (new columns), Terms (`blob_objects` existing columns) |
+| F44 | Major | fresh reader | Impact's "no Workflow code changes" vs R5's decoding of `task`; where the type widens is unsaid | fixed: What changes, Impact (`RetentionClass` widens; Workflow code unchanged) |
+| F45 | Nit | codebase fit | `event_batches` has `seen_at`, not `created_at`, and publish already deletes its rows after 600 s | fixed: notes#d3 (`event_batches` left to publish) |
+| F46 | Nit | codebase fit | A string marker in `result.questions` (a list) or a `None` `failure_reason` breaks `TaskResult` validation | fixed: notes#redact (markers keep `TaskResult` valid), phase 02 task 3.2 |
+| F47 | Nit | codebase fit | The demo's "expired read" after a delete never reaches `BlobExpired` (artifacts emptied); only GC does | fixed: phase 03 task 3.2 (expired read after GC) |
+| F48 | Nit | codebase fit | ADR-0007 asks new attempt write paths to take the fence or justify; the unfenced upload reference is not justified | fixed: D10, notes#d2 (fence) |
+| F49 | Nit | codebase fit, zoom out | `put`'s new task argument and forced upload change the `BlobStore` protocol and `MemoryBlobStore`; not in What changes | fixed: What changes, notes#revive, phase 01 task 2.2 |
+| F50 | Nit | codebase fit, zoom out | Reopens F8: "S3 object metadata is left as written" is false; `put` still rewrites it via `copy_object` | fixed: D3, notes#d3 (S3 metadata) |
+| F51 | Nit | codebase fit | `put` locks `blob_objects` then `blob_refs`; a removal does the reverse; no fixed lock order | fixed: notes#revive, notes#d6 (`blob_objects` first) |
+| F52 | Nit | codebase fit | The existing `agentctl events prune` removes indexed holders without marks or tombstones | fixed: D4, D11, notes#d6, phase 02 tasks 1.2, 1.4 |
+| F53 | Nit | codebase fit, zoom out | D4's lock must be session-level and its key named; `backup.sh` cannot hold it from a shell | fixed: D4, D8 (`pg_advisory_lock(3, 0)`, `agentctl backup`), phase 02 task 1.5, phase 03 task 2.1 |
+| F54 | Nit | codebase fit | A second Compose project in the CI `stack` job exceeds its 45-minute budget (about 32 used) | fixed: notes#d8, phase 03 task 2.3 (same project after `make reset`) |
+| F55 | Nit | zoom out | notes#d3 says `blob_objects` and `blob_refs` expire "with its references"; marked rows must stay | fixed: notes#d3 |
+| F56 | Nit | zoom out | One task uploading the same bytes under two classes keeps the first class; the stronger should win | fixed: notes#d2 |
+| F57 | Nit | zoom out | R23's refusal checks only `tasks` and the bucket, not the `temporal` database | fixed: R23, notes#d8 |
+| F58 | Nit | fresh reader | Readability and terms: Summary cites R21 for the wrong clause; multi-rule R1, R6, R7, R13, R17, R20, R22; minor undefined names (`RecordingBlobStore`, `finish_task_body`, `make reset`, `schemas.md` path); plan vs roadmap phase numbering; owner date repeated | fixed: Summary, Terms, R6, R7, R13, R17, R20, R22 reworded, owner date stated once |
+
+After the fixes (2026-11-20): `plan-tool check` reports 0 errors and 1 warning (410 body lines, budget 250), kept for the same reason as round 1. Reopened F8, F11 and F15 are resolved by F50, F30 and F29.

@@ -15,7 +15,7 @@ approved: null
 ## Goal
 
 Every stored `BlobRef` and every upload made for a task is indexed with its holder, old ones
-included; every blob and row carries a §4.13 class; ended tasks have their expiry; the audit log
+included; every blob and row carries a §4.13 class; ended tasks have their end time; the audit log
 exists; the reference checks run; and no Workflow history of the suite carries a large payload.
 Nothing is removed yet.
 
@@ -23,16 +23,16 @@ Nothing is removed yet.
 
 ### 1. Schema and checks
 
-- [ ] 1.1 Migration 0007: `blob_refs`, `audit_log`, `tasks.ended_at`; `blob_objects.removed_at`, `removed_by` and `last_put_at`; new server defaults and checks (the five classes plus `task`); the class remap, the reference backfill and the end-time backfill (R2, R19, D2, D3; notes.md#d2, notes.md#d3). Verify: `make migrate` from 0006 with seeded rows of every kind in notes.md#refs; downgrade and upgrade again.
+- [ ] 1.1 Migration 0007: `blob_refs`, `audit_log`, `tasks.ended_at`; `blob_objects.removed_at`, `removed_by`, `last_put_at` (backfilled to the migration time) and `bucket_deleted_at`; new server defaults and checks (the five classes plus `task`); the class remap, the reference backfill and the end-time backfill (R2, R19, D2, D3; notes.md#d2, notes.md#d3). Verify: `make migrate` from 0006 with seeded rows of every kind in notes.md#refs; downgrade and upgrade again.
 - [ ] 1.2 `audit_log` refuses `UPDATE` and `DELETE` from the app role through a trigger (R14). Verify: integration test as the app role.
 - [ ] 1.3 `RetentionClass` gains `checkpoint`, `transcript` and `artifact`; `task` stays readable, ranks as `transcript` in `RETENTION_ORDER` and is never written; lifetimes in `retention.py`; a test checks every `APP_TABLES` entry against notes.md#d3 (R4, R5, D3). Verify: unit tests, including a repeat `put` over `task` metadata.
-- [ ] 1.4 The reference checks (unindexed, dangling, orphaned; notes.md#d2) as one repository module, and `reconcile --reindex`'s idempotent backfill (R2, D4). Verify: integration tests that seed each case; reindex run twice changes nothing the second time.
+- [ ] 1.4 The reference checks (unindexed, dangling, orphaned from a bucket listing; notes.md#d2) and the expiry query as one repository module, and `reconcile --reindex`'s idempotent backfill, which also adds `blob_objects` rows for bucket-only objects (R2, D4). Verify: integration tests that seed each case, including a bucket object with no row; reindex run twice changes nothing the second time.
 
 ### 2. Writers
 
 - [ ] 2.1 One helper, `index_refs`, writes `blob_refs` rows in the caller's transaction. `record_task`, both checkpoint inserts and the event publish call it (R1, D2). Verify: integration tests per writer; a refused fenced checkpoint leaves no index row.
-- [ ] 2.2 `RecordingBlobStore.put` takes the task, writes `last_put_at` and the upload reference in one transaction (notes.md#revive steps 1-2); `prepare_task` mints the task ID before uploading; the harness passes its task (R1, D2). Verify: integration test that a submit's uploads are held by its task before `record_task` runs.
-- [ ] 2.3 `end_task` indexes the artifacts, sets `tasks.ended_at` and every reference's expiry, in its transaction (R1, R20). Verify: integration test for each terminal status.
+- [ ] 2.2 `BlobStore.put` gains `task_id` and `force` in the protocol and all three stores; `RecordingBlobStore.put` writes `last_put_at` and the upload reference in one transaction, `blob_objects` locked first, the stronger class winning (notes.md#revive steps 1-2); `prepare_task` mints the task ID before uploading; the harness passes its task (R1, D2, D10). Verify: integration test that a submit's uploads are held by its task before `record_task` runs; mypy passes.
+- [ ] 2.3 `end_task` indexes the artifacts and sets `tasks.ended_at`, in its transaction (R1, R20). Verify: integration test for each terminal status.
 - [ ] 2.4 Writers use the new classes: instructions and inputs `transcript`, workspace and session blobs `checkpoint`, artifacts `artifact`; checkpoint inserts stop hardcoding `'task'` (R4). Verify: integration test of a fake-model task reads each class back from rows and `blob_refs`.
 - [ ] 2.5 `AuditRepository.append(conn, action, subject, details)` in the caller's transaction, with actor `cli:<OS user>` (R13's store). Verify: integration test.
 
