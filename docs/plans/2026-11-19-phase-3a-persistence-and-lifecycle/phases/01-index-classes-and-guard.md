@@ -24,7 +24,7 @@ Nothing is removed yet.
 ### 1. Schema and checks
 
 - [x] 1.1 Migration 0007: `blob_refs`, `audit_log`, `tasks.ended_at`; `blob_objects.removed_at`, `removed_by`, `last_put_at` (backfilled to the migration time) and `bucket_deleted_at`; new server defaults and checks (the five classes plus `task`); the class remap, the reference backfill (classes from notes.md#d3's blob table, never the JSON) and the end-time backfill (R2, R19, D2, D3; notes.md#d2, notes.md#d3). Verify: the superuser creates a scratch database, migrates it to 0006, seeds rows of every kind in notes.md#refs (including an `audit` artifact), migrates to 0007, downgrades and upgrades again.
-- [ ] 1.2 `audit_log` refuses `UPDATE` and `DELETE` from the app role through a trigger (R14). Verify: integration test as the app role.
+- [x] 1.2 `audit_log` refuses `UPDATE` and `DELETE` from the app role through a trigger (R14). Verify: integration test as the app role.
 - [ ] 1.3 `RetentionClass` gains `checkpoint`, `transcript` and `artifact`; `task` stays readable, ranks as `transcript` in `RETENTION_ORDER` and is never written; lifetimes in `retention.py`; a test checks every `APP_TABLES` entry against notes.md#d3 (R4, R5, D3). Verify: unit tests, including a repeat `put` over `task` metadata.
 - [ ] 1.4 The reference checks (unindexed, dangling, orphaned from a bucket listing; notes.md#d2) and the expiry query as one repository module, and `reconcile --reindex`'s idempotent backfill, which also adds `blob_objects` rows for bucket-only objects (R2, D4). Verify: integration tests that seed each case, including a bucket object with no row; reindex run twice changes nothing the second time.
 
