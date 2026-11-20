@@ -3,7 +3,7 @@ title: Phase 3A persistence and data lifecycle - blob references, retention, del
 status: draft
 created: 2026-11-19
 updated: 2026-11-20
-design_review: { status: changes-requested, rounds: 2, last: 2026-11-19 }
+design_review: { status: changes-requested, rounds: 3, last: 2026-11-20 }
 approved: null
 adr_review: null
 ---

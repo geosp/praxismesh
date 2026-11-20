@@ -76,3 +76,30 @@ After the fixes (2026-11-20): `plan-tool check` reports 0 errors and 1 warning (
 
 ## 2026-11-20 · waiver · design-review round cap
 The project owner approved a third design-review round (the skill stops after two), with the codebase-fit and zoom-out lenses only, because the round-2 fixes F29, F32 and F33 change the removal design. The fresh-reader lens is not rerun.
+
+## 2026-11-20 · design-review · plan · round 3 · changes-requested
+Pinned at f3453cd (round cap waived above). Reviewers: codebase fit ✅ · zoom out ✅ (raw: docs/reviews/phase-3a/raw/persistence-design-review-round-3-*.md). Fresh reader not run, by the waiver. Structure check: 1 warning (410 body lines, budget 250).
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F59 | Major | codebase fit, zoom out | The last attempt of an ended task still passes the fence, so after a delete it can write checkpoints, events and sessions, and its upload-reference upsert clears the delete's mark | open |
+| F60 | Major | codebase fit | The drill as an integration test runs `make reset` inside `make smoke`, wiping a developer's stack and later tests' Workflows; the `make up` precondition is unsaid | open |
+| F61 | Major | codebase fit | `event_batches` rows of each task's last 600 s are never removed: `publish` prunes only its own log on its next publish | open |
+| F62 | Major | zoom out | Blobs named only in Temporal state at migration time (queued inputs, carried artifacts) get no index row and become orphans 24 h later | open |
+| F63 | Major | zoom out | A backup taken with workers running can restore Workflows ahead of their rows; nothing detects it | open |
+| F64 | Major | zoom out | The backfilled index rows' class is unsaid; copied from JSON, old artifacts (`audit`) never expire and `task` enters `blob_refs` | open |
+| F65 | Nit | codebase fit, zoom out | notes#d6 step 1 marks references before locking `blob_objects`, inverting `put`'s order | open |
+| F66 | Nit | codebase fit | notes#redact omits `sample_orders`, `task_inbox` and `message_wakes` | open |
+| F67 | Nit | codebase fit | `prune`'s new arguments must be optional or the `EventTransport` protocol and `MemoryTransport` change | open |
+| F68 | Nit | codebase fit, zoom out | `events prune` gets neither `--dry-run` nor the D4 lock | open |
+| F69 | Nit | codebase fit | Phase 02 task 1.5 locks `agentctl backup`, which phase 03 creates | open |
+| F70 | Nit | codebase fit | Reconcile's exit status 1 would fail `make restore` in the drill, which expects one dangling reference | open |
+| F71 | Nit | codebase fit | `blob_refs.request_id` for upload references is unsaid (nullable?) | open |
+| F72 | Nit | codebase fit | Unused `TaskRepository.complete` writes `result` without indexing it | open |
+| F73 | Nit | codebase fit | How the migration test gets a database at 0006 is unsaid (app role has no CREATEDB) | open |
+| F74 | Nit | codebase fit, zoom out | R23's Temporal check: by API or SQL (ADR-0002), and scoped to the app namespace (system Workflows) | open |
+| F75 | Nit | codebase fit | notes#d8 says comparing Workflows with rows is Phase 9, but R17 compares unended tasks with closed Workflows | open |
+| F76 | Nit | codebase fit | notes#refs states the task-ID reorder as if it were current code | open |
+| F77 | Nit | codebase fit | `infra/db/databases.sh` needs a Compose mount; phase 02 task 1.4's verify is a claim, not a test | open |
+| F78 | Nit | zoom out | `put`'s `force` flag adds nothing under the row-lock protocol | open |
+| F79 | Nit | zoom out | The bucket step's `last_put_at < removed_at` test uses transaction-start times and can skip a blob forever | open |
