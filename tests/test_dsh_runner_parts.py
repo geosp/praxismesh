@@ -437,7 +437,8 @@ async def test_session_store_round_trips_the_session_blob(tmp_path: Path) -> Non
     (tmp_path / "a/sessions/session.jsonl").write_text('{"id": "call-1"}\n')
     snapshot = await first.capture()
     assert snapshot.position == 0 and snapshot.session_ref is not None  # D1
-    assert snapshot.session_digest is not None and snapshot.session_ref.retention_class == "task"
+    assert snapshot.session_digest is not None
+    assert snapshot.session_ref.retention_class == "checkpoint"  # Phase 3A D3
 
     second = DshSessionStore("task", tmp_path / "b", blobs)
     (tmp_path / "b").mkdir()

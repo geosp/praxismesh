@@ -72,7 +72,8 @@ async def test_scripted_task_end_to_end(tmp_path: Path, fake: FakeModel) -> None
     (artifact,) = result.artifacts
     assert artifact.path == "order-summary.md"
     assert (await s3.get(artifact.ref)).decode().endswith("| SKU-1 | 3 | 12.50 | 37.50 |\n")
-    assert artifact.ref.retention_class == "audit"
+    # The JSON ref keeps the class the object's metadata gave; the index decides.
+    assert artifact.ref.retention_class in ("artifact", "audit")
 
     engine = make_engine()
     async with engine.connect() as conn:
@@ -98,7 +99,62 @@ async def test_scripted_task_end_to_end(tmp_path: Path, fake: FakeModel) -> None
                 {"t": task_id},
             )
         ).one()
+        row_classes = {
+            table: {
+                r[0]
+                for r in await conn.execute(
+                    text(f"SELECT DISTINCT retention_class FROM {table} WHERE {column} = :t"),
+                    {"t": task_id},
+                )
+            }
+            for table, column in (
+                ("tasks", "task_id"),
+                ("task_attempts", "task_id"),
+                ("checkpoints", "task_id"),
+                ("sample_orders", "task_id"),
+                ("agent_sessions", "session_id"),
+                ("agent_messages", "session_id"),
+                ("agent_events", "task_id"),
+                ("event_logs", "workflow_id"),
+            )
+        }
+        index = {
+            (r.holder_table, r.holder_column, r.retention_class)
+            for r in await conn.execute(
+                text(
+                    "SELECT holder_table, holder_column, retention_class FROM blob_refs "
+                    "WHERE task_id = :t AND removed_at IS NULL"
+                ),
+                {"t": task_id},
+            )
+        }
+        artifact_blob = (
+            await conn.execute(
+                text("SELECT retention_class FROM blob_objects WHERE key = :k"),
+                {"k": artifact.ref.key},
+            )
+        ).scalar_one()
     await engine.dispose()
+    # Phase 3A persistence plan R4: every row and reference carries its D3 class.
+    assert row_classes == {
+        "tasks": {"audit"},
+        "task_attempts": {"audit"},
+        "checkpoints": {"checkpoint"},
+        "sample_orders": {"artifact"},
+        "agent_sessions": {"transcript"},
+        "agent_messages": {"transcript"},
+        "agent_events": {"transcript"},
+        "event_logs": {"transcript"},
+    }
+    assert index == {
+        ("upload", "", "transcript"),  # the instructions, uploaded by the submit
+        ("upload", "", "checkpoint"),  # workspace snapshots
+        ("upload", "", "artifact"),  # the output file
+        ("tasks", "instructions_ref", "transcript"),
+        ("checkpoints", "workspace_ref", "checkpoint"),
+        ("tasks", "result", "artifact"),
+    }
+    assert artifact_blob == "artifact"
     assert orders == 1
     # seq 0 before the first model call, one per later call, and a final one.
     assert checkpoints[0] == 5 and json.loads(checkpoints[1])["status"] == "done"

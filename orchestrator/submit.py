@@ -1,8 +1,10 @@
 """Prepare and start a task (RFC Phase 1, TaskWorkflow: starting a task).
 
 `prepare_task` validates the request, resolves the profile and template, mints the
-task and request IDs, and uploads the instructions and input files as `task`
-blobs, so the Workflow's input holds only IDs and blob references.
+task and request IDs, and uploads the instructions and input files for that task,
+so the Workflow's input holds only IDs and blob references. The task ID is minted
+first, so a recording store holds each upload for its task before the Workflow's
+`record_task` writes the row (Phase 3A persistence plan D2).
 """
 
 from __future__ import annotations
@@ -31,17 +33,23 @@ async def prepare_task(
 ) -> TaskStart:
     request = parse_task_request(data)
     _, loaded = registry.resolve(request.profile, request.template)
+    task_id = request.task_id or mint_task_id()
     instructions_ref = await blobs.put(
-        request.instructions.encode(), content_type="text/markdown", retention="task"
+        request.instructions.encode(),
+        content_type="text/markdown",
+        retention="transcript",
+        task_id=task_id,
     )
     input_refs = {}
     for name in request.input_files:
         path = (base_dir / name).resolve()
         if not path.is_file():
             raise InvalidTaskInput(f"input file not found: {name}")
-        input_refs[path.name] = await blobs.put(path.read_bytes(), retention="task")
+        input_refs[path.name] = await blobs.put(
+            path.read_bytes(), retention="transcript", task_id=task_id
+        )
     return TaskStart(
-        task_id=request.task_id or mint_task_id(),
+        task_id=task_id,
         request_id=request.join_request or f"req-{uuid.uuid4()}",
         profile=request.profile,
         template=loaded.template.name,

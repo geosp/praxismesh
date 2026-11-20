@@ -9,14 +9,22 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from common.blob_store import BlobStore
-from common.blob_store.base import RETENTION_ORDER
+from common.blob_store.base import collect, content_key, current_class
 from common.errors import TaskAlreadyExists
 from common.persistence.fence import NO_NEWER_ATTEMPT as _NO_NEWER_ATTEMPT
 from common.persistence.fence import TASK_LOCK as _TASK_LOCK
 from common.persistence.fence import FenceRejected
+from common.persistence.refs import (
+    checkpoint_holder,
+    index_keys,
+    index_refs,
+    rank_sql,
+    task_holder,
+    upload_holder,
+)
 from common.persistence.settings import app_database_url
 from common.schemas import BlobRef, RetentionClass, TaskStart
 
@@ -79,6 +87,21 @@ class TaskRepository:
                 },
             )
             if inserted.first() is not None:
+                # The index rows commit with the row (D2).
+                await index_refs(
+                    conn,
+                    task_holder(start.task_id, "instructions_ref"),
+                    [start.instructions_ref],
+                    task_id=start.task_id,
+                    request_id=start.request_id,
+                )
+                await index_refs(
+                    conn,
+                    task_holder(start.task_id, "input_refs"),
+                    start.input_refs.values(),
+                    task_id=start.task_id,
+                    request_id=start.request_id,
+                )
                 return
             existing = (
                 await conn.execute(
@@ -87,16 +110,6 @@ class TaskRepository:
             ).scalar_one()
         if existing != run_id:
             raise TaskAlreadyExists(f"task {start.task_id} was already run (run {existing})")
-
-    async def complete(self, task_id: str, status: str, result: dict[str, Any]) -> None:
-        async with self.engine.begin() as conn:
-            await conn.execute(
-                text(
-                    "UPDATE tasks SET status = :s, result = :r, updated_at = CURRENT_TIMESTAMP "
-                    "WHERE task_id = :t"
-                ),
-                {"t": task_id, "s": status, "r": json.dumps(result)},
-            )
 
     async def request_exists(self, request_id: str) -> bool:
         """Whether some task belongs to `request_id` (Phase 2 messaging D5)."""
@@ -393,9 +406,8 @@ class CheckpointRepository:
                     """
                     INSERT INTO checkpoints (checkpoint_id, task_id, turn, attempt, seq,
                         session_id, session_position, workspace_ref, finish, session_ref,
-                        session_digest, retention_class)
-                    SELECT :id, :t, :turn, :a, :seq, :sid, :pos, :ws, :finish, :sref, :sdig,
-                        'task'
+                        session_digest)
+                    SELECT :id, :t, :turn, :a, :seq, :sid, :pos, :ws, :finish, :sref, :sdig
                     WHERE """
                     + _NO_NEWER_ATTEMPT
                 ),
@@ -415,6 +427,7 @@ class CheckpointRepository:
             )
             if done.rowcount != 1:
                 raise FenceRejected("a newer attempt owns this task")
+            await _index_checkpoint(conn, cp)
 
     async def insert(self, cp: Checkpoint) -> None:
         async with self.engine.begin() as conn:
@@ -422,8 +435,8 @@ class CheckpointRepository:
                 text(
                     """
                     INSERT INTO checkpoints (checkpoint_id, task_id, turn, attempt, seq,
-                        session_id, session_position, workspace_ref, finish, retention_class)
-                    VALUES (:id, :t, :turn, :a, :seq, :sid, :pos, :ws, :finish, 'task')
+                        session_id, session_position, workspace_ref, finish)
+                    VALUES (:id, :t, :turn, :a, :seq, :sid, :pos, :ws, :finish)
                     """
                 ),
                 {
@@ -438,6 +451,7 @@ class CheckpointRepository:
                     "finish": json.dumps(cp.finish) if cp.finish is not None else None,
                 },
             )
+            await _index_checkpoint(conn, cp)
 
     async def count(self, task_id: str) -> int:
         async with self.engine.connect() as conn:
@@ -479,6 +493,19 @@ class CheckpointRepository:
             ),
             session_digest=row["session_digest"],
         )
+
+
+async def _index_checkpoint(conn: AsyncConnection, cp: Checkpoint) -> None:
+    """The checkpoint's index rows, in its insert's transaction (D2): a refused
+    fenced insert rolls them back with the row."""
+    for column, ref in (("workspace_ref", cp.workspace_ref), ("session_ref", cp.session_ref)):
+        if ref is not None:
+            await index_refs(
+                conn,
+                checkpoint_holder(cp.task_id, cp.turn, cp.attempt, cp.seq, column),
+                [ref],
+                task_id=cp.task_id,
+            )
 
 
 class UsageLedgerRepository:
@@ -618,7 +645,9 @@ class UsageLedgerRepository:
 
 class RecordingBlobStore:
     """A `BlobStore` that also records every stored blob in `blob_objects`, with the
-    strongest retention class requested so far (RFC: retention from the first write)."""
+    strongest retention class requested so far (RFC: retention from the first write),
+    and the upload reference of the task it was stored for (Phase 3A persistence
+    plan D2, D10; notes.md#revive)."""
 
     def __init__(self, inner: BlobStore, engine: AsyncEngine) -> None:
         self.inner = inner
@@ -630,30 +659,40 @@ class RecordingBlobStore:
         *,
         content_type: str = "application/octet-stream",
         retention: RetentionClass,
+        task_id: str | None = None,
     ) -> BlobRef:
-        ref = await self.inner.put(data, content_type=content_type, retention=retention)
-        order = " ".join(f"WHEN '{k}' THEN {v}" for k, v in RETENTION_ORDER.items())
+        """Record the blob, then upload it (notes.md#revive):
+
+        1. collect the bytes and compute the key;
+        2. in one transaction, `blob_objects` row first (locked by the upsert,
+           the order every removal uses), clear any removal mark, set
+           `last_put_at`, and write the task's upload reference;
+        3. upload through the inner store, which skips bytes it already holds.
+        """
+        body = await collect(data)
+        key, checksum = content_key(body)
+        retention = current_class(retention)
+        stronger_class = (
+            f"CASE WHEN {rank_sql('EXCLUDED.retention_class')} "
+            f"> {rank_sql('blob_objects.retention_class')} "
+            "THEN EXCLUDED.retention_class ELSE blob_objects.retention_class END"
+        )
         async with self.engine.begin() as conn:
             await conn.execute(
                 text(
-                    f"""
-                    INSERT INTO blob_objects (key, checksum, bytes, content_type, retention_class)
-                    VALUES (:k, :c, :b, :ct, :r)
-                    ON CONFLICT (key) DO UPDATE SET retention_class = CASE
-                        WHEN (CASE EXCLUDED.retention_class {order} END)
-                           > (CASE blob_objects.retention_class {order} END)
-                        THEN EXCLUDED.retention_class ELSE blob_objects.retention_class END
-                    """
+                    "INSERT INTO blob_objects (key, checksum, bytes, content_type, "
+                    "retention_class, last_put_at) VALUES (:k, :c, :b, :ct, :r, now()) "
+                    f"ON CONFLICT (key) DO UPDATE SET retention_class = {stronger_class}, "
+                    "removed_at = NULL, removed_by = NULL, bucket_deleted_at = NULL, "
+                    "last_put_at = now()"
                 ),
-                {
-                    "k": ref.key,
-                    "c": ref.checksum,
-                    "b": ref.bytes,
-                    "ct": ref.content_type,
-                    "r": ref.retention_class,
-                },
+                {"k": key, "c": checksum, "b": len(body), "ct": content_type, "r": retention},
             )
-        return ref
+            if task_id is not None:
+                await index_keys(
+                    conn, upload_holder(task_id), [key], task_id=task_id, retention=retention
+                )
+        return await self.inner.put(body, content_type=content_type, retention=retention)
 
     async def get(self, ref: BlobRef) -> bytes:
         return await self.inner.get(ref)

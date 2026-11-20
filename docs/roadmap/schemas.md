@@ -67,6 +67,34 @@ decode) and `TurnInput` carries `max_ask_wait`. `TaskRequest.join_request` puts 
 in an existing request. A waiting `TaskWorkflow` continues as new with `TaskStart.carried`
 set to its `TaskState` (counters, usage, the wall-time deadline, the latest outputs).
 
+As built for the Phase 3A persistence plan, phase 01 (migration 0007; plan
+`docs/plans/2026-11-19-phase-3a-persistence-and-lifecycle`, D2, D3, D7):
+- **Retention classes** are §4.13's `ephemeral` (1 day after the write),
+  `checkpoint` (7 days), `transcript` (30 days) and `artifact` (90 days), each
+  counted from the task's `tasks.ended_at`, and `audit` (kept). `RetentionClass`
+  keeps the Phase 1-2 value `task` so recorded payloads decode; it ranks as
+  `transcript` and nothing writes it. Each table's class is the plan's
+  notes.md#d3 table (`common/persistence/retention.py`, `TABLE_CLASS`); every
+  check still allows `task`.
+- **`blob_refs`**, the reference index: one row per holder and blob key
+  (`holder_table`, `holder_key` as the holder row's primary key in text,
+  `holder_column`), with `task_id`, `request_id` (null for an upload), class,
+  `created_at`, `removed_at` and `removed_by`. Every row that stores a `BlobRef`
+  (`tasks`, `checkpoints`, `agent_events`) writes its index rows in its own
+  transaction; every upload made for a task is held by the task (`upload`, task
+  ID, ''). Removed references stay, marked. Expiry is computed, never stored.
+- **`audit_log`**: `actor` (`cli:<OS user>`), `action`, `subject`,
+  `operation_id`, `details` (counts and IDs, never content), class `audit`; a
+  trigger refuses `UPDATE` and `DELETE`.
+- **New columns:** `tasks.ended_at` (set by `end_task`); `blob_objects.removed_at`,
+  `removed_by`, `last_put_at` (each `put`) and `bucket_deleted_at`.
+- **Outbox pattern (§4.13):** where a database write and a second service cannot
+  commit together, commit a row with the write and let one drainer act on it,
+  idempotently, deleting the row only after the other service accepts. The
+  Phase 2 wake rows (`message_wakes`, drained by the dispatcher into `inbox`
+  Signals, ADR-0010) are the one instance so far; no general outbox table
+  exists until a second service needs one (Phase 5's GitHub delivery).
+
 ### `BlobStore` contract
 
 Provide a narrow async Python interface with `put`, `get/stream`, `delete`, `stat`, optional presigned/access-controlled URL operation, and typed error handling. The default adapter targets **SeaweedFS via S3-compatible API**. Ceph RGW uses the S3 adapter with configuration changes; GCS uses a dedicated adapter when enabled. Verify backend semantics for multipart uploads, versioning, conditional writes, signed URLs and integrity instead of assuming perfect interchangeability.

@@ -292,7 +292,10 @@ async def test_outcome_case(
     assert served == requests + faults
     if result.status == "succeeded":
         (artifact,) = result.artifacts
-        assert artifact.path == "answer.txt" and artifact.ref.retention_class == "audit"
+        # Phase 3A D3: artifacts are `artifact`; bytes first stored by Phase 1-2
+        # code keep `audit` in the object's metadata, which no longer decides.
+        assert artifact.path == "answer.txt"
+        assert artifact.ref.retention_class in ("artifact", "audit")
         assert await S3BlobStore.from_env().get(artifact.ref) == ARTIFACT
     else:
         assert result.artifacts == []

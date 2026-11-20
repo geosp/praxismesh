@@ -32,7 +32,7 @@ async def test_prepare_task(tmp_path: Path) -> None:
     assert start.template == "local-default"
     assert await blobs.get(start.instructions_ref) == b"Order it."
     assert await blobs.get(start.input_refs["notes.txt"]) == b"SKU-1 x3"
-    assert start.instructions_ref.retention_class == "task"
+    assert start.instructions_ref.retention_class == "transcript"
     assert start.outputs == ["order-summary.md"]
 
 

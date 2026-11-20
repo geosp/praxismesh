@@ -533,7 +533,9 @@ class HarnessActivities:
             nonlocal seq
             started = time.monotonic()
             data = await asyncio.to_thread(ws.pack, workdir)
-            ref = await self.blobs.put(data, content_type="application/gzip", retention="task")
+            ref = await self.blobs.put(
+                data, content_type="application/gzip", retention="checkpoint", task_id=turn.task_id
+            )
             snapshot = await store.capture()
             position = snapshot.position
             cp_id = f"{turn.task_id}:{turn.turn}:{attempt}:{seq}"
@@ -688,7 +690,7 @@ class HarnessActivities:
                     data = read_regular(workdir, path)
                 except (WorkspaceError, OSError):
                     continue
-                ref = await self.blobs.put(data, retention="audit")
+                ref = await self.blobs.put(data, retention="artifact", task_id=turn.task_id)
                 outputs.append(Artifact(path=path, ref=ref))
         progress = heartbeat.current()
         try:

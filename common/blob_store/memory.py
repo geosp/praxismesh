@@ -9,8 +9,10 @@ from datetime import UTC, datetime
 from common.blob_store.base import (
     BlobCorrupt,
     BlobNotFound,
+    BucketObject,
     collect,
     content_key,
+    current_class,
     make_ref,
     stronger,
 )
@@ -37,12 +39,13 @@ class MemoryBlobStore:
         *,
         content_type: str = "application/octet-stream",
         retention: RetentionClass,
+        task_id: str | None = None,  # recorded only by RecordingBlobStore
     ) -> BlobRef:
         body = await collect(data)
         key, checksum = content_key(body)
         existing = self.objects.get(key)
         if existing is None:
-            existing = _Object(body, content_type, retention, datetime.now(UTC))
+            existing = _Object(body, content_type, current_class(retention), datetime.now(UTC))
             self.objects[key] = existing
         else:
             existing.retention = stronger(existing.retention, retention)
@@ -76,6 +79,12 @@ class MemoryBlobStore:
 
     async def delete(self, ref: BlobRef) -> None:
         self.objects.pop(ref.key, None)
+
+    async def list_objects(self) -> dict[str, BucketObject]:
+        return {
+            key: BucketObject(key, len(obj.data), obj.created_at)
+            for key, obj in self.objects.items()
+        }
 
     def corrupt(self, ref: BlobRef) -> None:
         """Test hook: change the stored bytes without changing the key."""

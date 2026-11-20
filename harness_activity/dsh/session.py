@@ -61,6 +61,7 @@ class DshSessionStore:
         share: Callable[[Path], None] = lambda path: None,
     ) -> None:
         self.home, self.blobs, self.share = home, blobs, share
+        self.task_id = task_id
         self._session = DshSession(task_id, home)
 
     @property
@@ -81,7 +82,9 @@ class DshSessionStore:
 
     async def capture(self) -> SessionSnapshot:
         data, digest = await asyncio.to_thread(pack_session, self.home)
-        ref = await self.blobs.put(data, content_type="application/gzip", retention="task")
+        ref = await self.blobs.put(
+            data, content_type="application/gzip", retention="checkpoint", task_id=self.task_id
+        )
         return SessionSnapshot(position=0, session_ref=ref, session_digest=digest)
 
 
