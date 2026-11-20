@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
@@ -25,6 +26,15 @@ RETENTION_ORDER: dict[RetentionClass, int] = {
     "artifact": 3,
     "audit": 4,
 }
+
+
+@dataclass(frozen=True)
+class BucketObject:
+    """One object of a bucket listing (reconciliation reads these)."""
+
+    key: str
+    size: int
+    last_modified: datetime
 
 
 class BlobError(PraxisError):

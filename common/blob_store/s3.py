@@ -22,6 +22,7 @@ from common.blob_store.base import (
     BlobNotFound,
     BlobUnauthorized,
     BlobUnavailable,
+    BucketObject,
     collect,
     content_key,
     current_class,
@@ -153,3 +154,21 @@ class S3BlobStore:
 
     async def delete(self, ref: BlobRef) -> None:
         await self._call(ref.key, self.client.delete_object, Bucket=self.bucket, Key=ref.key)
+
+    async def list_objects(self) -> dict[str, BucketObject]:
+        """Every object in the bucket, by key (Phase 3A persistence plan, the
+        orphan check). Not part of the `BlobStore` protocol."""
+
+        def listing() -> dict[str, BucketObject]:
+            found: dict[str, BucketObject] = {}
+            pages = self.client.get_paginator("list_objects_v2").paginate(Bucket=self.bucket)
+            for page in pages:
+                for obj in page.get("Contents", []):
+                    key = obj["Key"]
+                    found[key] = BucketObject(key, int(obj["Size"]), obj["LastModified"])
+            return found
+
+        try:
+            return await asyncio.to_thread(listing)
+        except (ClientError, BotoCoreError, EndpointConnectionError) as e:
+            raise _translate(e, self.bucket) from e

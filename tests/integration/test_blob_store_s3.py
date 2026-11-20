@@ -37,3 +37,10 @@ def corrupt(store: S3BlobStore) -> Corrupt:
 
 class TestS3BlobStore(BlobStoreContract):
     pass
+
+
+async def test_list_objects_names_every_object(store: S3BlobStore) -> None:
+    refs = [await store.put(f"object {i}".encode(), retention="transcript") for i in range(3)]
+    listing = await store.list_objects()
+    assert set(listing) == {r.key for r in refs}
+    assert all(listing[r.key].size == r.bytes for r in refs)

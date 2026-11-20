@@ -8,59 +8,28 @@ database is never migrated or seeded here.
 
 from __future__ import annotations
 
-import asyncio
 import json
-import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from common.blob_store.base import content_key, make_ref
-from common.persistence.settings import app_database_url
+from common.persistence import refs
+from tests.support.scratch_db import migrate, scratch_database
 
 pytestmark = pytest.mark.integration
 
-ALEMBIC_INI = Path(__file__).resolve().parents[2] / "common" / "persistence" / "alembic.ini"
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
-
-
-def superuser_url(database: str = "postgres") -> Any:
-    return app_database_url(user="postgres", database=database, password_var="POSTGRES_PASSWORD")
-
-
-async def migrate(database: str, target: str, *, down: bool = False) -> None:
-    config = Config(str(ALEMBIC_INI))
-    config.attributes["database"] = database
-    step = command.downgrade if down else command.upgrade
-    # env.py runs its own event loop, so it runs in a thread.
-    await asyncio.to_thread(step, config, target)
 
 
 @pytest.fixture
 async def scratch() -> AsyncIterator[tuple[str, AsyncEngine]]:
-    name = f"praxis_scratch_{uuid.uuid4().hex[:10]}"
-    admin = create_async_engine(superuser_url(), isolation_level="AUTOCOMMIT")
-    async with admin.connect() as conn:
-        await conn.execute(text(f"CREATE DATABASE {name} OWNER praxismesh TEMPLATE template0"))
-    db_admin = create_async_engine(superuser_url(name))
-    async with db_admin.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_search CASCADE"))
-    await db_admin.dispose()
-    engine = create_async_engine(app_database_url(database=name))
-    try:
-        yield name, engine
-    finally:
-        await engine.dispose()
-        async with admin.connect() as conn:
-            await conn.execute(text(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
-        await admin.dispose()
+    async with scratch_database() as db:
+        yield db
 
 
 def ref(label: str, retention: str) -> dict[str, Any]:
@@ -209,13 +178,13 @@ async def assert_migrated(engine: AsyncEngine) -> None:
     async with engine.connect() as conn:
         for table, expected in EXPECTED_CLASS.items():
             assert await classes(conn, table) == expected, table
-        refs = await conn.execute(
+        index = await conn.execute(
             text(
                 "SELECT holder_table, holder_key, holder_column, blob_key, retention_class, "
                 "task_id, request_id, removed_at FROM blob_refs"
             )
         )
-        rows = list(refs)
+        rows = list(index)
         assert {tuple(r[:5]) for r in rows} == EXPECTED_REFS
         assert all(r.task_id in r.holder_key and r.request_id == "req-1" for r in rows)
         assert all(r.removed_at is None for r in rows)
@@ -227,6 +196,7 @@ async def assert_migrated(engine: AsyncEngine) -> None:
         assert all(r.last_put_at is not None and r.removed_at is None for r in blob_rows)
         ended = await conn.execute(text("SELECT task_id, ended_at FROM tasks ORDER BY task_id"))
         assert {r.task_id: r.ended_at for r in ended} == {"task-ended": NOW, "task-running": None}
+        assert await refs.unindexed(conn) == []  # R2
 
 
 async def test_migration_0007_backfills_remaps_and_round_trips(

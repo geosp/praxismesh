@@ -16,6 +16,7 @@ import pytest
 from common.blob_store import MemoryBlobStore
 from common.blob_store.base import RETENTION_ORDER, content_key, current_class, stronger
 from common.blob_store.memory import _Object
+from common.persistence import refs
 from common.persistence.retention import (
     APP_TABLES,
     DEFAULT_LIFETIME,
@@ -73,6 +74,12 @@ def test_migration_0007_uses_the_same_classes() -> None:
     assert {t: cls for t, (cls, _) in tables.items()} == {
         t: c for t, c in TABLE_CLASS.items() if t not in ("blob_objects", "blob_refs", "audit_log")
     }
+
+
+def test_reference_query_matches_the_migration() -> None:
+    """refs.REFERENCES feeds the checks and reindex; migration 0007's copy fed the
+    backfill. They must name the same holders and classes."""
+    assert migration().REFERENCES.split() == refs.REFERENCES.split()
 
 
 def test_reference_classes_match_d3_blob_table() -> None:
