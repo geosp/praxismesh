@@ -534,7 +534,7 @@ class HarnessActivities:
             started = time.monotonic()
             data = await asyncio.to_thread(ws.pack, workdir)
             ref = await self.blobs.put(
-                data, content_type="application/gzip", retention="task", task_id=turn.task_id
+                data, content_type="application/gzip", retention="checkpoint", task_id=turn.task_id
             )
             snapshot = await store.capture()
             position = snapshot.position
@@ -690,7 +690,7 @@ class HarnessActivities:
                     data = read_regular(workdir, path)
                 except (WorkspaceError, OSError):
                     continue
-                ref = await self.blobs.put(data, retention="audit", task_id=turn.task_id)
+                ref = await self.blobs.put(data, retention="artifact", task_id=turn.task_id)
                 outputs.append(Artifact(path=path, ref=ref))
         progress = heartbeat.current()
         try:

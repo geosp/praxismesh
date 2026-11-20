@@ -37,7 +37,7 @@ async def prepare_task(
     instructions_ref = await blobs.put(
         request.instructions.encode(),
         content_type="text/markdown",
-        retention="task",
+        retention="transcript",
         task_id=task_id,
     )
     input_refs = {}
@@ -46,7 +46,7 @@ async def prepare_task(
         if not path.is_file():
             raise InvalidTaskInput(f"input file not found: {name}")
         input_refs[path.name] = await blobs.put(
-            path.read_bytes(), retention="task", task_id=task_id
+            path.read_bytes(), retention="transcript", task_id=task_id
         )
     return TaskStart(
         task_id=task_id,

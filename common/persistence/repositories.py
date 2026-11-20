@@ -406,9 +406,8 @@ class CheckpointRepository:
                     """
                     INSERT INTO checkpoints (checkpoint_id, task_id, turn, attempt, seq,
                         session_id, session_position, workspace_ref, finish, session_ref,
-                        session_digest, retention_class)
-                    SELECT :id, :t, :turn, :a, :seq, :sid, :pos, :ws, :finish, :sref, :sdig,
-                        'task'
+                        session_digest)
+                    SELECT :id, :t, :turn, :a, :seq, :sid, :pos, :ws, :finish, :sref, :sdig
                     WHERE """
                     + _NO_NEWER_ATTEMPT
                 ),
@@ -436,8 +435,8 @@ class CheckpointRepository:
                 text(
                     """
                     INSERT INTO checkpoints (checkpoint_id, task_id, turn, attempt, seq,
-                        session_id, session_position, workspace_ref, finish, retention_class)
-                    VALUES (:id, :t, :turn, :a, :seq, :sid, :pos, :ws, :finish, 'task')
+                        session_id, session_position, workspace_ref, finish)
+                    VALUES (:id, :t, :turn, :a, :seq, :sid, :pos, :ws, :finish)
                     """
                 ),
                 {

@@ -83,7 +83,7 @@ class DshSessionStore:
     async def capture(self) -> SessionSnapshot:
         data, digest = await asyncio.to_thread(pack_session, self.home)
         ref = await self.blobs.put(
-            data, content_type="application/gzip", retention="task", task_id=self.task_id
+            data, content_type="application/gzip", retention="checkpoint", task_id=self.task_id
         )
         return SessionSnapshot(position=0, session_ref=ref, session_digest=digest)
 
