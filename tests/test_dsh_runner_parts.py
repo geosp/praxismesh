@@ -584,3 +584,18 @@ async def test_launcher_client_matches_replies_by_id(short_dir: Path) -> None:
         await server.wait_closed()
     with pytest.raises(LauncherError):
         await LauncherClient.connect(short_dir / "missing.sock")
+
+
+async def test_session_capture_is_held_by_its_task(tmp_path: Path) -> None:
+    """Review F88 (R1): the session blob is uploaded for the store's task."""
+    seen: list[str | None] = []
+
+    class Recording(MemoryBlobStore):
+        async def put(self, data: Any, **kwargs: Any) -> BlobRef:
+            seen.append(kwargs.get("task_id"))
+            return await super().put(data, **kwargs)
+
+    store = DshSessionStore("task-f88", tmp_path / "home", Recording())
+    await store.load(None)
+    await store.capture()
+    assert seen == ["task-f88"]

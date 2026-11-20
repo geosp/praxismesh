@@ -210,6 +210,11 @@ QUESTIONS_MAX = 20
 QUESTION_MAX_CHARS = 500
 
 
+def bounded_questions(questions: list[str] | None) -> list[str]:
+    """The first 20 questions, each cut to 500 characters (D9)."""
+    return [q[:QUESTION_MAX_CHARS] for q in (questions or [])[:QUESTIONS_MAX]]
+
+
 def finish_task_body(
     state: TurnState,
     status: Literal["done", "needs_input", "waiting"],
@@ -225,8 +230,7 @@ def finish_task_body(
             )
     # Bounded like the summary, so a turn's outcome stays small in Workflow
     # history (Phase 3A persistence plan D9); the schemas stay permissive.
-    kept = [q[:QUESTION_MAX_CHARS] for q in (questions or [])[:QUESTIONS_MAX]]
-    state.finish = FinishReport(status, summary[:2000], kept)
+    state.finish = FinishReport(status, summary[:2000], bounded_questions(questions))
     return "recorded"
 
 

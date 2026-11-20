@@ -81,7 +81,7 @@ from harness_activity.runner import (
     WorkerUnserviceable,
 )
 from harness_activity.session_store import SessionStore, SQLAlchemySessionStore
-from harness_activity.tools import WorkspaceError, read_regular
+from harness_activity.tools import WorkspaceError, bounded_questions, read_regular
 from registry.loader import Registry
 
 log = logging.getLogger("praxis.harness")
@@ -721,7 +721,8 @@ class HarnessActivities:
             inner_turns=progress.inner_turns,
             attempts=real_attempt,
             summary=result.summary[:2000],
-            questions=result.questions or [],
+            # Bounded here too: a finish checkpoint from before the cap (D9, F85).
+            questions=bounded_questions(result.questions),
             outputs=outputs,
             error=result.error,
             usage_known=progress.usage_known,
