@@ -3,6 +3,7 @@ persistence plan phase 01 task 2.1; R1, D2)."""
 
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -217,3 +218,83 @@ async def test_end_task_sets_ended_at_and_indexes_artifacts(
             {"t": task},
         )
         assert request.scalar_one() == f"req-{task}"
+
+
+async def test_a_retried_end_task_keeps_a_redaction(engine: AsyncEngine) -> None:
+    """Review F82 (R11, R25): `end_task` committed, the worker died before Temporal
+    recorded it, a delete redacted the result; the retry must not write it back."""
+    task = new_task()
+    await record(engine, task, request=f"req-{task}")
+    artifact = blob_ref(f"{task} artifact")
+    result = {
+        "task_id": task,
+        "status": "succeeded",
+        "summary": "secret summary",
+        "artifacts": [{"path": "out.md", "ref": artifact.model_dump(mode="json")}],
+    }
+    await MessageRepository(engine).end_task(task, "succeeded", result)
+    redacted = {"task_id": task, "status": "succeeded", "summary": "[deleted]", "artifacts": []}
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE tasks SET result = :r WHERE task_id = :t"),
+            {"t": task, "r": json.dumps(redacted)},
+        )
+    await MessageRepository(engine).end_task(task, "succeeded", result)  # the retry
+    row = await TaskRepository(engine).get(task)
+    assert row is not None and row["result"] == redacted
+
+
+class IndexFailed(Exception):
+    pass
+
+
+async def _fail(*args: object, **kwargs: object) -> None:
+    raise IndexFailed
+
+
+async def test_a_failed_index_write_rolls_back_its_holder_row(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review F87 (R1, R20): the index rows and the holder row commit together, so a
+    failed index write leaves no task row, no ended task and no event row."""
+    import common.events.table as table_module
+    import common.persistence.messages as messages_module
+    import common.persistence.repositories as repositories_module
+
+    task = new_task()
+    with monkeypatch.context() as m:
+        m.setattr(repositories_module, "index_refs", _fail)
+        m.setattr(repositories_module, "index_keys", _fail)
+        with pytest.raises(IndexFailed):
+            await record(engine, task)
+    assert await TaskRepository(engine).get(task) is None
+
+    await record(engine, task)
+    artifact = blob_ref(f"{task} artifact")
+    result = {"artifacts": [{"path": "out.md", "ref": artifact.model_dump(mode="json")}]}
+    with monkeypatch.context() as m:
+        m.setattr(messages_module, "index_keys", _fail)
+        with pytest.raises(IndexFailed):
+            await MessageRepository(engine).end_task(task, "succeeded", result)
+    row = await TaskRepository(engine).get(task)
+    assert row is not None and row["ended_at"] is None and row["status"] != "succeeded"
+
+    event = AgentEvent(
+        seq=0,
+        timestamp=datetime.now(UTC),
+        workflow_id=task,
+        task_id=task,
+        attempt_id=f"{task}:1:1",
+        type="tool_result",
+        payload={},
+        blob_ref=blob_ref(f"{task} attachment"),
+    )
+    with monkeypatch.context() as m:
+        m.setattr(table_module, "index_refs", _fail)
+        with pytest.raises(IndexFailed):
+            await TableTransport(engine).publish(task, Writer(task, 1, 1), f"{task}:1:1:0", [event])
+    async with engine.connect() as conn:
+        events = await conn.execute(
+            text("SELECT count(*) FROM agent_events WHERE task_id = :t"), {"t": task}
+        )
+        assert events.scalar_one() == 0

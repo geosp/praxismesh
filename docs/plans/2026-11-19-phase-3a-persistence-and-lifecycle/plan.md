@@ -336,7 +336,10 @@ Temporal's own limits (they warn at 512 KiB and fail at 2 MiB).
 
 `put` collects the bytes (as the S3 adapter already does), then, under the key's `blob_objects`
 row lock, clears any removal mark, records the upload time and the task's reference; a reference
-marked by a delete stays marked. A removed object is simply missing, so the upload goes through. The upload reference is unfenced on purpose: it only keeps a
+marked by a delete stays marked. A removed object is simply missing, so the upload goes through.
+A task a delete marked revives nothing: under its task lock, its upload reference is written with
+the delete's mark, the blob keeps its mark, and bytes with no live holder are not uploaded
+(impl-review F80, F81). The upload reference is unfenced on purpose: it only keeps a
 blob alive, which ADR-0007's fence need not guard. Rejected: refusing to `put` removed bytes (a
 resubmitted file would fail). Details: notes.md#revive
 

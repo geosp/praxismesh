@@ -9,8 +9,10 @@ The checks, shared by migration tests, `gc` and `reconcile`:
 - *unindexed*: a `BlobRef` stored in a row with no index row for that holder;
 - *dangling*: a live reference whose blob is marked removed or missing from the
   bucket;
-- *orphaned*: a bucket object with no index row, aged by `last_put_at`, or by
-  the bucket's `LastModified` when it has no `blob_objects` row.
+- *orphaned*: a bucket object with no live reference that is not marked for
+  removal, aged by `last_put_at`, or by the bucket's `LastModified` when it has
+  no `blob_objects` row (review F80: a blob whose references are all removed but
+  whose mark was cleared is reached here).
 
 Expiry is computed here, never stored. All functions run on the caller's
 connection, so they join the caller's transaction.
@@ -118,6 +120,19 @@ def upload_holder(task_id: str) -> Holder:
     return Holder(UPLOAD, task_id, "")
 
 
+async def delete_mark(conn: AsyncConnection, task_id: str) -> str | None:
+    """The operation of a delete that marked the task's references, if any: such
+    a task is deleted and its late uploads revive nothing (R25; review F80, F81)."""
+    found = await conn.execute(
+        text(
+            "SELECT removed_by FROM blob_refs WHERE task_id = :t "
+            "AND removed_by LIKE :d ORDER BY removed_at LIMIT 1"
+        ),
+        {"t": task_id, "d": f"{DELETE_OPERATION}%"},
+    )
+    return found.scalar_one_or_none()
+
+
 async def index_refs(
     conn: AsyncConnection,
     holder: Holder,
@@ -145,6 +160,7 @@ async def index_keys(
     task_id: str,
     request_id: str | None = None,
     retention: RetentionClass | None = None,
+    removed_by: str | None = None,
 ) -> None:
     """Write the holder's `blob_refs` rows in the caller's transaction (D2).
 
@@ -152,6 +168,8 @@ async def index_keys(
     is `request_id`, or the task's from `tasks`; an upload reference has none. On
     conflict the stronger class wins and a GC mark is cleared; a delete's mark
     stays, so a deleted task never makes its reference live again (R25).
+    `removed_by` writes the rows already marked by that operation (a deleted
+    task's late upload, review F81).
     """
     cls = current_class(retention or REFERENCE_CLASS[(holder.table, holder.column)])
     keys = sorted(set(blob_keys))
@@ -165,13 +183,17 @@ async def index_keys(
     kept = f"blob_refs.removed_by LIKE '{DELETE_OPERATION}%'"
     await conn.execute(
         text(
-            f"INSERT INTO blob_refs ({_COLUMNS}) VALUES (:b, :ht, :hk, :hc, :t, {request}, :c) "
+            f"INSERT INTO blob_refs ({_COLUMNS}, removed_at, removed_by) "
+            f"VALUES (:b, :ht, :hk, :hc, :t, {request}, :c, "
+            "CASE WHEN CAST(:m AS text) IS NOT NULL THEN now() END, :m) "
             "ON CONFLICT (holder_table, holder_key, holder_column, blob_key) DO UPDATE SET "
             f"retention_class = CASE WHEN {rank_sql('EXCLUDED.retention_class')} "
             f"> {rank_sql('blob_refs.retention_class')} THEN EXCLUDED.retention_class "
             "ELSE blob_refs.retention_class END, "
-            f"removed_at = CASE WHEN {kept} THEN blob_refs.removed_at END, "
-            f"removed_by = CASE WHEN {kept} THEN blob_refs.removed_by END"
+            f"removed_at = CASE WHEN {kept} THEN blob_refs.removed_at "
+            "ELSE EXCLUDED.removed_at END, "
+            f"removed_by = CASE WHEN {kept} THEN blob_refs.removed_by "
+            "ELSE EXCLUDED.removed_by END"
         ),
         [
             {
@@ -182,6 +204,7 @@ async def index_keys(
                 "t": task_id,
                 "r": request_id,
                 "c": cls,
+                "m": removed_by,
             }
             for key in keys
         ],
@@ -243,25 +266,32 @@ async def dangling(conn: AsyncConnection, bucket: Mapping[str, BucketObject]) ->
 
 
 async def orphaned(conn: AsyncConnection, bucket: Mapping[str, BucketObject]) -> list[Orphan]:
-    """Bucket objects with no index row, with their last upload time."""
-    indexed = {
+    """Bucket objects with no live reference and no removal mark (a marked one
+    waits for the bucket step), with their last upload time."""
+    held = {
         row[0]
         for row in await conn.execute(
-            text("SELECT DISTINCT blob_key FROM blob_refs WHERE blob_key = ANY(:k)"),
+            text(
+                "SELECT DISTINCT blob_key FROM blob_refs "
+                "WHERE blob_key = ANY(:k) AND removed_at IS NULL"
+            ),
             {"k": list(bucket)},
         )
     }
-    put = {
-        row[0]: row[1]
+    recorded = {
+        row[0]: (row[1], row[2])
         for row in await conn.execute(
-            text("SELECT key, last_put_at FROM blob_objects WHERE key = ANY(:k)"),
+            text(
+                "SELECT key, last_put_at, removed_at IS NOT NULL FROM blob_objects "
+                "WHERE key = ANY(:k)"
+            ),
             {"k": list(bucket)},
         )
     }
     return [
-        Orphan(key, put.get(key, obj.last_modified))
+        Orphan(key, recorded[key][0] if key in recorded else obj.last_modified)
         for key, obj in sorted(bucket.items())
-        if key not in indexed
+        if key not in held and not (key in recorded and recorded[key][1])
     ]
 
 

@@ -6,19 +6,21 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from common.blob_store import BlobStore
-from common.blob_store.base import collect, content_key, current_class
+from common.blob_store.base import collect, content_key, current_class, make_ref
 from common.errors import TaskAlreadyExists
 from common.persistence.fence import NO_NEWER_ATTEMPT as _NO_NEWER_ATTEMPT
 from common.persistence.fence import TASK_LOCK as _TASK_LOCK
 from common.persistence.fence import FenceRejected
 from common.persistence.refs import (
     checkpoint_holder,
+    delete_mark,
     index_keys,
     index_refs,
     rank_sql,
@@ -668,6 +670,11 @@ class RecordingBlobStore:
            the order every removal uses), clear any removal mark, set
            `last_put_at`, and write the task's upload reference;
         3. upload through the inner store, which skips bytes it already holds.
+
+        A task whose references a delete marked revives nothing (R25; review
+        F80, F81): its upload reference is written with the delete's mark, the
+        blob keeps its mark (a new blob is recorded marked), and bytes the blob
+        has no live holder for are not uploaded.
         """
         body = await collect(data)
         key, checksum = content_key(body)
@@ -677,21 +684,51 @@ class RecordingBlobStore:
             f"> {rank_sql('blob_objects.retention_class')} "
             "THEN EXCLUDED.retention_class ELSE blob_objects.retention_class END"
         )
+        params = {"k": key, "c": checksum, "b": len(body), "ct": content_type, "r": retention}
         async with self.engine.begin() as conn:
-            await conn.execute(
-                text(
-                    "INSERT INTO blob_objects (key, checksum, bytes, content_type, "
-                    "retention_class, last_put_at) VALUES (:k, :c, :b, :ct, :r, now()) "
-                    f"ON CONFLICT (key) DO UPDATE SET retention_class = {stronger_class}, "
-                    "removed_at = NULL, removed_by = NULL, bucket_deleted_at = NULL, "
-                    "last_put_at = now()"
-                ),
-                {"k": key, "c": checksum, "b": len(body), "ct": content_type, "r": retention},
-            )
+            deleted = None
+            if task_id is not None:
+                # The task lock first (then `blob_objects`, then `blob_refs`): a
+                # delete marks a task's references under the same lock, so the
+                # mark read here cannot change before this transaction commits.
+                await conn.execute(_TASK_LOCK, {"t": task_id})
+                deleted = await delete_mark(conn, task_id)
+            if deleted is None:
+                await conn.execute(
+                    text(
+                        "INSERT INTO blob_objects (key, checksum, bytes, content_type, "
+                        "retention_class, last_put_at) VALUES (:k, :c, :b, :ct, :r, now()) "
+                        f"ON CONFLICT (key) DO UPDATE SET retention_class = {stronger_class}, "
+                        "removed_at = NULL, removed_by = NULL, bucket_deleted_at = NULL, "
+                        "last_put_at = now()"
+                    ),
+                    params,
+                )
+            else:
+                # Lock the row without clearing its mark; a new blob is recorded
+                # marked and already gone from the bucket.
+                locked = await conn.execute(
+                    text(
+                        "INSERT INTO blob_objects (key, checksum, bytes, content_type, "
+                        "retention_class, last_put_at, removed_at, removed_by, "
+                        "bucket_deleted_at) VALUES (:k, :c, :b, :ct, :r, now(), now(), :m, "
+                        "now()) ON CONFLICT (key) DO UPDATE SET key = blob_objects.key "
+                        "RETURNING removed_at IS NULL"
+                    ),
+                    params | {"m": deleted},
+                )
+                live = bool(locked.scalar_one())
             if task_id is not None:
                 await index_keys(
-                    conn, upload_holder(task_id), [key], task_id=task_id, retention=retention
+                    conn,
+                    upload_holder(task_id),
+                    [key],
+                    task_id=task_id,
+                    retention=retention,
+                    removed_by=deleted,
                 )
+        if deleted is not None and not live:
+            return make_ref(key, checksum, content_type, len(body), retention, datetime.now(UTC))
         return await self.inner.put(body, content_type=content_type, retention=retention)
 
     async def get(self, ref: BlobRef) -> bytes:

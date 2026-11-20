@@ -63,7 +63,8 @@ task never makes its reference live again (R25).
 - **Checks**, shared by migration tests, `gc` and `reconcile` (phase 01 task 1.4):
   - *unindexed*: a `BlobRef` in a refs-table column with no `blob_refs` row for that holder and key;
   - *dangling*: a live reference whose key is marked removed or missing from the bucket;
-  - *orphaned*: a bucket object (from a listing) with no `blob_refs` row, aged by
+  - *orphaned*: a bucket object (from a listing) with no live `blob_refs` row and no removal mark
+  in `blob_objects` (a marked one waits for the bucket step; impl-review F80), aged by
     `blob_objects.last_put_at` or, for an object with no `blob_objects` row, its `LastModified`.
 - **The backfill** reads the JSON columns with PostgreSQL JSON functions, in the migration. Each
   index row's class comes from d3's blob table by holder table and column, never from the JSON
@@ -121,9 +122,13 @@ The one source for each table's class and expiry anchor. A test compares it with
 `MemoryBlobStore` and `RecordingBlobStore` all take the new argument. `RecordingBlobStore.put`:
 
 1. Collect the bytes and compute the key.
-2. One transaction, locking `blob_objects` before `blob_refs` (the order every removal uses too):
-   upsert `blob_objects` (row locked), clearing `removed_at` and `bucket_deleted_at` and setting
-   `last_put_at = now()`; upsert the task's upload reference (d2: a delete's mark stays).
+2. One transaction, locking the task (`TASK_LOCK`, when a task is given), then `blob_objects`, then
+   `blob_refs` (the order every removal uses too). If a delete marked any of the task's references,
+   the task is deleted: lock the `blob_objects` row without clearing its mark (a new key is inserted
+   marked with the delete's operation and `bucket_deleted_at` set), write the upload reference with
+   the same mark, and skip step 3 unless the blob is live for another holder (impl-review F80, F81).
+   Otherwise upsert `blob_objects` (row locked), clearing `removed_at` and `bucket_deleted_at` and
+   setting `last_put_at = now()`; upsert the task's upload reference (d2: a delete's mark stays).
 3. Upload through the inner store. If the bucket step already deleted the object, `head_object`
    misses and the bytes go up; if it has not, it will see the cleared mark and skip.
 
@@ -168,9 +173,14 @@ The markers keep `TaskResult` valid, so `agentctl task output` still reads the r
   until the delete ends. Under the lock it reads the request's tasks, checks they have ended (R12),
   and writes the list into its first tombstone. Every batch selects by that list, never by
   `request_id`, so a joining task's upload references, written before its `tasks` row, are untouched.
+- **Task locks.** The first batch takes `TASK_LOCK` for each task in its list, in task-ID order,
+  before it locks any `blob_objects` row, so a concurrent `put` for that task either commits first
+  or sees the delete's mark (revive step 2).
 - **Fence.** The first batch inserts, for each task, a `task_attempts` row with a turn and attempt
   above any existing one and status `deleted`. ADR-0007's fence (`NO_NEWER_ATTEMPT`) then refuses
   every later checkpoint, event and message write by a still-running attempt (R25).
+- **A retried end.** `end_task` does nothing once `ended_at` is set, so a `complete_task` retry
+  after a delete cannot write back a redacted result (impl-review F82).
 - **`--force`**: a task that has not ended counts as ended when Temporal's `describe` reports its
   Workflow closed (terminated, cancelled, timed out). The delete then sets the task to `failed`
   with `ended_at` now, in the first batch.
