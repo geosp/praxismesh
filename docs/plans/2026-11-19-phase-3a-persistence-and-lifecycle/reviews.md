@@ -73,3 +73,6 @@ Pinned at c6efe44. Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out �
 | F58 | Nit | fresh reader | Readability and terms: Summary cites R21 for the wrong clause; multi-rule R1, R6, R7, R13, R17, R20, R22; minor undefined names (`RecordingBlobStore`, `finish_task_body`, `make reset`, `schemas.md` path); plan vs roadmap phase numbering; owner date repeated | fixed: Summary, Terms, R6, R7, R13, R17, R20, R22 reworded, owner date stated once |
 
 After the fixes (2026-11-20): `plan-tool check` reports 0 errors and 1 warning (410 body lines, budget 250), kept for the same reason as round 1. Reopened F8, F11 and F15 are resolved by F50, F30 and F29.
+
+## 2026-11-20 · waiver · design-review round cap
+The project owner approved a third design-review round (the skill stops after two), with the codebase-fit and zoom-out lenses only, because the round-2 fixes F29, F32 and F33 change the removal design. The fresh-reader lens is not rerun.
