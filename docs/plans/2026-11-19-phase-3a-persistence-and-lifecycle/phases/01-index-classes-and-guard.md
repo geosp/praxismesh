@@ -1,9 +1,9 @@
 ---
 phase: 1
 title: Reference index, classes, audit log and the payload guard
-status: approved
-branch: null
-base: null
+status: in-progress
+branch: feat/92-phase-3a-index-and-classes
+base: 8cc4355fca7578866edcc8647f086fcdc69c6557
 delivers: [R1, R2, R4, R5, R14, R18, R19, R20]
 design_review: { status: passed, rounds: 3, last: 2026-11-20 }
 impl_review: { status: none, rounds: 0, last: null }
