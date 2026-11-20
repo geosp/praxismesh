@@ -5,31 +5,33 @@ Pinned at 417e8f9. Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out �
 
 | ID | Sev | Lens | Finding | Resolution |
 | --- | --- | --- | --- | --- |
-| F1 | Blocker | codebase fit, zoom out | Uploading bytes again during or after their removal is unhandled: `put` never clears `removed_at` and S3 skips an existing object, so live blobs read as expired or are deleted | open |
-| F2 | Blocker | codebase fit, zoom out | A row that outlives its freed reference (`tasks.instructions_ref`, `input_refs`) becomes "unindexed", and D4 then blocks GC for good | open |
-| F3 | Blocker | fresh reader | "Request" is never defined; what identifies a request's tasks and where `blob_refs.request_id` comes from is missing | open |
-| F4 | Major | codebase fit | `tasks.result` is written by `MessageRepository.end_task`, not `TaskRepository.complete` (unused); expiry must share `end_task`'s transaction | open |
-| F5 | Major | codebase fit, zoom out | D5's "referenced within one turn" is false for submitted inputs and artifacts; notes#refs wrongly says `checkpoints.finish` holds outputs | open |
-| F6 | Major | codebase fit, zoom out, fresh reader | `tasks` has no end-time column; row expiry for tables keyed by session or workflow, `ephemeral`'s anchor and the backfill of ended tasks are undefined | open |
-| F7 | Major | codebase fit, zoom out | Column defaults keep writing `task`; whether checks still allow `task` during rollout is unsaid; checkpoint inserts hardcode `'task'` | open |
-| F8 | Major | codebase fit, zoom out | S3 object metadata and `RETENTION_ORDER` also encode classes; where `task` ranks and which record of class is remapped is unsaid | open |
-| F9 | Major | codebase fit, zoom out | A schema cap on `questions` breaks replay and fails turns; truncate in `finish_task_body` instead | open |
-| F10 | Major | codebase fit | The unindexed and dangling checks are needed in phases 01-02 but built in phase 03 | open |
-| F11 | Major | codebase fit | Deleting events directly bypasses `TableTransport.prune` and `retained_base`, so `tail` shows silent gaps; ADR-0009's partitioning consequence is unaddressed | open |
-| F12 | Major | codebase fit, zoom out | The append-only trigger does not bind the app role, which owns the table; "audit until purged" has no purge path | open |
-| F13 | Major | zoom out, fresh reader | A tombstone written last is lost on a crash and its counts are undefined across batches | open |
-| F14 | Major | zoom out | Restore into a clean Compose stack fails on existing schemas and cannot be retried after a partial load; GC during a backup is not excluded | open |
-| F15 | Major | zoom out, codebase fit | Delete holes: terminated tasks block it forever, joins race it (no request lock), and Temporal histories keep content for 72 h and in backups | open |
-| F16 | Major | fresh reader | Summary cites wrong R numbers, says "deletes everything" though rows are redacted, says two databases not three, and omits the class migration and GC's refusal | open |
-| F17 | Major | fresh reader | Undefined: §4.13, `blob_objects`, "the four tables", `questions`; R9's dependence on `removed_at`; GC tombstone granularity | open |
-| F18 | Major | fresh reader | R18 is stated as absolute but enforced only by a test over the integration suite | open |
-| F19 | Major | fresh reader, zoom out | No repair path for references written by old workers during rollout; GC stays blocked | open |
-| F20 | Major | fresh reader | plan.md does not map requirements to phases | open |
-| F21 | Nit | codebase fit, zoom out | `agentctl task output` reads through a bare `S3BlobStore`; R9 needs the recording store | open |
-| F22 | Nit | codebase fit, zoom out | `RecordingBlobStore.delete` deletes the `blob_objects` row that `removed_at` lives on | open |
-| F23 | Nit | codebase fit | The existing replay fixture already carries `retention_class: task`; reuse it for R5 | open |
-| F24 | Nit | codebase fit, fresh reader | D8's title says "two dumps"; there are three | open |
-| F25 | Nit | codebase fit | `result.failure_reason` can hold content and is not redacted | open |
-| F26 | Nit | zoom out | Two concurrent GC or delete runs are not serialised | open |
-| F27 | Nit | zoom out | notes#redact cites "task 2.4"; the check is phase 02 task 3.1 | open |
-| F28 | Nit | fresh reader | Readability: the Summary's risk sentence, D6's first sentence, D5's chain, "plans" for tables and documents, repeated facts, multi-rule R4, R8, R10, R11, R13, R15-R17, "owner" used twice, "batches of" what | open |
+| F1 | Blocker | codebase fit, zoom out | Uploading bytes again during or after their removal is unhandled: `put` never clears `removed_at` and S3 skips an existing object, so live blobs read as expired or are deleted | fixed: R22, D10, notes#revive, phase 02 task 1.3 |
+| F2 | Blocker | codebase fit, zoom out | A row that outlives its freed reference (`tasks.instructions_ref`, `input_refs`) becomes "unindexed", and D4 then blocks GC for good | fixed: D2 (removed references stay marked), Terms (live, unindexed, dangling), notes#d2 |
+| F3 | Blocker | fresh reader | "Request" is never defined; what identifies a request's tasks and where `blob_refs.request_id` comes from is missing | fixed: Terms (Request) |
+| F4 | Major | codebase fit | `tasks.result` is written by `MessageRepository.end_task`, not `TaskRepository.complete` (unused); expiry must share `end_task`'s transaction | fixed: notes#refs, R20, phase 01 task 2.3 (`end_task` indexes and sets expiry in its transaction) |
+| F5 | Major | codebase fit, zoom out | D5's "referenced within one turn" is false for submitted inputs and artifacts; notes#refs wrongly says `checkpoints.finish` holds outputs | fixed: D2 and D5 (uploads held by their task), notes#refs corrected, phase 01 task 2.2 |
+| F6 | Major | codebase fit, zoom out, fresh reader | `tasks` has no end-time column; row expiry for tables keyed by session or workflow, `ephemeral`'s anchor and the backfill of ended tasks are undefined | fixed: `tasks.ended_at` (D1, R20), notes#d3 expiry anchors, backfill in notes#d2 |
+| F7 | Major | codebase fit, zoom out | Column defaults keep writing `task`; whether checks still allow `task` during rollout is unsaid; checkpoint inserts hardcode `'task'` | fixed: D3, notes#d3 (new defaults; checks keep `task`), phase 01 tasks 1.1, 2.4 |
+| F8 | Major | codebase fit, zoom out | S3 object metadata and `RETENTION_ORDER` also encode classes; where `task` ranks and which record of class is remapped is unsaid | fixed: D3, notes#d3 (index authoritative, metadata unchanged, `task` ranks as `transcript`), phase 01 task 1.3 |
+| F9 | Major | codebase fit, zoom out | A schema cap on `questions` breaks replay and fails turns; truncate in `finish_task_body` instead | fixed: D9 (truncate in `finish_task_body`), phase 01 task 3.2 |
+| F10 | Major | codebase fit | The unindexed and dangling checks are needed in phases 01-02 but built in phase 03 | fixed: phase 01 task 1.4; R2 uses the check |
+| F11 | Major | codebase fit | Deleting events directly bypasses `TableTransport.prune` and `retained_base`, so `tail` shows silent gaps; ADR-0009's partitioning consequence is unaddressed | fixed: D11, notes#redact, phase 02 task 1.4 |
+| F12 | Major | codebase fit, zoom out | The append-only trigger does not bind the app role, which owns the table; "audit until purged" has no purge path | fixed: R14 reworded, Risks (owner role accepted until Phase 9), D3 and Non-goals (audit kept, no purge) |
+| F13 | Major | zoom out, fresh reader | A tombstone written last is lost on a crash and its counts are undefined across batches | fixed: R13, D6, notes#d6 (tombstone per batch in transaction 1) |
+| F14 | Major | zoom out | Restore into a clean Compose stack fails on existing schemas and cannot be retried after a partial load; GC during a backup is not excluded | fixed: D8, notes#d8 (recreate databases, `make reset` after a partial load), D4 lock shared with backup, R23, phase 03 task 2.2 |
+| F15 | Major | zoom out, codebase fit | Delete holes: terminated tasks block it forever, joins race it (no request lock), and Temporal histories keep content for 72 h and in backups | fixed: D12, R21, notes#redact (request lock, `record_task` lock for joins, `--force`, Temporal residual), phase 01 task 4.1 |
+| F16 | Major | fresh reader | Summary cites wrong R numbers, says "deletes everything" though rows are redacted, says two databases not three, and omits the class migration and GC's refusal | fixed: Summary rewritten |
+| F17 | Major | fresh reader | Undefined: §4.13, `blob_objects`, "the four tables", `questions`; R9's dependence on `removed_at`; GC tombstone granularity | fixed: Terms (§4.13, `blob_objects`, `questions`), Why (names the tables), R9, R13 |
+| F18 | Major | fresh reader | R18 is stated as absolute but enforced only by a test over the integration suite | fixed: R18 scoped to the integration suite; D9 states the bound by design |
+| F19 | Major | fresh reader, zoom out | No repair path for references written by old workers during rollout; GC stays blocked | fixed: Rollout (stop workers first), D4 and phase 01 task 1.4 (`reconcile --reindex`) |
+| F20 | Major | fresh reader | plan.md does not map requirements to phases | fixed: Phases table Delivers column |
+| F21 | Nit | codebase fit, zoom out | `agentctl task output` reads through a bare `S3BlobStore`; R9 needs the recording store | fixed: notes#d6, phase 02 task 1.1 |
+| F22 | Nit | codebase fit, zoom out | `RecordingBlobStore.delete` deletes the `blob_objects` row that `removed_at` lives on | fixed: notes#revive, phase 02 task 1.2 (inner store only) |
+| F23 | Nit | codebase fit | The existing replay fixture already carries `retention_class: task`; reuse it for R5 | fixed: phase 01 task 3.1 reuses the fixture |
+| F24 | Nit | codebase fit, fresh reader | D8's title says "two dumps"; there are three | fixed: D8 title |
+| F25 | Nit | codebase fit | `result.failure_reason` can hold content and is not redacted | fixed: notes#redact |
+| F26 | Nit | zoom out | Two concurrent GC or delete runs are not serialised | fixed: D4 advisory lock, phase 02 task 1.5 |
+| F27 | Nit | zoom out | notes#redact cites "task 2.4"; the check is phase 02 task 3.1 | fixed: notes#redact cites phase 02 task 3.1 |
+| F28 | Nit | fresh reader | Readability: the Summary's risk sentence, D6's first sentence, D5's chain, "plans" for tables and documents, repeated facts, multi-rule R4, R8, R10, R11, R13, R15-R17, "owner" used twice, "batches of" what | fixed: Summary, D5, D6, D1, Terms (Holder); R4, R8, R11, R13, R15, R16 split or reworded (R19, R23) |
+
+After the fixes (2026-11-19): `plan-tool check` reports 0 errors and 1 warning (379 body lines, budget 250). The growth is the new requirements (R19-R23, one rule each), decisions (D10-D12) and Terms the findings asked for; kept rather than moved to notes.md.

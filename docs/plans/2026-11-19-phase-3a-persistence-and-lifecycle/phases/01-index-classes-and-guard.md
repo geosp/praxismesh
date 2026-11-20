@@ -4,7 +4,7 @@ title: Reference index, classes, audit log and the payload guard
 status: draft
 branch: null
 base: null
-delivers: [R1, R2, R4, R5, R14, R18]
+delivers: [R1, R2, R4, R5, R14, R18, R19, R20]
 design_review: { status: changes-requested, rounds: 1, last: 2026-11-19 }
 impl_review: { status: none, rounds: 0, last: null }
 approved: null
@@ -14,30 +14,34 @@ approved: null
 
 ## Goal
 
-Every stored `BlobRef` is indexed with its row, old ones included; every blob and row carries a
-§4.13 class; the audit log exists and cannot be rewritten; and no Workflow history carries a
-large payload. Nothing is removed yet.
+Every stored `BlobRef` and every upload made for a task is indexed with its holder, old ones
+included; every blob and row carries a §4.13 class; ended tasks have their expiry; the audit log
+exists; the reference checks run; and no Workflow history of the suite carries a large payload.
+Nothing is removed yet.
 
 ## Tasks
 
-### 1. Schema
+### 1. Schema and checks
 
-- [ ] 1.1 Migration 0007: `blob_refs` and `audit_log`; `blob_objects.removed_at` and `removed_by`; the new class values in every `retention_class` check; the class remap and the reference backfill (R2, R4, D2, D3; notes.md#refs, notes.md#d3). Verify: `make migrate` from 0006 with seeded rows of every kind in notes.md#refs; downgrade and upgrade again.
-- [ ] 1.2 `audit_log` is append-only for the app role: a trigger refuses `UPDATE` and `DELETE` (R14). Verify: integration test as the app role.
-- [ ] 1.3 `RetentionClass` gains `checkpoint`, `transcript` and `artifact`; `task` stays readable and is refused for new writes; lifetimes in `retention.py`; a test checks every `APP_TABLES` entry against notes.md#d3 (R4, R5, D3). Verify: unit tests.
+- [ ] 1.1 Migration 0007: `blob_refs`, `audit_log`, `tasks.ended_at`; `blob_objects.removed_at`, `removed_by` and `last_put_at`; new server defaults and checks (the five classes plus `task`); the class remap, the reference backfill and the end-time backfill (R2, R19, D2, D3; notes.md#d2, notes.md#d3). Verify: `make migrate` from 0006 with seeded rows of every kind in notes.md#refs; downgrade and upgrade again.
+- [ ] 1.2 `audit_log` refuses `UPDATE` and `DELETE` from the app role through a trigger (R14). Verify: integration test as the app role.
+- [ ] 1.3 `RetentionClass` gains `checkpoint`, `transcript` and `artifact`; `task` stays readable, ranks as `transcript` in `RETENTION_ORDER` and is never written; lifetimes in `retention.py`; a test checks every `APP_TABLES` entry against notes.md#d3 (R4, R5, D3). Verify: unit tests, including a repeat `put` over `task` metadata.
+- [ ] 1.4 The reference checks (unindexed, dangling, orphaned; notes.md#d2) as one repository module, and `reconcile --reindex`'s idempotent backfill (R2, D4). Verify: integration tests that seed each case; reindex run twice changes nothing the second time.
 
 ### 2. Writers
 
-- [ ] 2.1 One helper, `index_refs`, writes `blob_refs` rows in the caller's transaction. `record_task`, `complete`, both checkpoint inserts and the event publish call it (R1, D2). Verify: integration tests per writer; a refused fenced checkpoint leaves no index row.
-- [ ] 2.2 Writers use the new classes: instructions and inputs `transcript`, workspace and session blobs `checkpoint`, artifacts `artifact` (R4). Verify: integration test of a fake-model task reads each class back from rows and `blob_objects`.
-- [ ] 2.3 `complete_task` sets `expires_at` on the task's references when it ends (D2, D3). Verify: integration test for each terminal status.
-- [ ] 2.4 `AuditRepository.append(action, subject, details)` with actor `cli:<OS user>` (R13's store). Verify: integration test.
+- [ ] 2.1 One helper, `index_refs`, writes `blob_refs` rows in the caller's transaction. `record_task`, both checkpoint inserts and the event publish call it (R1, D2). Verify: integration tests per writer; a refused fenced checkpoint leaves no index row.
+- [ ] 2.2 `RecordingBlobStore.put` takes the task, writes `last_put_at` and the upload reference in one transaction (notes.md#revive steps 1-2); `prepare_task` mints the task ID before uploading; the harness passes its task (R1, D2). Verify: integration test that a submit's uploads are held by its task before `record_task` runs.
+- [ ] 2.3 `end_task` indexes the artifacts, sets `tasks.ended_at` and every reference's expiry, in its transaction (R1, R20). Verify: integration test for each terminal status.
+- [ ] 2.4 Writers use the new classes: instructions and inputs `transcript`, workspace and session blobs `checkpoint`, artifacts `artifact`; checkpoint inserts stop hardcoding `'task'` (R4). Verify: integration test of a fake-model task reads each class back from rows and `blob_refs`.
+- [ ] 2.5 `AuditRepository.append(conn, action, subject, details)` in the caller's transaction, with actor `cli:<OS user>` (R13's store). Verify: integration test.
 
 ### 3. Compatibility and the guard
 
-- [ ] 3.1 A replay test with a recorded history whose payloads carry `retention_class: task` (R5). Verify: `pytest tests/test_task_workflow.py` replay passes.
-- [ ] 3.2 A history helper that fails on any payload over 64 KiB, run over the Workflows of the integration suite; `questions` capped at 20 of 500 characters (R18, D9). Verify: a test that returns 21 questions fails validation; a test that returns 20 of 500 characters passes the guard.
+- [ ] 3.1 Confirm `test_task_workflow_replay` and its fixture (3 payloads with `retention_class: task`) still pass with the new `RetentionClass` (R5). Verify: `pytest tests/test_task_workflow.py`.
+- [ ] 3.2 `finish_task_body` keeps the first 20 questions of at most 500 characters (D9). Verify: unit test with 21 questions of 600 characters.
+- [ ] 3.3 A history helper that fails on any payload over 64 KiB, run over the integration suite's Workflows (R18, D9). Verify: a task that returns 20 questions of 500 characters passes; a seeded 65 KiB payload fails.
 
 ### 4. Documentation
 
-- [ ] 4.1 `schemas.md` (the two tables, the classes, the outbox pattern of D7), the threat model (no encryption at rest, backups in clear text: accepted until Phase 9), the decision log. Verify: `check_plans.py` and the link check pass.
+- [ ] 4.1 `schemas.md` (the new tables and column, the classes, D7's outbox pattern); the threat model (no encryption at rest and clear-text backups, the app role owning `audit_log`, content kept in Temporal histories for 72 hours: all accepted until Phase 9); the decision log. Verify: `check_plans.py` and the link check pass.
