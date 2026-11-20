@@ -5,7 +5,7 @@ status: draft
 branch: null
 base: null
 delivers: [R3, R6, R7, R8, R9, R10, R11, R12, R13, R15]
-design_review: { status: none, rounds: 0, last: null }
+design_review: { status: changes-requested, rounds: 1, last: 2026-11-19 }
 impl_review: { status: none, rounds: 0, last: null }
 approved: null
 ---
