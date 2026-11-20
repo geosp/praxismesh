@@ -1,10 +1,10 @@
 ---
 title: Phase 3A persistence and data lifecycle - blob references, retention, deletion and backup
-status: draft
+status: approved
 created: 2026-11-19
 updated: 2026-11-20
-design_review: { status: changes-requested, rounds: 3, last: 2026-11-20 }
-approved: null
+design_review: { status: passed, rounds: 3, last: 2026-11-20 }
+approved: 2026-11-20
 adr_review: null
 ---
 
@@ -15,12 +15,12 @@ adr_review: null
 Plan A of Phase 3A. Stored data gets a lifecycle. A new reference index records, in the same
 transaction, every row that names a blob and every upload made for a task (R1, R2); existing data
 moves to §4.13's five classes (R4, R19). Operator commands remove expired data (R6-R8) and delete a
-request: blobs removed, content redacted, IDs and usage kept (R10-R12, R24). Each removal batch
+request: blobs removed, content redacted, IDs and usage kept, late writes fenced (R10-R12, R24, R25). Each removal batch
 writes an append-only tombstone (R13, R14), and a removed blob reads as *expired* (R9). Temporal
 histories still hold a deleted task's summary and questions for 72 hours (D12); `questions` is
 truncated and a test keeps history payloads under 64 KiB (R18). `make backup` and `make restore`
 cover the three databases and SeaweedFS; reconcile lists inconsistencies (R16, R17, R23). Rollout
-takes a backup and stops the workers first. Main risk: deleting a blob still in use, since identical
+takes a backup, drains open Workflows and stops the workers first. Main risk: deleting a blob still in use, since identical
 bytes share one object. A blob goes only with no live reference, `gc` refuses while any reference
 is unindexed, uploading the bytes again revives them (R22), and every command has a dry run.
 
@@ -61,11 +61,11 @@ decisions of 2026-11-19. **Size:** L. **Hardware:** none beyond the Compose stac
   `audit`. `RetentionClass` in `common/schemas/` keeps `task` as a readable value. Existing rows
   and `blob_objects` rows move to the new classes.
 - New table `audit_log`, append-only.
-- `BlobStore.put` takes the task and can force an upload; `BlobExpired` is new. Both adapters and
+- `BlobStore.put` takes an optional task ID; `BlobExpired` is new. Both adapters and
   `RecordingBlobStore` change.
 - New `agentctl` commands: `gc`, `request delete`, `reconcile` (with `--reindex`) and `backup`,
   each removal command with `--dry-run`. `agentctl events prune` goes through the removal engine.
-- New `make backup` and `make restore`.
+- New `make backup`, `make restore` and an opt-in `make drill`.
 - A Claim Check test over Workflow histories, and truncation of `questions`.
 
 ### Non-goals
@@ -222,6 +222,7 @@ No Workflow history of the integration suite may carry a payload over 64 KiB.
 
 Migration 0007 must give every existing row and `blob_objects` row its D3 class.
 - **Given** a row with class `task` before the migration, **when** it is migrated, **then** it carries its table's class from D3.
+- **Given** an artifact stored before migration 0007 with class `audit`, **when** it is migrated, **then** its index row and `blob_objects` row carry `artifact`.
 
 ### R20 · A task records when it ended
 
@@ -249,6 +250,11 @@ A `put` of bytes whose blob is marked removed must leave a live, readable blob.
 
 `request delete` must change only the tasks of the request when it began.
 - **Given** a task that joins the request while it is being deleted, **when** the delete finishes, **then** that task's inputs and rows are unchanged.
+
+### R25 · A deleted task accepts no more writes
+
+After `request delete` commits, no attempt of its tasks may write a row or revive a reference.
+- **Given** a `--force` delete while the task's Activity is still running, **when** the attempt then inserts a checkpoint, publishes an event and uploads its workspace, **then** the insert and publish are refused, and the upload leaves no live reference.
 
 ## Decisions
 
@@ -280,8 +286,8 @@ keeping `task` and `audit` (artifacts never expire). Details: notes.md#d3
 ### D4 · Removal is an operator command with a dry run
 
 `gc`, `request delete`, `events prune` and `reconcile` run on demand and print their plan with
-`--dry-run`. Removals commit in batches of at most 500 rows. `gc`, delete and `agentctl backup` hold
-one session-level advisory lock (`pg_advisory_lock(3, 0)`) for their whole run. `gc` refuses while
+`--dry-run`. Removals commit in batches of at most 500 rows. Every removal command and `agentctl
+backup` hold one session-level advisory lock (`pg_advisory_lock(3, 0)`) for their whole run. `gc` refuses while
 any reference is unindexed; `reconcile --reindex` repairs them idempotently. Rejected: a Temporal
 Schedule or a worker loop now (one machine needs no scheduler; Phase 7 adds a CronJob).
 
@@ -310,11 +316,12 @@ GitHub delivery).
 
 ### D8 · Backup is three dumps and a bucket copy; restore recreates the databases
 
-`agentctl backup` (behind `make backup`) holds the D4 lock, dumps `praxismesh`, `temporal` and
-`temporal_visibility`, then copies the bucket into `backups/<UTC time>/`. Recovery point: the last
+`agentctl backup` (behind `make backup`) holds the D4 lock and stops the workers while it dumps
+`praxismesh`, `temporal` and `temporal_visibility`, so no Workflow gets ahead of its rows; it then
+copies the bucket into `backups/<UTC time>/`. Recovery point: the last
 manual backup *(owner)*. Restore refuses a stack with data (R23), drops the databases, recreates
 them with `init.sh`'s database statements (moved to a rerunnable script both use) and `roles.sh`,
-so the grants return, loads, and ends with `reconcile`.
+so the grants return, loads, and prints `reconcile`'s report.
 After a partial failure: `make reset`, then restore. Rejected: volume snapshots (not portable). Details: notes.md#d8
 
 ### D9 · `questions` truncated at the source; a 64 KiB history test
@@ -328,8 +335,8 @@ Temporal's own limits (they warn at 512 KiB and fail at 2 MiB).
 ### D10 · Uploading again revives a removed blob
 
 `put` collects the bytes (as the S3 adapter already does), then, under the key's `blob_objects`
-row lock, clears any removal mark, records the upload time and the task's reference. It forces the
-bucket upload when the key was marked. The upload reference is unfenced on purpose: it only keeps a
+row lock, clears any removal mark, records the upload time and the task's reference; a reference
+marked by a delete stays marked. A removed object is simply missing, so the upload goes through. The upload reference is unfenced on purpose: it only keeps a
 blob alive, which ADR-0007's fence need not guard. Rejected: refusing to `put` removed bytes (a
 resubmitted file would fail). Details: notes.md#revive
 
@@ -344,7 +351,9 @@ equivalent, and partitioning is Phase 9 hardening. Rejected: deleting event rows
 ### D12 · Delete-by-request: a fixed task list, redaction and a Temporal residual
 
 `request delete` holds the request lock for its whole run (session-level, same key), and records
-the request's task list in its first tombstone; it changes only those tasks (R24). It deletes
+the request's task list in its first tombstone; it changes only those tasks (R24). It inserts a
+fencing attempt row per task, so ADR-0007's fence refuses any later write by a running attempt
+(R25). It deletes
 checkpoints, prunes events, empties artifacts, and redacts results and content tables; tasks,
 attempts and usage stay (notes.md#redact). `--force` covers closed Workflows (R21). Temporal keeps
 summaries, questions and outcomes for `TEMPORAL_RETENTION` (72 hours) and in backups; §4.13 never
@@ -369,7 +378,8 @@ rewrites history, and the threat model records it. Rejected: moving that text be
 
 ## Rollout & rollback
 
-Run `make backup`, stop the workers and every `agentctl` process, then run migration 0007: it adds
+Run `make backup`, let open Workflows finish (or cancel them), since blobs named only in their
+state would have no index row, stop the workers and every `agentctl` process, then run migration 0007: it adds
 the tables and columns, backfills the index, `ended_at` and `last_put_at` (set to the migration
 time), remaps classes and changes the defaults. Then start the new workers and use the new CLI. A
 worker started too early writes unindexed references; `reconcile --reindex` repairs them, and `gc`
@@ -386,7 +396,7 @@ operator runs a command.
 
 - Packages / directories: `common/persistence/`, `common/blob_store/`, `common/schemas/`,
   `common/events/`, `harness_activity/`, `orchestrator/` (CLI, submit), `infra/` (Makefile
-  targets, restore script, `db/` init scripts), `tests/`, `docs/` (schemas, runbook, threat model, as-built overview).
+  targets, restore script, `db/` init scripts and their Compose mounts), `tests/`, `.github/` (CI drill step), `docs/` (schemas, runbook, threat model, as-built overview).
 - Data: new `blob_refs`, `audit_log`; the new columns; `retention_class` values, defaults and
   checks on every application table; the bucket.
 - Jobs / APIs: `agentctl gc`, `request delete`, `reconcile`, `backup`; `make backup`, `make
@@ -409,9 +419,9 @@ operator runs a command.
 
 | Phase | Title | Delivers | Status | Tasks |
 | --- | --- | --- | --- | --- |
-| 01 | Reference index, classes, audit log and the payload guard | R1, R2, R4, R5, R14, R18, R19, R20 | draft | 0/13 |
-| 02 | GC and delete-by-request | R3, R6, R7, R8, R9, R10, R11, R12, R13, R15, R21, R22, R24 | draft | 0/10 |
-| 03 | Backup, restore, reconciliation and acceptance | R16, R17, R23 | draft | 0/7 |
+| 01 | Reference index, classes, audit log and the payload guard | R1, R2, R4, R5, R14, R18, R19, R20 | approved | 0/13 |
+| 02 | GC and delete-by-request | R3, R6, R7, R8, R9, R10, R11, R12, R13, R15, R21, R22, R24, R25 | approved | 0/10 |
+| 03 | Backup, restore, reconciliation and acceptance | R16, R17, R23 | approved | 0/7 |
 
 ## Decision log
 

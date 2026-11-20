@@ -32,16 +32,18 @@ Gaps between an upload and the row that names it, today:
 - **Stale attempts**: workspace, session and artifact uploads whose fenced checkpoint is refused
   (ADR-0007; issue #74), possibly after the task has ended. No row ever names them.
 
-All three are covered by upload references (d2): `prepare_task` mints the task ID before it
-uploads, and the harness knows its task.
+All three are covered by upload references (d2). The harness knows its task; `prepare_task`
+today mints the task ID after uploading, and phase 01 task 2.2 moves it first.
 
 ## d2
 
 `blob_refs` columns: `blob_key` (no foreign key), `holder_table`, `holder_key` (the holder row's
-primary key as text), `holder_column`, `task_id`, `request_id`, `retention_class`, `created_at`,
+primary key as text), `holder_column`, `task_id`, `request_id` (null for upload references), `retention_class`, `created_at`,
 `removed_at`, `removed_by`. Primary key: holder table, key, column and blob key. An upload
 reference has holder table `upload`, holder key the task ID and an empty column. On conflict the
-stronger class wins and any removal mark is cleared, as `blob_objects` already does for its class.
+stronger class wins, as `blob_objects` already does for its class, and a GC mark is cleared; a
+mark set by a delete (`removed_by` names a delete operation) stays, so a late upload by a deleted
+task never makes its reference live again (R25).
 
 - **Writers** call one helper, `index_refs(conn, holder, refs, task_id, request_id, class)`,
   inside the transaction that writes the holder row. Every row in the refs table gets it, and
@@ -63,8 +65,9 @@ stronger class wins and any removal mark is cleared, as `blob_objects` already d
   - *dangling*: a live reference whose key is marked removed or missing from the bucket;
   - *orphaned*: a bucket object (from a listing) with no `blob_refs` row, aged by
     `blob_objects.last_put_at` or, for an object with no `blob_objects` row, its `LastModified`.
-- **The backfill** reads the JSON columns with PostgreSQL JSON functions, in the migration. It
-  sets `tasks.ended_at` from `updated_at` for ended tasks, and `blob_objects.last_put_at` to the
+- **The backfill** reads the JSON columns with PostgreSQL JSON functions, in the migration. Each
+  index row's class comes from d3's blob table by holder table and column, never from the JSON
+  (old artifacts say `audit`; old inputs say `task`). It sets `tasks.ended_at` from `updated_at` for ended tasks, and `blob_objects.last_put_at` to the
   migration time: the old `put` never recorded a repeat upload, so an older time could be wrong.
 - **Reindex**: `reconcile --reindex` runs the same backfill query for unindexed references only,
   and inserts a `blob_objects` row (`last_put_at` = now) for each bucket object that has none;
@@ -86,7 +89,7 @@ The one source for each table's class and expiry anchor. A test compares it with
 | `task_inbox`, `idempotency_keys` (`task_id`) | `transcript` | the task's `ended_at` |
 | `sample_orders` | `artifact` | its task's `ended_at` |
 | `message_wakes` | `ephemeral` | the recipient task's `ended_at` (ADR-0010: kept until delivered) |
-| `event_batches` | `ephemeral` | not GC's: `publish` already deletes rows after 600 s (`seen_at`) |
+| `event_batches` | `ephemeral` | the task's `ended_at` (`publish` prunes a log's rows after 600 s only on its next publish) |
 | `blob_objects`, `blob_refs` | the blob's or reference's class | never deleted; marked removed |
 
 | Blobs | Class |
@@ -114,19 +117,20 @@ The one source for each table's class and expiry anchor. A test compares it with
 
 ## revive
 
-`BlobStore.put(data, *, content_type, retention, task_id=None, force=False)`: the protocol,
-`S3BlobStore`, `MemoryBlobStore` and `RecordingBlobStore` all take the new arguments; `force`
-skips the `head_object` check. `RecordingBlobStore.put`:
+`BlobStore.put(data, *, content_type, retention, task_id=None)`: the protocol, `S3BlobStore`,
+`MemoryBlobStore` and `RecordingBlobStore` all take the new argument. `RecordingBlobStore.put`:
 
 1. Collect the bytes and compute the key.
 2. One transaction, locking `blob_objects` before `blob_refs` (the order every removal uses too):
    upsert `blob_objects` (row locked), clearing `removed_at` and `bucket_deleted_at` and setting
-   `last_put_at = now()`; upsert the task's upload reference. Note whether the key was marked.
-3. Upload through the inner store, with `force=True` if the key was marked.
+   `last_put_at = now()`; upsert the task's upload reference (d2: a delete's mark stays).
+3. Upload through the inner store. If the bucket step already deleted the object, `head_object`
+   misses and the bytes go up; if it has not, it will see the cleared mark and skip.
 
 The bucket step of a removal (d6) locks the same row, re-reads it, and deletes the object only if
-`removed_at` is still set and `last_put_at` is older than `removed_at`, holding the lock until the
-delete returns, then sets `bucket_deleted_at`. The cases:
+`removed_at` is still set, holding the lock until the delete returns, then sets
+`bucket_deleted_at`. No timestamp comparison is needed: a `put` that committed first has cleared
+the mark. The cases:
 
 - *Resubmitted bytes after a delete*: step 2 clears the mark; step 3 uploads; the next `gc` sees a
   live upload reference.
@@ -151,7 +155,9 @@ What `request delete` does to each table, for every task in its fixed list:
 | `task_messages` | `body` replaced by the marker |
 | `idempotency_keys` | `result` replaced by the marker |
 | `agent_events`, `event_logs` | pruned to the end of the log (D11): offsets and names describe the work |
-| `task_attempts`, `usage_ledger` | kept unchanged (audit, no content) |
+| `sample_orders`, `task_inbox`, `message_wakes` | rows deleted |
+| `task_attempts` | kept, plus one fencing row per task (below) |
+| `usage_ledger` | kept unchanged (audit, no content) |
 
 The markers keep `TaskResult` valid, so `agentctl task output` still reads the row.
 
@@ -162,6 +168,9 @@ The markers keep `TaskResult` valid, so `agentctl task output` still reads the r
   until the delete ends. Under the lock it reads the request's tasks, checks they have ended (R12),
   and writes the list into its first tombstone. Every batch selects by that list, never by
   `request_id`, so a joining task's upload references, written before its `tasks` row, are untouched.
+- **Fence.** The first batch inserts, for each task, a `task_attempts` row with a turn and attempt
+  above any existing one and status `deleted`. ADR-0007's fence (`NO_NEWER_ATTEMPT`) then refuses
+  every later checkpoint, event and message write by a still-running attempt (R25).
 - **`--force`**: a task that has not ended counts as ended when Temporal's `describe` reports its
   Workflow closed (terminated, cancelled, timed out). The delete then sets the task to `failed`
   with `ended_at` now, in the first batch.
@@ -174,11 +183,12 @@ The markers keep `TaskResult` valid, so `agentctl task output` still reads the r
 
 Order of one removal batch (GC or delete), at most 500 rows:
 
-1. One transaction: delete, prune (`prune(conn=..., limit=...)`) or redact the rows; mark their
-   references removed; for each blob left with no live reference, lock its `blob_objects` row,
-   re-check, and set `removed_at` and `removed_by` (the operation ID); write the batch's tombstone
-   (`audit_log`: action, subject, reason, actor, time, operation ID, counts of rows, references and
-   blobs). Locks are taken `blob_objects` first, as in revive.
+1. One transaction: lock the `blob_objects` rows of every key the batch's references name, in key
+   order (the order `put` uses); delete, prune (`prune(conn=..., limit=...)`, both optional so
+   `MemoryTransport` and the `EventTransport` protocol still fit) or redact the rows; mark their
+   references removed; for each blob left with no live reference set `removed_at` and `removed_by`
+   (the operation ID); write the batch's tombstone (`audit_log`: action, subject, reason, actor,
+   time, operation ID, counts of rows, references and blobs).
 2. For each marked blob, the bucket step in revive. A missing object is not an error.
 
 A run first finishes every blob with `removed_at` set and `bucket_deleted_at` null, from earlier
@@ -186,38 +196,45 @@ runs, before new work; that set stays small. A run's tombstones share its operat
 per batch, so nothing is counted twice across a rerun. `BlobExpired` is raised when `removed_at` is
 set, before the bucket is asked; `agentctl task output` reads through `RecordingBlobStore` for this.
 
-The existing `agentctl events prune` becomes a removal through this engine: its events' references
-are marked and each batch gets a tombstone.
+The existing `agentctl events prune` becomes a removal through this engine: it takes the D4 lock
+and `--dry-run`, its events' references are marked and each batch gets a tombstone.
 
 ## d8
 
 `agentctl backup` (behind `make backup`), into `backups/<UTC time>/`. It holds the D4 lock on its
 own connection for the whole run:
 
-1. `pg_dump -Fc praxismesh` through `docker compose exec db`.
-2. `pg_dump -Fc` of `temporal` and `temporal_visibility`.
+1. Stop the worker services (`docker compose stop`), so no Activity changes rows or Workflows
+   between the dumps.
+2. `pg_dump -Fc` of `praxismesh`, `temporal` and `temporal_visibility` through
+   `docker compose exec db`, then start the workers again.
 3. Copy every bucket object to `blobs/<key>` through the S3 API (boto3, already a dependency).
 4. Write `manifest.json`: times, row counts, object count, migration head, versions.
 
 Order: the application database first, so no restored row names a blob newer than the copy. A blob
 uploaded after the dump is restored as a bucket object with no row: an orphan by the bucket listing
 (d2), which `gc` removes after the window. The lock keeps removals out between the dump and the
-copy. Temporal's dumps come next, so a Workflow may be newer than the restored rows. Reconcile
-covers references and blobs only, as §4.13 asks; comparing Workflows with rows is Phase 9 hardening.
+copy. With the workers stopped, no Workflow advances between the dumps. Reconcile covers
+references, blobs and unended tasks whose Workflow is closed; a full comparison of every Workflow
+with its rows is Phase 9 hardening.
 
 `make restore BACKUP=backups/<time>` (`infra/restore.sh`):
 
-1. Refuse unless `tasks` is missing or empty, `temporal` holds no Workflow execution, and the
+1. Refuse unless `tasks` is missing or empty, Temporal's API lists no Workflow in the app's
+   namespace (system namespaces ignored; no SQL on Temporal's databases, ADR-0002), and the
    bucket is empty (R23).
 2. Stop the workers and Temporal.
 3. Drop `praxismesh`, `temporal` and `temporal_visibility`, then run `infra/db/databases.sh`: the
    `CREATE DATABASE`, `REVOKE`/`GRANT CONNECT` and extension statements, moved out of `init.sh`
-   (which runs them once through it). Then run `roles.sh` (already rerunnable) and `pg_restore`
+   (which runs them once through it; Compose mounts it next to `init.sh`). Then run `roles.sh` (already rerunnable) and `pg_restore`
    each dump.
-4. Load the blobs, start Temporal and the workers, and run `agentctl reconcile`.
+4. Load the blobs, start Temporal and the workers, and print `agentctl reconcile`'s report; its
+   findings are information, so restore does not fail on its exit status.
 
 A failure after step 3 starts leaves a partial load, which step 1 then refuses; `make reset`
 clears the stack, and restore runs again.
 
-**The drill in CI** backs up the `stack` job's project, runs `make reset`, and restores into the
-same project, so the job starts no second stack (its budget is 45 minutes, about 32 used).
+**The drill** is `make drill`, opt-in and never part of `make smoke`, because it runs `make reset`.
+It needs a stack started with `make up`: it backs up, resets, runs `make up`, restores into the same
+project and checks the result. CI runs it as its own step in the `stack` job, after the smoke
+tests, so the job starts no second stack (its budget is 45 minutes, about 32 used).
