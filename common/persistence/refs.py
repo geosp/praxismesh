@@ -127,6 +127,25 @@ async def index_refs(
     request_id: str | None = None,
     retention: RetentionClass | None = None,
 ) -> None:
+    await index_keys(
+        conn,
+        holder,
+        [ref.key for ref in refs],
+        task_id=task_id,
+        request_id=request_id,
+        retention=retention,
+    )
+
+
+async def index_keys(
+    conn: AsyncConnection,
+    holder: Holder,
+    blob_keys: Iterable[str],
+    *,
+    task_id: str,
+    request_id: str | None = None,
+    retention: RetentionClass | None = None,
+) -> None:
     """Write the holder's `blob_refs` rows in the caller's transaction (D2).
 
     The class is `retention`, or the holder's class from notes.md#d3. The request
@@ -135,7 +154,7 @@ async def index_refs(
     stays, so a deleted task never makes its reference live again (R25).
     """
     cls = current_class(retention or REFERENCE_CLASS[(holder.table, holder.column)])
-    keys = sorted({ref.key for ref in refs})
+    keys = sorted(set(blob_keys))
     if not keys:
         return
     request = (

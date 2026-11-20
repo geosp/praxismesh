@@ -12,12 +12,19 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from common.blob_store import BlobStore
-from common.blob_store.base import RETENTION_ORDER
+from common.blob_store.base import collect, content_key, current_class
 from common.errors import TaskAlreadyExists
 from common.persistence.fence import NO_NEWER_ATTEMPT as _NO_NEWER_ATTEMPT
 from common.persistence.fence import TASK_LOCK as _TASK_LOCK
 from common.persistence.fence import FenceRejected
-from common.persistence.refs import checkpoint_holder, index_refs, task_holder
+from common.persistence.refs import (
+    checkpoint_holder,
+    index_keys,
+    index_refs,
+    rank_sql,
+    task_holder,
+    upload_holder,
+)
 from common.persistence.settings import app_database_url
 from common.schemas import BlobRef, RetentionClass, TaskStart
 
@@ -639,7 +646,9 @@ class UsageLedgerRepository:
 
 class RecordingBlobStore:
     """A `BlobStore` that also records every stored blob in `blob_objects`, with the
-    strongest retention class requested so far (RFC: retention from the first write)."""
+    strongest retention class requested so far (RFC: retention from the first write),
+    and the upload reference of the task it was stored for (Phase 3A persistence
+    plan D2, D10; notes.md#revive)."""
 
     def __init__(self, inner: BlobStore, engine: AsyncEngine) -> None:
         self.inner = inner
@@ -651,30 +660,40 @@ class RecordingBlobStore:
         *,
         content_type: str = "application/octet-stream",
         retention: RetentionClass,
+        task_id: str | None = None,
     ) -> BlobRef:
-        ref = await self.inner.put(data, content_type=content_type, retention=retention)
-        order = " ".join(f"WHEN '{k}' THEN {v}" for k, v in RETENTION_ORDER.items())
+        """Record the blob, then upload it (notes.md#revive):
+
+        1. collect the bytes and compute the key;
+        2. in one transaction, `blob_objects` row first (locked by the upsert,
+           the order every removal uses), clear any removal mark, set
+           `last_put_at`, and write the task's upload reference;
+        3. upload through the inner store, which skips bytes it already holds.
+        """
+        body = await collect(data)
+        key, checksum = content_key(body)
+        retention = current_class(retention)
+        stronger_class = (
+            f"CASE WHEN {rank_sql('EXCLUDED.retention_class')} "
+            f"> {rank_sql('blob_objects.retention_class')} "
+            "THEN EXCLUDED.retention_class ELSE blob_objects.retention_class END"
+        )
         async with self.engine.begin() as conn:
             await conn.execute(
                 text(
-                    f"""
-                    INSERT INTO blob_objects (key, checksum, bytes, content_type, retention_class)
-                    VALUES (:k, :c, :b, :ct, :r)
-                    ON CONFLICT (key) DO UPDATE SET retention_class = CASE
-                        WHEN (CASE EXCLUDED.retention_class {order} END)
-                           > (CASE blob_objects.retention_class {order} END)
-                        THEN EXCLUDED.retention_class ELSE blob_objects.retention_class END
-                    """
+                    "INSERT INTO blob_objects (key, checksum, bytes, content_type, "
+                    "retention_class, last_put_at) VALUES (:k, :c, :b, :ct, :r, now()) "
+                    f"ON CONFLICT (key) DO UPDATE SET retention_class = {stronger_class}, "
+                    "removed_at = NULL, removed_by = NULL, bucket_deleted_at = NULL, "
+                    "last_put_at = now()"
                 ),
-                {
-                    "k": ref.key,
-                    "c": ref.checksum,
-                    "b": ref.bytes,
-                    "ct": ref.content_type,
-                    "r": ref.retention_class,
-                },
+                {"k": key, "c": checksum, "b": len(body), "ct": content_type, "r": retention},
             )
-        return ref
+            if task_id is not None:
+                await index_keys(
+                    conn, upload_holder(task_id), [key], task_id=task_id, retention=retention
+                )
+        return await self.inner.put(body, content_type=content_type, retention=retention)
 
     async def get(self, ref: BlobRef) -> bytes:
         return await self.inner.get(ref)

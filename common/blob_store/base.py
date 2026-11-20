@@ -99,7 +99,12 @@ class BlobStore(Protocol):
         *,
         content_type: str = "application/octet-stream",
         retention: RetentionClass,
-    ) -> BlobRef: ...
+        task_id: str | None = None,
+    ) -> BlobRef:
+        """Store `data`. `task_id` names the task the upload is made for; a store
+        that records references holds the blob for it (Phase 3A persistence plan
+        D2); the others ignore it."""
+        ...
 
     async def get(self, ref: BlobRef) -> bytes: ...
 

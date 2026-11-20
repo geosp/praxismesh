@@ -39,6 +39,7 @@ class MemoryBlobStore:
         *,
         content_type: str = "application/octet-stream",
         retention: RetentionClass,
+        task_id: str | None = None,  # recorded only by RecordingBlobStore
     ) -> BlobRef:
         body = await collect(data)
         key, checksum = content_key(body)
