@@ -3,6 +3,10 @@ event (Phase 3A persistence plan phase 01 task 3.3; R18, D9)."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from typing import cast
+
+import pytest
 from temporalio.api.common.v1 import Header, Memo, Payload, Payloads
 from temporalio.api.enums.v1 import EventType
 from temporalio.api.history.v1 import (
@@ -11,8 +15,10 @@ from temporalio.api.history.v1 import (
     HistoryEvent,
     WorkflowExecutionStartedEventAttributes,
 )
+from temporalio.client import Client
 
-from tests.support.history_guard import LIMIT_BYTES, large_payloads
+from tests.support import history_guard
+from tests.support.history_guard import LIMIT_BYTES, LargePayload, guard_failure, large_payloads
 
 
 def payload(size: int) -> Payload:
@@ -62,3 +68,38 @@ def test_payloads_up_to_the_limit_pass() -> None:
         ),
     )
     assert large_payloads("wf", history(event)) == []
+
+
+async def test_the_guard_fails_when_temporal_cannot_be_reached() -> None:
+    """Review F84: an unreachable Temporal is a failure, not a silent pass."""
+
+    async def unreachable() -> Client:
+        raise RuntimeError("connection refused")
+
+    failure = await guard_failure(datetime.now(UTC), connect=unreachable, settle=0)
+    assert failure is not None and "connection refused" in failure
+
+
+async def test_the_guard_reports_each_large_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The failing path of the session guard (review F84)."""
+
+    async def found(client: Client, since: datetime) -> list[LargePayload]:
+        return [LargePayload("wf-1", 5, "activity_task_completed", LIMIT_BYTES + 1)]
+
+    async def connect() -> Client:
+        return cast(Client, object())
+
+    monkeypatch.setattr(history_guard, "check_since", found)
+    failure = await guard_failure(datetime.now(UTC), connect=connect, settle=0)
+    assert failure is not None and "wf-1 event 5" in failure
+
+
+async def test_the_guard_passes_with_no_large_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def found(client: Client, since: datetime) -> list[LargePayload]:
+        return []
+
+    async def connect() -> Client:
+        return cast(Client, object())
+
+    monkeypatch.setattr(history_guard, "check_since", found)
+    assert await guard_failure(datetime.now(UTC), connect=connect, settle=0) is None

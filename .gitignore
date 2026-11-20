@@ -35,3 +35,6 @@ pr-description.md
 .vscode/*
 !.vscode/extensions.json
 .DS_Store
+
+# Phase 3A backups (`make backup`): clear-text dumps, never committed (threat model R9)
+/backups/

@@ -336,7 +336,10 @@ Temporal's own limits (they warn at 512 KiB and fail at 2 MiB).
 
 `put` collects the bytes (as the S3 adapter already does), then, under the key's `blob_objects`
 row lock, clears any removal mark, records the upload time and the task's reference; a reference
-marked by a delete stays marked. A removed object is simply missing, so the upload goes through. The upload reference is unfenced on purpose: it only keeps a
+marked by a delete stays marked. A removed object is simply missing, so the upload goes through.
+A task a delete marked revives nothing: under its task lock, its upload reference is written with
+the delete's mark, the blob keeps its mark, and bytes with no live holder are not uploaded
+(impl-review F80, F81). The upload reference is unfenced on purpose: it only keeps a
 blob alive, which ADR-0007's fence need not guard. Rejected: refusing to `put` removed bytes (a
 resubmitted file would fail). Details: notes.md#revive
 
@@ -419,7 +422,7 @@ operator runs a command.
 
 | Phase | Title | Delivers | Status | Tasks |
 | --- | --- | --- | --- | --- |
-| 01 | Reference index, classes, audit log and the payload guard | R1, R2, R4, R5, R14, R18, R19, R20 | in-progress | 13/13 |
+| 01 | Reference index, classes, audit log and the payload guard | R1, R2, R4, R5, R14, R18, R19, R20 | impl-reviewed | 13/13 |
 | 02 | GC and delete-by-request | R3, R6, R7, R8, R9, R10, R11, R12, R13, R15, R21, R22, R24, R25 | approved | 0/10 |
 | 03 | Backup, restore, reconciliation and acceptance | R16, R17, R23 | approved | 0/7 |
 

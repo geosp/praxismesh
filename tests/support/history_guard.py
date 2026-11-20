@@ -4,6 +4,8 @@ means something large slipped into Temporal history."""
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -83,3 +85,26 @@ async def check_since(client: Client, since: datetime) -> list[LargePayload]:
             raise
         found.extend(large_payloads(workflow_id, History(events=history.events)))
     return found
+
+
+async def guard_failure(
+    since: datetime,
+    *,
+    connect: Callable[[], Awaitable[Client]],
+    settle: float = 2.0,
+) -> str | None:
+    """The session guard's verdict: a failure message, or None when every run
+    started since `since` was checked and none is too large. Temporal that cannot
+    be reached is a failure, since nothing was checked (review F84)."""
+    try:
+        client = await connect()
+    except RuntimeError as e:
+        return f"history payload guard could not reach Temporal, so checked nothing: {e}"
+    await asyncio.sleep(settle)  # visibility lags behind the last starts
+    large = [
+        f"{p.workflow_id} event {p.event_id} ({p.event_type}): {p.size} bytes"
+        for p in await check_since(client, since)
+    ]
+    if not large:
+        return None
+    return f"{len(large)} history payload(s) over {LIMIT_BYTES} bytes:\n" + "\n".join(large)

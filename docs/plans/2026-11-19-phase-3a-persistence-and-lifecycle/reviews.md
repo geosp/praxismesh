@@ -108,3 +108,51 @@ After the fixes (2026-11-20): `plan-tool check` reports 0 errors and 1 warning (
 
 ## 2026-11-20 · approved · plan
 Approved by the project owner ("Apply and approved") after design-review round 3; the plan and phases 01-03 are approved.
+
+## 2026-11-20 · impl-review · phase 01 · round 1 · changes-requested
+Diff base 8cc4355..a50c358 (frozen review commit a50c358). Reviewers: contract ✅ · failure and retry ✅ · scope and composition ✅ (raw: docs/reviews/phase-3a/raw/persistence-impl-review-phase-01-round-1-*.md). Structure check: 0 errors, 1 warning (420 body lines, budget 250); all 13 tasks ticked.
+
+| ID | Sev | Lens | Req | Finding | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| F80 | Major | failure, scope | D10, R25, R10 | `put` clears a blob's removal mark unconditionally, so a deleted task's late upload of the same bytes re-uploads them with no live reference; no check (orphaned, expired, rowless) ever reaches them and old refs read deleted content (plan gap, notes#revive step 2) | fixed: tests/integration/test_upload_refs.py::test_a_deleted_tasks_late_upload_of_the_same_bytes_revives_nothing, test_refs.py::test_orphans_with_their_age; repositories.py `put`, refs.py `orphaned`; D10, notes#revive, notes#d2 |
+| F81 | Major | scope | D2, R25 | The delete mark is kept per (task, blob) row: a deleted task's stale attempt uploading new bytes inserts a fresh live upload reference | fixed: test_upload_refs.py::test_a_deleted_tasks_late_upload_of_new_bytes_leaves_no_live_reference; `put` takes `TASK_LOCK` and writes the delete's mark (refs.py `delete_mark`, `index_keys(removed_by=)`); notes#redact task locks, phase 02 task 3.2 |
+| F82 | Major | failure | R11, R25 | A retried `end_task` (worker died before Temporal recorded completion) rewrites `tasks.result` after a delete redacted it | fixed: test_index_writers.py::test_a_retried_end_task_keeps_a_redaction; messages.py `end_task` no-op once ended; notes#redact |
+| F83 | Nit | all | R4, D3 | New `BlobRef`s carry the class from old S3 metadata (`audit`); S3 repeat-put over `task` metadata untested; two tests loosened to accept it | deferred: S3 metadata never decides a lifetime (D3); revisit with phase 02 `BlobExpired` reads |
+| F84 | Nit | all | R18 | History guard only warns when Temporal is unreachable, skips runs a test deleted, waits a fixed 2 s; its failing path is not exercised | fixed: tests/test_history_guard.py (three `guard_failure` tests); guard fails when Temporal is unreachable |
+| F85 | Nit | all | D9 | A turn resumed from a pre-change checkpoint passes untruncated questions into the result (rollout drains first) | fixed: test_harness_activity.py::test_finish_shortcut_bounds_old_questions; activity.py outcome uses `bounded_questions` |
+| F86 | Nit | failure, scope | D10, R9 | DB commits before `inner.put`; a failed upload leaves a live ref with no object (`BlobNotFound`, not `BlobExpired`) until a retry | accepted: the order notes#revive prescribes; a retry heals it |
+| F87 | Nit | contract | R1, R20 | No test makes the index write fail inside `record_task`/`end_task`/`publish` to show the holder row rolls back | fixed: test_index_writers.py::test_a_failed_index_write_rolls_back_its_holder_row (test only; code already correct) |
+| F88 | Nit | contract | R1 | The DSH session upload's `task_id` is unobserved by any test | fixed: test_dsh_runner_parts.py::test_session_capture_is_held_by_its_task |
+| F89 | Nit | contract, scope | R1 | The submit-upload test uses one input file; R1's scenario names two | fixed: test_upload_refs.py submit test uses two input files plus one duplicate |
+| F90 | Nit | contract | D10 | `blob_objects`-first lock order is unobservable by single-session tests | accepted: exercised by phase 02 concurrent-removal tests |
+| F91 | Nit | contract, scope | R4 | Server defaults of `idempotency_keys`, `event_batches`, `task_messages`, `task_inbox`, `agent_events` not read back after 0007 | accepted: defaults come from the `TABLES` dict a test checks |
+| F92 | Nit | contract, failure | Rollout | Downgrade is lossy: rows remapped to `ephemeral` stay `ephemeral` | accepted: downgrade limits are documented in the plan Rollout |
+| F93 | Nit | contract | D4 | Reindex skips bucket objects whose key is not a content key | accepted: documented narrowing; non-content keys are reported as orphans |
+| F94 | Nit | contract | docs | Threat model says `backups/` is git-ignored; `.gitignore` has no entry yet | fixed: `.gitignore` `/backups/` |
+| F95 | Nit | failure | tests | Scratch databases are left behind if the test process is killed | accepted: UUID names avoid collisions; `make reset` clears them |
+| F96 | Nit | scope | R1 | Uploads for a colliding user task ID are held by the existing task before `TaskAlreadyExists` | accepted: harmless mis-attribution; the uploads expire with that task |
+| F97 | Nit | scope | D3 | `index_keys` never refreshes `created_at`, so a re-put `ephemeral` blob ages from its first write | accepted: nothing writes `ephemeral` yet; revisit when something does |
+| F98 | Nit | scope | R1 | A retried `end_task` with a different artifact list leaves the earlier refs live | fixed: by F82 (a retried `end_task` changes nothing) |
+| F99 | Nit | scope | D11 | `events prune` deletes `agent_events` rows and leaves their `blob_refs` live until phase 02 | deferred: phase 02 task 1.4 rewires `events prune` (D11) |
+| F100 | Nit | scope | D2, D3 | A stale attempt's unnamed artifact upload is kept 90 days after the task ends | deferred: note on issue #74 (unnamed stale-attempt uploads) |
+| F101 | Nit | scope | D5 | `rowless_uploads` ages by per-blob `last_put_at`, so another task's re-put restarts the window | accepted: conservative (keeps blobs longer, never shorter) |
+
+After the fixes (2026-11-20): every Major fixed test first, each test confirmed failing with its fix reverted; `plan-tool check` 0 errors, 1 warning. Round 2 (fresh failure and scope lenses) pending.
+
+## 2026-11-20 · impl-review · phase 01 · round 2 · passed
+Diff base 8cc4355..dccc8ff (frozen review commit dccc8ff). Reviewers (the lenses that raised round 1's Majors): failure and retry ✅ · scope and composition ✅ (raw: docs/reviews/phase-3a/raw/persistence-impl-review-phase-01-round-2-*.md). Contract not rerun (raised no Major). F80-F82 did not come back. Repeats of closed findings (F83, F84's deleted-run and settle parts, F86, F95, F99, F101) stay closed.
+
+| ID | Sev | Lens | Req | Finding | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| F102 | Nit | failure | R2, R20 | A worker started too early runs the old `end_task`, leaving an ended task with `ended_at` null; `reindex` does not repair it, so its blobs never expire | open |
+| F103 | Nit | failure | R20 | Since F82, a retried `complete_task` returns usage from a fresh ledger read while `tasks.result` keeps the first call's values | open |
+| F104 | Nit | failure | D10 | `put` for a deleted task uploads when the blob row is unmarked, though notes say "live for another holder"; a cleared-mark orphan is re-uploaded (still reached by `orphaned`) | open |
+| F105 | Nit | failure | tests | `scratch_database` creates the database before its `try`; a failed setup step leaves it behind | open |
+| F106 | Nit | scope | R18 | `make restart-check` and `make workers-check` start Workflows in the CI stack job but are outside the pytest session guard | open |
+| F107 | Nit | scope | R18, D9 | The guard measures each `Payload`, not an event's whole `Payloads`; equal today (one argument per Activity) | open |
+| F108 | Nit | scope | R18 | The 20-question test is ASCII only and `openai` only; 4-byte UTF-8 still fits under 64 KiB | open |
+| F109 | Nit | scope | R8, D5 | `reindex` gives a bucket-only object `last_put_at = now()`, restarting its window (by notes#d2) | open |
+| F110 | Nit | scope | R17, drill | Integration tests leave `audit_log`, fake `blob_refs` and row-less upload refs in the stack database; phase 03's drill reconcile, run after `make smoke` in CI, will report them | open |
+| F111 | Nit | scope | R2 | The migration test seeds only a `succeeded` ended task, not `failed` or `needs_input` | open |
+| F112 | Nit | scope | R14 | The append-only trigger is per row: an `UPDATE`/`DELETE` matching no rows succeeds (no data can change) | open |
+| F113 | Nit | scope | R4 | Tests still `put(..., retention="task")`; mapped to `transcript`, never stored | open |

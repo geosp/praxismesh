@@ -294,17 +294,21 @@ class MessageRepository:
         questions to and from it are cancelled, messages it never read become
         undelivered, and askers waiting on it are woken. The same transaction sets
         `ended_at` and indexes the result's artifacts (Phase 3A persistence plan
-        R1, R20)."""
+        R1, R20). A task that already ended is left as it is: a retry after a
+        committed end must not write back a result a delete redacted (review F82);
+        the first call already closed its messages and indexed its artifacts."""
         async with self.engine.begin() as conn:
             request = await self._request_of(conn, task_id)
             await conn.execute(_REQUEST_LOCK, {"r": request})
-            await conn.execute(
+            ended = await conn.execute(
                 text(
                     "UPDATE tasks SET status = :s, result = :r, updated_at = CURRENT_TIMESTAMP, "
-                    "ended_at = coalesce(ended_at, CURRENT_TIMESTAMP) WHERE task_id = :t"
+                    "ended_at = CURRENT_TIMESTAMP WHERE task_id = :t AND ended_at IS NULL"
                 ),
                 {"t": task_id, "s": status, "r": json.dumps(result)},
             )
+            if ended.rowcount == 0:
+                return
             await index_keys(
                 conn,
                 task_holder(task_id, "result"),

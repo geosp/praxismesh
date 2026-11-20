@@ -386,6 +386,21 @@ async def test_finish_shortcut(engine: AsyncEngine, tmp_path: Path) -> None:
     assert outcome.checkpoint_id == cp_id
 
 
+async def test_finish_shortcut_bounds_old_questions(engine: AsyncEngine, tmp_path: Path) -> None:
+    """Review F85 (D9): a finish checkpoint written before the cap still yields at
+    most 20 questions of 500 characters."""
+    h = await harness(engine, tmp_path, done)
+    await add_checkpoint(
+        h,
+        engine,
+        position=0,
+        files={"order-summary.md": "x"},
+        finish={"status": "needs_input", "summary": "old", "questions": ["q" * 600] * 21},
+    )
+    outcome = await h.run(attempt=2)
+    assert outcome.questions == ["q" * 500] * 20
+
+
 async def test_template_refusals_are_not_attempts(engine: AsyncEngine, tmp_path: Path) -> None:
     h = await harness(engine, tmp_path, done)
     with pytest.raises(TemplateVersionUnavailable):

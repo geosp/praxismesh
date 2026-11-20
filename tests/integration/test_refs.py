@@ -67,7 +67,7 @@ async def add_ref(
     await conn.execute(
         text(
             "INSERT INTO blob_refs (blob_key, holder_table, holder_key, holder_column, task_id, "
-            "retention_class, created_at) VALUES (:b, :ht, :hk, :hc, :t, :c, :at)"
+            "retention_class, created_at, removed_at) VALUES (:b, :ht, :hk, :hc, :t, :c, :at, :r)"
         ),
         {
             "b": blob,
@@ -77,6 +77,7 @@ async def add_ref(
             "t": task_id,
             "c": values["retention_class"],
             "at": values["created_at"],
+            "r": values.get("removed_at"),
         },
     )
 
@@ -149,12 +150,24 @@ async def test_orphans_with_their_age(engine: AsyncEngine) -> None:
     async with engine.begin() as conn:
         await add_blob(conn, key("recorded orphan"), last_put_at=old)
         await add_ref(conn, key("held"), ("upload", "task-x", ""), "task-x")
-        bucket = listing(key("recorded orphan"), key("bucket only"), key("held"), modified=modified)
+        # Review F80: only removed references, the blob unmarked (put again with no
+        # task after GC): nothing else would ever reach it.
+        await add_blob(conn, key("revived"), last_put_at=old)
+        await add_ref(conn, key("revived"), ("upload", "task-y", ""), "task-y", removed_at=NOW)
+        # Marked and waiting for the bucket step: not an orphan.
+        await add_blob(conn, key("pending"), last_put_at=old, removed_at=NOW)
+        await add_ref(conn, key("pending"), ("upload", "task-z", ""), "task-z", removed_at=NOW)
+        bucket = listing(
+            key("recorded orphan"),
+            key("bucket only"),
+            key("held"),
+            key("revived"),
+            key("pending"),
+            modified=modified,
+        )
         found = await refs.orphaned(conn, bucket)
-    assert found == [
-        refs.Orphan(k, at)
-        for k, at in sorted({key("recorded orphan"): old, key("bucket only"): modified}.items())
-    ]
+    expected = {key("recorded orphan"): old, key("bucket only"): modified, key("revived"): old}
+    assert found == [refs.Orphan(k, at) for k, at in sorted(expected.items())]
 
 
 async def test_expiry(engine: AsyncEngine) -> None:
