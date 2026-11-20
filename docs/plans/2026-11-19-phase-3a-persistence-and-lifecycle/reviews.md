@@ -35,3 +35,39 @@ Pinned at 417e8f9. Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out �
 | F28 | Nit | fresh reader | Readability: the Summary's risk sentence, D6's first sentence, D5's chain, "plans" for tables and documents, repeated facts, multi-rule R4, R8, R10, R11, R13, R15-R17, "owner" used twice, "batches of" what | fixed: Summary, D5, D6, D1, Terms (Holder); R4, R8, R11, R13, R15, R16 split or reworded (R19, R23) |
 
 After the fixes (2026-11-19): `plan-tool check` reports 0 errors and 1 warning (379 body lines, budget 250). The growth is the new requirements (R19-R23, one rule each), decisions (D10-D12) and Terms the findings asked for; kept rather than moved to notes.md.
+
+## 2026-11-19 · design-review · plan · round 2 · changes-requested
+Pinned at c6efe44. Reviewers: fresh reader ✅ · codebase fit ✅ · zoom out ✅ (raw: docs/reviews/phase-3a/raw/persistence-design-review-round-2-*.md). Structure check: 1 warning (379 body lines, budget 250). Reopened: F8, F11, F15 (their fixes did not hold; see F50, F30, F29).
+
+| ID | Sev | Lens | Finding | Resolution |
+| --- | --- | --- | --- | --- |
+| F29 | Major | codebase fit, zoom out | Reopens F15: `_REQUEST_LOCK` is transaction-scoped, so batched deletes release it; a joining submit's upload references carry the request ID before `record_task` and get removed | open |
+| F30 | Major | codebase fit, zoom out | Reopens F11: `TableTransport.prune` opens its own transaction, has no batch limit and marks no references, so it cannot share D6's batch transaction | open |
+| F31 | Major | codebase fit | `message_wakes` as `ephemeral` from `created_at` deletes undelivered wakes, contradicting ADR-0010 | open |
+| F32 | Major | codebase fit, zoom out | References written after `end_task` (stale attempts, issue #74) never get an expiry | open |
+| F33 | Major | codebase fit, zoom out | "No `tasks` row after 24 h" cannot tell a queued Workflow from one that never started; its inputs are removed | open |
+| F34 | Major | zoom out | Backfilling `last_put_at` from `created_at` makes recently re-put blobs look old | open |
+| F35 | Major | codebase fit | A rerun cannot tell which marked blobs are still in the bucket; work grows without bound | open |
+| F36 | Major | codebase fit, zoom out | Bucket objects with no `blob_objects` row are invisible to GC and reconcile, though notes#d8 relies on GC removing them | open |
+| F37 | Major | codebase fit | Restore's drop-and-recreate loses the database grants of `init.sh` and `roles.sh` (`praxis_comms` CONNECT) | open |
+| F38 | Major | zoom out | Downgrade fails once new code wrote new classes (old `RetentionClass`, histories, `RETENTION_ORDER`); the CLI version is not in Rollout | open |
+| F39 | Major | fresh reader | Summary omits the Temporal history residual, the `questions` truncation and 64 KiB test, and the stop-workers rollout | open |
+| F40 | Major | fresh reader | `end_task` and the session, message and tool-result tables are never introduced | open |
+| F41 | Major | fresh reader | Lifetime anchors, the redaction list and which rows a delete removes or redacts live only in notes.md | open |
+| F42 | Major | fresh reader | D5 vs D2: an upload reference of a task with no row is live yet has no stated expiry | open |
+| F43 | Major | fresh reader | Terms describes `blob_objects` upload times and removal mark as existing; Impact lists them as new | open |
+| F44 | Major | fresh reader | Impact's "no Workflow code changes" vs R5's decoding of `task`; where the type widens is unsaid | open |
+| F45 | Nit | codebase fit | `event_batches` has `seen_at`, not `created_at`, and publish already deletes its rows after 600 s | open |
+| F46 | Nit | codebase fit | A string marker in `result.questions` (a list) or a `None` `failure_reason` breaks `TaskResult` validation | open |
+| F47 | Nit | codebase fit | The demo's "expired read" after a delete never reaches `BlobExpired` (artifacts emptied); only GC does | open |
+| F48 | Nit | codebase fit | ADR-0007 asks new attempt write paths to take the fence or justify; the unfenced upload reference is not justified | open |
+| F49 | Nit | codebase fit, zoom out | `put`'s new task argument and forced upload change the `BlobStore` protocol and `MemoryBlobStore`; not in What changes | open |
+| F50 | Nit | codebase fit, zoom out | Reopens F8: "S3 object metadata is left as written" is false; `put` still rewrites it via `copy_object` | open |
+| F51 | Nit | codebase fit | `put` locks `blob_objects` then `blob_refs`; a removal does the reverse; no fixed lock order | open |
+| F52 | Nit | codebase fit | The existing `agentctl events prune` removes indexed holders without marks or tombstones | open |
+| F53 | Nit | codebase fit, zoom out | D4's lock must be session-level and its key named; `backup.sh` cannot hold it from a shell | open |
+| F54 | Nit | codebase fit | A second Compose project in the CI `stack` job exceeds its 45-minute budget (about 32 used) | open |
+| F55 | Nit | zoom out | notes#d3 says `blob_objects` and `blob_refs` expire "with its references"; marked rows must stay | open |
+| F56 | Nit | zoom out | One task uploading the same bytes under two classes keeps the first class; the stronger should win | open |
+| F57 | Nit | zoom out | R23's refusal checks only `tasks` and the bucket, not the `temporal` database | open |
+| F58 | Nit | fresh reader | Readability and terms: Summary cites R21 for the wrong clause; multi-rule R1, R6, R7, R13, R17, R20, R22; minor undefined names (`RecordingBlobStore`, `finish_task_body`, `make reset`, `schemas.md` path); plan vs roadmap phase numbering; owner date repeated | open |
