@@ -26,9 +26,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from common.blob_store.base import RETENTION_ORDER, BucketObject
-from common.persistence.retention import DEFAULT_LIFETIME, SAFETY_WINDOW
-from common.schemas import RetentionClass
+from common.blob_store.base import RETENTION_ORDER, BucketObject, current_class
+from common.persistence.retention import DEFAULT_LIFETIME, REFERENCE_CLASS, SAFETY_WINDOW
+from common.schemas import BlobRef, RetentionClass
 
 UPLOAD = "upload"  # holder table of an upload reference
 # A delete's operation ID starts with this; its marks are never cleared (D10, R25).
@@ -90,6 +90,83 @@ def _lifetime_sql(column: str, lifetimes: Mapping[RetentionClass, timedelta | No
         if life is not None
     )
     return f"(CASE {column} {cases} END)"
+
+
+@dataclass(frozen=True)
+class Holder:
+    """What holds a reference: a row's table, primary key as text and column, or
+    (`upload`, task ID, '') for a task's own uploads."""
+
+    table: str
+    key: str
+    column: str
+
+
+def task_holder(task_id: str, column: str) -> Holder:
+    return Holder("tasks", task_id, column)
+
+
+def checkpoint_holder(task_id: str, turn: int, attempt: int, seq: int, column: str) -> Holder:
+    return Holder("checkpoints", f"{task_id}/{turn}/{attempt}/{seq}", column)
+
+
+def event_holder(workflow_id: str, offset: int) -> Holder:
+    return Holder("agent_events", f"{workflow_id}/{offset}", "blob_ref")
+
+
+def upload_holder(task_id: str) -> Holder:
+    return Holder(UPLOAD, task_id, "")
+
+
+async def index_refs(
+    conn: AsyncConnection,
+    holder: Holder,
+    refs: Iterable[BlobRef],
+    *,
+    task_id: str,
+    request_id: str | None = None,
+    retention: RetentionClass | None = None,
+) -> None:
+    """Write the holder's `blob_refs` rows in the caller's transaction (D2).
+
+    The class is `retention`, or the holder's class from notes.md#d3. The request
+    is `request_id`, or the task's from `tasks`; an upload reference has none. On
+    conflict the stronger class wins and a GC mark is cleared; a delete's mark
+    stays, so a deleted task never makes its reference live again (R25).
+    """
+    cls = current_class(retention or REFERENCE_CLASS[(holder.table, holder.column)])
+    keys = sorted({ref.key for ref in refs})
+    if not keys:
+        return
+    request = (
+        "NULL"
+        if holder.table == UPLOAD
+        else "coalesce(CAST(:r AS text), (SELECT request_id FROM tasks WHERE task_id = :t))"
+    )
+    kept = f"blob_refs.removed_by LIKE '{DELETE_OPERATION}%'"
+    await conn.execute(
+        text(
+            f"INSERT INTO blob_refs ({_COLUMNS}) VALUES (:b, :ht, :hk, :hc, :t, {request}, :c) "
+            "ON CONFLICT (holder_table, holder_key, holder_column, blob_key) DO UPDATE SET "
+            f"retention_class = CASE WHEN {rank_sql('EXCLUDED.retention_class')} "
+            f"> {rank_sql('blob_refs.retention_class')} THEN EXCLUDED.retention_class "
+            "ELSE blob_refs.retention_class END, "
+            f"removed_at = CASE WHEN {kept} THEN blob_refs.removed_at END, "
+            f"removed_by = CASE WHEN {kept} THEN blob_refs.removed_by END"
+        ),
+        [
+            {
+                "b": key,
+                "ht": holder.table,
+                "hk": holder.key,
+                "hc": holder.column,
+                "t": task_id,
+                "r": request_id,
+                "c": cls,
+            }
+            for key in keys
+        ],
+    )
 
 
 @dataclass(frozen=True)

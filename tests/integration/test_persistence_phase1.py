@@ -177,7 +177,7 @@ async def test_sdk_session_uses_migrated_tables(engine: AsyncEngine) -> None:
                 {"s": session_id},
             )
         }
-    assert classes == {"task"}
+    assert classes == {"transcript"}  # migration 0007 default (D3)
     await session.clear_session()
 
 

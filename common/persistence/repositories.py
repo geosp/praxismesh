@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from common.blob_store import BlobStore
 from common.blob_store.base import RETENTION_ORDER
@@ -17,6 +17,7 @@ from common.errors import TaskAlreadyExists
 from common.persistence.fence import NO_NEWER_ATTEMPT as _NO_NEWER_ATTEMPT
 from common.persistence.fence import TASK_LOCK as _TASK_LOCK
 from common.persistence.fence import FenceRejected
+from common.persistence.refs import checkpoint_holder, index_refs, task_holder
 from common.persistence.settings import app_database_url
 from common.schemas import BlobRef, RetentionClass, TaskStart
 
@@ -79,6 +80,21 @@ class TaskRepository:
                 },
             )
             if inserted.first() is not None:
+                # The index rows commit with the row (D2).
+                await index_refs(
+                    conn,
+                    task_holder(start.task_id, "instructions_ref"),
+                    [start.instructions_ref],
+                    task_id=start.task_id,
+                    request_id=start.request_id,
+                )
+                await index_refs(
+                    conn,
+                    task_holder(start.task_id, "input_refs"),
+                    start.input_refs.values(),
+                    task_id=start.task_id,
+                    request_id=start.request_id,
+                )
                 return
             existing = (
                 await conn.execute(
@@ -87,16 +103,6 @@ class TaskRepository:
             ).scalar_one()
         if existing != run_id:
             raise TaskAlreadyExists(f"task {start.task_id} was already run (run {existing})")
-
-    async def complete(self, task_id: str, status: str, result: dict[str, Any]) -> None:
-        async with self.engine.begin() as conn:
-            await conn.execute(
-                text(
-                    "UPDATE tasks SET status = :s, result = :r, updated_at = CURRENT_TIMESTAMP "
-                    "WHERE task_id = :t"
-                ),
-                {"t": task_id, "s": status, "r": json.dumps(result)},
-            )
 
     async def request_exists(self, request_id: str) -> bool:
         """Whether some task belongs to `request_id` (Phase 2 messaging D5)."""
@@ -415,6 +421,7 @@ class CheckpointRepository:
             )
             if done.rowcount != 1:
                 raise FenceRejected("a newer attempt owns this task")
+            await _index_checkpoint(conn, cp)
 
     async def insert(self, cp: Checkpoint) -> None:
         async with self.engine.begin() as conn:
@@ -438,6 +445,7 @@ class CheckpointRepository:
                     "finish": json.dumps(cp.finish) if cp.finish is not None else None,
                 },
             )
+            await _index_checkpoint(conn, cp)
 
     async def count(self, task_id: str) -> int:
         async with self.engine.connect() as conn:
@@ -479,6 +487,19 @@ class CheckpointRepository:
             ),
             session_digest=row["session_digest"],
         )
+
+
+async def _index_checkpoint(conn: AsyncConnection, cp: Checkpoint) -> None:
+    """The checkpoint's index rows, in its insert's transaction (D2): a refused
+    fenced insert rolls them back with the row."""
+    for column, ref in (("workspace_ref", cp.workspace_ref), ("session_ref", cp.session_ref)):
+        if ref is not None:
+            await index_refs(
+                conn,
+                checkpoint_holder(cp.task_id, cp.turn, cp.attempt, cp.seq, column),
+                [ref],
+                task_id=cp.task_id,
+            )
 
 
 class UsageLedgerRepository:

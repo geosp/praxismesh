@@ -33,6 +33,7 @@ from common.events.transport import (
     wait_set,
 )
 from common.persistence.fence import NO_NEWER_ATTEMPT, TASK_LOCK, FenceRejected
+from common.persistence.refs import event_holder, index_refs
 from common.schemas.blob import BlobRef
 from common.schemas.events import AgentEvent
 
@@ -96,6 +97,14 @@ class TableTransport:
                 await conn.execute(
                     _INSERT, [_row(workflow_id, next_offset + i, e) for i, e in enumerate(events)]
                 )
+                for i, e in enumerate(events):
+                    if e.blob_ref is not None:  # indexed with its event (D2)
+                        await index_refs(
+                            conn,
+                            event_holder(workflow_id, next_offset + i),
+                            [e.blob_ref],
+                            task_id=e.task_id,
+                        )
             await conn.execute(
                 text("UPDATE event_logs SET next_offset = :n WHERE workflow_id = :w"),
                 {"w": workflow_id, "n": next_offset + len(events)},
