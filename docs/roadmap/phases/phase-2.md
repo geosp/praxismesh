@@ -4,21 +4,29 @@ Part of the PraxisMesh project plan, revision 2.10. Start from the core plan: [P
 
 ## Phase 2: Real-time events and the comms MCP
 
+**Status:** Closed 2026-11-19 by the coordinator gate after PRs #85, #86 and #87.
+See [closure evidence](../../reviews/phase-2/closure.md) for the tested and delivered revisions.
+
+**As built, where it differs from the wording below:** a wake row committed with each message to a sleeping task
+stands in for an outbox, and a dispatcher turns it into an `inbox` Signal. A task waits by ending its turn
+`waiting` and sleeping in its Workflow, with no blocking Update (ADR-0010). Messaging is scoped to the sender's
+request (ADR-0011). Events are pruned by hand until Phase 3A adds retention.
+
 **Read first:** `PROJECT_PLAN.md`, then §4.3, §4.4; schemas.
 
-- [ ] Implement the PostgreSQL event table behind the event-transport interface, as ADR-0009 decides (owner decision after the issue #76 spike; it replaces the earlier Workflow Streams preference). Port the spike's shared suite and load runner. Events live outside Temporal history, so Continue-As-New carries no event state; settle the open items ADR-0009 lists (fence lock order, tenant scoping, keying, token text).
-- [ ] Batch status/tool/token deltas; assign monotonic `seq` and `attempt_id`; document retention/truncation and retry/reset semantics.
-- [ ] Implement `comms_mcp`: `post_status`, `send_to_agent`, `ask_agent`, `get_task_context`, worker-only and authorization-scoped.
-- [ ] Add application-DB migrations for the message inbox/outbox and the event index on top of the Phase 0 baseline. *(Moved forward in rev 2.9: this phase's inbox depends on it.)*
-- [ ] Build **durable PostgreSQL message inbox** with correlation/reply IDs, dedupe, deadline, wake-up/dispatch of idle recipients, and bounded blocking Update/Signal mechanics. Prevent circular waiting and propagate timeout/cancellation.
-- [ ] Implement `agentctl tail <workflow_id>` with offset resume and gap detection; use the same internal event interface for Phase 4 gateway and Phase 8 UI.
+- [x] Implement the PostgreSQL event table behind the event-transport interface, as ADR-0009 decides (owner decision after the issue #76 spike; it replaces the earlier Workflow Streams preference). Port the spike's shared suite and load runner. Events live outside Temporal history, so Continue-As-New carries no event state; settle the open items ADR-0009 lists (fence lock order, tenant scoping, keying, token text).
+- [x] Batch status/tool/token deltas; assign monotonic `seq` and `attempt_id`; document retention/truncation and retry/reset semantics.
+- [x] Implement `comms_mcp`: `post_status`, `send_to_agent`, `ask_agent`, `get_task_context`, worker-only and authorization-scoped.
+- [x] Add application-DB migrations for the message inbox/outbox and the event index on top of the Phase 0 baseline. *(Moved forward in rev 2.9: this phase's inbox depends on it.)*
+- [x] Build **durable PostgreSQL message inbox** with correlation/reply IDs, dedupe, deadline, wake-up/dispatch of idle recipients, and bounded blocking Update/Signal mechanics. Prevent circular waiting and propagate timeout/cancellation.
+- [x] Implement `agentctl tail <workflow_id>` with offset resume and gap detection; use the same internal event interface for Phase 4 gateway and Phase 8 UI.
 - **Accept:** two running agents exchange an answer; idle recipient can be awakened; an unanswered request times out; worker crash and Continue-As-New do not drop accepted messages; disconnect/reconnect yields no duplicate display or gaps **within retention**; unauthorized messaging is rejected; high token volume does not explode history.
 
 **Demo checklist (required; run live or record a reproducible walkthrough)**  
 **Audience-visible outcome:** Two agents communicate while an observer watches the conversation live.
 
-- [ ] Open `agentctl tail` on a workflow; demonstrate Agent A asking Agent B a question and receiving a correlated answer, including waking an idle Agent B.
-- [ ] Disconnect the observer and reconnect using its last offset; show retained events resume in order without duplicate display.
-- [ ] Send a deliberately unanswered question to show a bounded timeout rather than a hung agent; demonstrate one unauthorized message is rejected.
-- [ ] Show event batching under a busy response and a bounded Temporal history (report event count/size).
-- [ ] Save demo evidence and reproduction steps in `docs/demos/phase-2.md` (environment/versions, exact commands or UI actions, IDs/links, expected vs. observed result, screenshots or recording, cleanup, pass/fail).
+- [x] Open `agentctl tail` on a workflow; demonstrate Agent A asking Agent B a question and receiving a correlated answer, including waking an idle Agent B.
+- [x] Disconnect the observer and reconnect using its last offset; show retained events resume in order without duplicate display.
+- [x] Send a deliberately unanswered question to show a bounded timeout rather than a hung agent; demonstrate one unauthorized message is rejected.
+- [x] Show event batching under a busy response and a bounded Temporal history (report event count/size).
+- [x] Save demo evidence and reproduction steps in `docs/demos/phase-2.md` (environment/versions, exact commands or UI actions, IDs/links, expected vs. observed result, screenshots or recording, cleanup, pass/fail).

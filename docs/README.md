@@ -2,9 +2,9 @@
 
 Human-facing documentation for PraxisMesh. New requirements live in [`plans/`](plans/), with existing guarantees incorporated by the [baseline](requirements/baseline.md); this folder holds the plan, designs, decisions, verified architecture and evidence (plan §4.17).
 
-Phases 0 and 1 are complete. The [Phase 1 closure record](reviews/phase-1/closure.md)
-links independent PASS reports, real-model evidence and the delivered revisions.
-Phase 2 is next; its design and implementation have not started.
+Phases 0, 1 and 2 are complete. The [Phase 1](reviews/phase-1/closure.md) and
+[Phase 2](reviews/phase-2/closure.md) closure records link independent PASS reports,
+real-model evidence and the delivered revisions. Phase 3 is next.
 
 | Folder | What it holds | Written when |
 |---|---|---|
