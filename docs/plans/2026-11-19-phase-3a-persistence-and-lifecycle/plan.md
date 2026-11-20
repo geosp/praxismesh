@@ -294,6 +294,7 @@ No command deletes anything unless an operator runs it.
 - `docs/roadmap/phases/phase-3a.md`: Phase 3A tasks 1, 2, 9 and 10 (schema, BlobStore and Claim
   Check, retention and deletion, backup drill).
 - `docs/roadmap/design-decisions.md` §4.13: classes, deletion and the backup drill.
+- Issue #92: Phase 3A tracking issue (the three-plan split and owner decisions).
 - Issue #74: remove blobs left unreferenced by stale attempts.
 - ADR-0007: fenced attempt writes; why stale attempts leave unreferenced blobs.
 - ADR-0010: the durable inbox; its wake rows are the outbox pattern D7 relies on.
