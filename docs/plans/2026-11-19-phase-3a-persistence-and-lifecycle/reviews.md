@@ -108,3 +108,31 @@ After the fixes (2026-11-20): `plan-tool check` reports 0 errors and 1 warning (
 
 ## 2026-11-20 · approved · plan
 Approved by the project owner ("Apply and approved") after design-review round 3; the plan and phases 01-03 are approved.
+
+## 2026-11-20 · impl-review · phase 01 · round 1 · changes-requested
+Diff base 8cc4355..a50c358 (frozen review commit a50c358). Reviewers: contract ✅ · failure and retry ✅ · scope and composition ✅ (raw: docs/reviews/phase-3a/raw/persistence-impl-review-phase-01-round-1-*.md). Structure check: 0 errors, 1 warning (420 body lines, budget 250); all 13 tasks ticked.
+
+| ID | Sev | Lens | Req | Finding | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| F80 | Major | failure, scope | D10, R25, R10 | `put` clears a blob's removal mark unconditionally, so a deleted task's late upload of the same bytes re-uploads them with no live reference; no check (orphaned, expired, rowless) ever reaches them and old refs read deleted content (plan gap, notes#revive step 2) | open |
+| F81 | Major | scope | D2, R25 | The delete mark is kept per (task, blob) row: a deleted task's stale attempt uploading new bytes inserts a fresh live upload reference | open |
+| F82 | Major | failure | R11, R25 | A retried `end_task` (worker died before Temporal recorded completion) rewrites `tasks.result` after a delete redacted it | open |
+| F83 | Nit | all | R4, D3 | New `BlobRef`s carry the class from old S3 metadata (`audit`); S3 repeat-put over `task` metadata untested; two tests loosened to accept it | open |
+| F84 | Nit | all | R18 | History guard only warns when Temporal is unreachable, skips runs a test deleted, waits a fixed 2 s; its failing path is not exercised | open |
+| F85 | Nit | all | D9 | A turn resumed from a pre-change checkpoint passes untruncated questions into the result (rollout drains first) | open |
+| F86 | Nit | failure, scope | D10, R9 | DB commits before `inner.put`; a failed upload leaves a live ref with no object (`BlobNotFound`, not `BlobExpired`) until a retry | open |
+| F87 | Nit | contract | R1, R20 | No test makes the index write fail inside `record_task`/`end_task`/`publish` to show the holder row rolls back | open |
+| F88 | Nit | contract | R1 | The DSH session upload's `task_id` is unobserved by any test | open |
+| F89 | Nit | contract, scope | R1 | The submit-upload test uses one input file; R1's scenario names two | open |
+| F90 | Nit | contract | D10 | `blob_objects`-first lock order is unobservable by single-session tests | open |
+| F91 | Nit | contract, scope | R4 | Server defaults of `idempotency_keys`, `event_batches`, `task_messages`, `task_inbox`, `agent_events` not read back after 0007 | open |
+| F92 | Nit | contract, failure | Rollout | Downgrade is lossy: rows remapped to `ephemeral` stay `ephemeral` | open |
+| F93 | Nit | contract | D4 | Reindex skips bucket objects whose key is not a content key | open |
+| F94 | Nit | contract | docs | Threat model says `backups/` is git-ignored; `.gitignore` has no entry yet | open |
+| F95 | Nit | failure | tests | Scratch databases are left behind if the test process is killed | open |
+| F96 | Nit | scope | R1 | Uploads for a colliding user task ID are held by the existing task before `TaskAlreadyExists` | open |
+| F97 | Nit | scope | D3 | `index_keys` never refreshes `created_at`, so a re-put `ephemeral` blob ages from its first write | open |
+| F98 | Nit | scope | R1 | A retried `end_task` with a different artifact list leaves the earlier refs live | open |
+| F99 | Nit | scope | D11 | `events prune` deletes `agent_events` rows and leaves their `blob_refs` live until phase 02 | open |
+| F100 | Nit | scope | D2, D3 | A stale attempt's unnamed artifact upload is kept 90 days after the task ends | open |
+| F101 | Nit | scope | D5 | `rowless_uploads` ages by per-blob `last_put_at`, so another task's re-put restarts the window | open |
