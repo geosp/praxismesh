@@ -11,6 +11,7 @@ from common.blob_store.base import (
     BlobNotFound,
     collect,
     content_key,
+    current_class,
     make_ref,
     stronger,
 )
@@ -42,7 +43,7 @@ class MemoryBlobStore:
         key, checksum = content_key(body)
         existing = self.objects.get(key)
         if existing is None:
-            existing = _Object(body, content_type, retention, datetime.now(UTC))
+            existing = _Object(body, content_type, current_class(retention), datetime.now(UTC))
             self.objects[key] = existing
         else:
             existing.retention = stronger(existing.retention, retention)

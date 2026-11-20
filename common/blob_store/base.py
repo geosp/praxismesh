@@ -2,7 +2,9 @@
 
 Keys are content-addressed (`sha256/<hex>`), so `put` is idempotent: storing the
 same bytes again returns the same `BlobRef`. If the repeat names a stronger
-retention class, the stronger class wins (`ephemeral` < `task` < `audit`).
+retention class, the stronger class wins (`ephemeral` < `checkpoint` <
+`transcript` < `artifact` < `audit`). The old class `task` ranks as `transcript`,
+and `stronger` never returns it (Phase 3A persistence plan D3).
 """
 
 from __future__ import annotations
@@ -15,7 +17,14 @@ from typing import Protocol
 from common.errors import PraxisError
 from common.schemas import BlobRef, RetentionClass
 
-RETENTION_ORDER: dict[RetentionClass, int] = {"ephemeral": 0, "task": 1, "audit": 2}
+RETENTION_ORDER: dict[RetentionClass, int] = {
+    "ephemeral": 0,
+    "checkpoint": 1,
+    "transcript": 2,
+    "task": 2,  # the Phase 1-2 class, read as transcript
+    "artifact": 3,
+    "audit": 4,
+}
 
 
 class BlobError(PraxisError):
@@ -38,7 +47,13 @@ class BlobUnavailable(BlobError):
     """The backend cannot be reached; retrying may succeed."""
 
 
+def current_class(c: RetentionClass) -> RetentionClass:
+    """The class to write for `c`: `task` is read as `transcript`."""
+    return "transcript" if c == "task" else c
+
+
 def stronger(a: RetentionClass, b: RetentionClass) -> RetentionClass:
+    a, b = current_class(a), current_class(b)
     return a if RETENTION_ORDER[a] >= RETENTION_ORDER[b] else b
 
 

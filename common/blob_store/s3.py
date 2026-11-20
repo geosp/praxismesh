@@ -24,6 +24,7 @@ from common.blob_store.base import (
     BlobUnavailable,
     collect,
     content_key,
+    current_class,
     make_ref,
     stronger,
 )
@@ -88,6 +89,7 @@ class S3BlobStore:
     ) -> BlobRef:
         body = await collect(data)
         key, checksum = content_key(body)
+        retention = current_class(retention)
         try:
             head = await self._call(key, self.client.head_object, Bucket=self.bucket, Key=key)
         except BlobNotFound:
