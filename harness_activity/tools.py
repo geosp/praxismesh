@@ -206,6 +206,10 @@ def list_files_body(workspace: Path, path: str = ".") -> list[str] | str:
     return sorted(os.path.normpath(p) for p in found)
 
 
+QUESTIONS_MAX = 20
+QUESTION_MAX_CHARS = 500
+
+
 def finish_task_body(
     state: TurnState,
     status: Literal["done", "needs_input", "waiting"],
@@ -219,7 +223,10 @@ def finish_task_body(
                 "refused: you cannot finish while " + "; ".join(blocking) + ". Call finish_task "
                 'with status "waiting" to be woken with the answers.'
             )
-    state.finish = FinishReport(status, summary[:2000], list(questions or []))
+    # Bounded like the summary, so a turn's outcome stays small in Workflow
+    # history (Phase 3A persistence plan D9); the schemas stay permissive.
+    kept = [q[:QUESTION_MAX_CHARS] for q in (questions or [])[:QUESTIONS_MAX]]
+    state.finish = FinishReport(status, summary[:2000], kept)
     return "recorded"
 
 

@@ -39,7 +39,7 @@ Nothing is removed yet.
 ### 3. Compatibility and the guard
 
 - [x] 3.1 Confirm `test_task_workflow_replay` and its fixture (3 payloads with `retention_class: task`) still pass with the new `RetentionClass` (R5). Verify: `pytest tests/test_task_workflow.py`.
-- [ ] 3.2 `finish_task_body` keeps the first 20 questions of at most 500 characters (D9). Verify: unit test with 21 questions of 600 characters.
+- [x] 3.2 `finish_task_body` keeps the first 20 questions of at most 500 characters (D9). Verify: unit test with 21 questions of 600 characters.
 - [ ] 3.3 A history helper that fails on any payload over 64 KiB, run over the integration suite's Workflows (R18, D9). Verify: a task that returns 20 questions of 500 characters passes; a seeded 65 KiB payload fails.
 
 ### 4. Documentation
