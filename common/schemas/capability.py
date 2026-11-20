@@ -16,6 +16,14 @@ from common.schemas.base import Harness, Slug, Strict
 Name = Annotated[str, Slug]
 
 
+# Set by the worker for each harness attempt (harness_activity/config.py): the
+# attempt's identity, which comms_mcp takes as the sender and the fence key
+# (ADR-0011), and the cap on an ask's deadline. No catalog entry may set them.
+WORKER_SET_ENV = frozenset(
+    {"PRAXIS_TASK_ID", "PRAXIS_TURN", "PRAXIS_ATTEMPT", "PRAXIS_MAX_ASK_WAIT"}
+)
+
+
 class McpServer(Strict):
     """A catalog entry for an MCP server a template may mount."""
 
@@ -36,6 +44,16 @@ class McpServer(Strict):
     def _stdio_needs_command(self) -> McpServer:
         if self.transport == "stdio" and not self.command:
             raise ValueError("a stdio MCP server needs a command")
+        return self
+
+    @model_validator(mode="after")
+    def _no_worker_set_env(self) -> McpServer:
+        reserved = sorted(WORKER_SET_ENV & (set(self.env) | set(self.secret_env)))
+        if reserved:
+            raise ValueError(
+                f"MCP server {self.name!r} may not set {reserved} in env or secret_env:"
+                " the worker sets them for each attempt"
+            )
         return self
 
 

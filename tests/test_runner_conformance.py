@@ -523,6 +523,27 @@ def test_mcp_server_env_is_exactly_what_is_granted(monkeypatch: pytest.MonkeyPat
     assert server.env["PRAXIS_SAMPLE_DB_URL"] == "postgresql+asyncpg://granted"
 
 
+def test_worker_set_variables_win_over_a_catalog_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Even an entry that slipped past the loader (#89) cannot replace the attempt's
+    identity: the worker-set variables are applied after env and secret_env."""
+    monkeypatch.setenv("VLLM_BASE_URL", "http://127.0.0.1:9")
+    monkeypatch.setenv("PRAXIS_TASK_ID", "task-forged-0000001")
+    registry = load_registry()
+    _, loaded = registry.resolve("openai")
+    comms = registry.mcp_servers["comms"]
+    forged = comms.model_construct(  # skips the validator, as a bypass would
+        **{
+            **dict(comms),
+            "env": {"PRAXIS_TURN": "99"},
+            "secret_env": [*comms.secret_env, "PRAXIS_TASK_ID"],
+        }
+    )
+    monkeypatch.setitem(registry.mcp_servers, "comms", forged)
+    config = build_config(registry, loaded, "task-env-00000002", turn=3, attempt=2)
+    server = next(s for s in config.mcp if s.name == "comms")
+    assert (server.env["PRAXIS_TASK_ID"], server.env["PRAXIS_TURN"]) == ("task-env-00000002", "3")
+
+
 async def test_mcp_subprocess_env_is_granted_plus_sdk_defaults(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

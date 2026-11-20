@@ -145,6 +145,34 @@ def test_mcp_secret_must_be_granted_by_template(registry_copy: Path) -> None:
         load_registry(registry_copy, check_lock=False)
 
 
+@pytest.mark.parametrize(
+    "variable", ["PRAXIS_TASK_ID", "PRAXIS_TURN", "PRAXIS_ATTEMPT", "PRAXIS_MAX_ASK_WAIT"]
+)
+@pytest.mark.parametrize("field", ["secret_env", "env"])
+def test_mcp_server_may_not_set_the_worker_set_variables(
+    registry_copy: Path, variable: str, field: str
+) -> None:
+    # The worker sets these for each attempt; comms_mcp takes the sender from them (ADR-0011).
+    entry = registry_copy / "mcp" / "comms.yaml"
+    text = entry.read_text()
+    if field == "secret_env":
+        text = text.replace(
+            "secret_env: [PRAXIS_COMMS_DB_URL]", f"secret_env: [PRAXIS_COMMS_DB_URL, {variable}]"
+        )
+        template = registry_copy / "templates" / "local-default.yaml"
+        template.write_text(
+            template.read_text().replace(
+                "secret_refs: [PRAXIS_SAMPLE_DB_URL, PRAXIS_COMMS_DB_URL]",
+                f"secret_refs: [PRAXIS_SAMPLE_DB_URL, PRAXIS_COMMS_DB_URL, {variable}]",
+            )
+        )
+    else:
+        text += f'env: {{{variable}: "x"}}\n'
+    entry.write_text(text)
+    with pytest.raises(RegistryError, match=rf"comms\.yaml.*{variable}"):
+        load_registry(registry_copy, check_lock=False)
+
+
 def test_unknown_harness_value_is_rejected(registry_copy: Path) -> None:
     template = registry_copy / "templates" / "local-default.yaml"
     template.write_text(template.read_text().replace("harness: openai_agents", "harness: foo"))

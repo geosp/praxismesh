@@ -63,14 +63,18 @@ def build_config(
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "LANG": "C.UTF-8",
             **server.env,
+        }
+        for var in server.secret_env:  # granted by the template (checked when loaded)
+            env[var] = os.environ.get(var, "")
+        # The worker-set variables go last, so no catalog entry can replace them (the
+        # loader also refuses them, WORKER_SET_ENV): the attempt's identity, the fence
+        # key, for comms_mcp (Phase 2 messaging D9; ADR-0011).
+        env |= {
             "PRAXIS_TASK_ID": task_id,
-            # The attempt's identity, the fence key, for comms_mcp (Phase 2 messaging D9).
             "PRAXIS_TURN": str(turn),
             "PRAXIS_ATTEMPT": str(attempt),
             "PRAXIS_MAX_ASK_WAIT": str(int(max_ask_wait.total_seconds())),
         }
-        for var in server.secret_env:  # granted by the template (checked when loaded)
-            env[var] = os.environ.get(var, "")
         command = sys.executable if server.command == "python" else server.command
         servers.append(
             McpConfig(
