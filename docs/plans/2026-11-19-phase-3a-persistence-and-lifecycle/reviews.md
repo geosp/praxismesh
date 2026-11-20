@@ -138,3 +138,21 @@ Diff base 8cc4355..a50c358 (frozen review commit a50c358). Reviewers: contract �
 | F101 | Nit | scope | D5 | `rowless_uploads` ages by per-blob `last_put_at`, so another task's re-put restarts the window | accepted: conservative (keeps blobs longer, never shorter) |
 
 After the fixes (2026-11-20): every Major fixed test first, each test confirmed failing with its fix reverted; `plan-tool check` 0 errors, 1 warning. Round 2 (fresh failure and scope lenses) pending.
+
+## 2026-11-20 · impl-review · phase 01 · round 2 · passed
+Diff base 8cc4355..dccc8ff (frozen review commit dccc8ff). Reviewers (the lenses that raised round 1's Majors): failure and retry ✅ · scope and composition ✅ (raw: docs/reviews/phase-3a/raw/persistence-impl-review-phase-01-round-2-*.md). Contract not rerun (raised no Major). F80-F82 did not come back. Repeats of closed findings (F83, F84's deleted-run and settle parts, F86, F95, F99, F101) stay closed.
+
+| ID | Sev | Lens | Req | Finding | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| F102 | Nit | failure | R2, R20 | A worker started too early runs the old `end_task`, leaving an ended task with `ended_at` null; `reindex` does not repair it, so its blobs never expire | open |
+| F103 | Nit | failure | R20 | Since F82, a retried `complete_task` returns usage from a fresh ledger read while `tasks.result` keeps the first call's values | open |
+| F104 | Nit | failure | D10 | `put` for a deleted task uploads when the blob row is unmarked, though notes say "live for another holder"; a cleared-mark orphan is re-uploaded (still reached by `orphaned`) | open |
+| F105 | Nit | failure | tests | `scratch_database` creates the database before its `try`; a failed setup step leaves it behind | open |
+| F106 | Nit | scope | R18 | `make restart-check` and `make workers-check` start Workflows in the CI stack job but are outside the pytest session guard | open |
+| F107 | Nit | scope | R18, D9 | The guard measures each `Payload`, not an event's whole `Payloads`; equal today (one argument per Activity) | open |
+| F108 | Nit | scope | R18 | The 20-question test is ASCII only and `openai` only; 4-byte UTF-8 still fits under 64 KiB | open |
+| F109 | Nit | scope | R8, D5 | `reindex` gives a bucket-only object `last_put_at = now()`, restarting its window (by notes#d2) | open |
+| F110 | Nit | scope | R17, drill | Integration tests leave `audit_log`, fake `blob_refs` and row-less upload refs in the stack database; phase 03's drill reconcile, run after `make smoke` in CI, will report them | open |
+| F111 | Nit | scope | R2 | The migration test seeds only a `succeeded` ended task, not `failed` or `needs_input` | open |
+| F112 | Nit | scope | R14 | The append-only trigger is per row: an `UPDATE`/`DELETE` matching no rows succeeds (no data can change) | open |
+| F113 | Nit | scope | R4 | Tests still `put(..., retention="task")`; mapped to `transcript`, never stored | open |
