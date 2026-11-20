@@ -44,4 +44,4 @@ Nothing is removed yet.
 
 ### 4. Documentation
 
-- [ ] 4.1 `schemas.md` (the new tables and column, the classes, D7's outbox pattern); the threat model (no encryption at rest and clear-text backups, the app role owning `audit_log`, content kept in Temporal histories for 72 hours: all accepted until Phase 9); the decision log. Verify: `check_plans.py` and the link check pass.
+- [x] 4.1 `schemas.md` (the new tables and column, the classes, D7's outbox pattern); the threat model (no encryption at rest and clear-text backups, the app role owning `audit_log`, content kept in Temporal histories for 72 hours: all accepted until Phase 9); the decision log. Verify: `check_plans.py` and the link check pass.

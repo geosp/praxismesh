@@ -2,7 +2,7 @@
 
 A living document (plan Phase 1 task 6, rev 2.10). It covers what exists today. Every later phase that adds a trust boundary extends it. Each control names the test that checks it; each accepted risk names the phase that closes it.
 
-**Covers:** Phase 1 at the merge of issue #44's last PR: the local Compose stack, `TaskWorkflow`, the template workers with the `openai_agents` harness, the sample MCP server and the CLI. Phase 2 (issue #79) adds the comms MCP server, its database role `praxis_comms` and messages between tasks (B8, B9, C14-C17, R8). **Deployment assumption:** single organization, single machine, ports bound to `127.0.0.1` (plan §2, tenancy default).
+**Covers:** Phase 1 at the merge of issue #44's last PR: the local Compose stack, `TaskWorkflow`, the template workers with the `openai_agents` harness, the sample MCP server and the CLI. Phase 2 (issue #79) adds the comms MCP server, its database role `praxis_comms` and messages between tasks (B8, B9, C14-C17, R8). Phase 3A's persistence plan (issue #92) adds the reference index and the audit log (C18, R9-R11). **Deployment assumption:** single organization, single machine, ports bound to `127.0.0.1` (plan §2, tenancy default).
 
 ## Assets
 
@@ -15,6 +15,7 @@ A living document (plan Phase 1 task 6, rev 2.10). It covers what exists today. 
 | Model access | The model endpoint (`VLLM_BASE_URL`, `VLLM_API_KEY`) |
 | Credentials | `infra/.env`: database passwords, S3 keys, the sample server's database URL, the comms server's database URL (`PRAXIS_COMMS_DB_URL`, role `praxis_comms`) |
 | Capability definitions | `registry/` (templates, profiles, MCP catalog, skills), pinned by `registry/registry.lock` |
+| The reference index and the audit log | `blob_refs` (which row or task holds which blob) and `audit_log` (append-only tombstones of removals) in the `praxismesh` database |
 
 ## Trust boundaries
 
@@ -58,6 +59,7 @@ A living document (plan Phase 1 task 6, rev 2.10). It covers what exists today. 
 | C15 | A message reaches only tasks of the sender's request. A send to another request or an ended task, from an ended task, over 16,384 characters, a reply that is late, misaddressed or not to the asker, or a question that would close a wait cycle is refused, stored as a `rejected` row with its reason and returned to the model as a tool error (`MessageRepository`, ADR-0011) | B9 | `tests/integration/test_messages.py::test_messages_stay_inside_their_request_and_refusals_are_recorded`, `::test_an_ended_task_closes_its_messages_and_is_refused`, `::test_questions_never_wait_in_a_cycle`, `::test_a_reply_must_go_to_the_asker`, `tests/integration/test_comms_mcp.py::test_a_cross_request_send_is_refused`, `tests/integration/test_messaging_failures.py::test_a_cross_request_message_is_refused` |
 | C16 | The sender is the calling attempt: `comms_mcp` takes the task, turn and attempt only from the worker-set variables (C7); no tool argument names the sender | B5, B9 | `tests/integration/test_comms_mcp.py::test_the_sender_is_always_the_calling_task` |
 | C17 | Every message write from an attempt takes ADR-0007's fence with the request lock, so a superseded attempt cannot send; message bodies never enter a Temporal history (a claim returns IDs and counts) | B8, B2 | `tests/integration/test_messages.py::test_a_stale_attempt_cannot_send`, `::test_the_claim_inbox_activity` |
+| C18 | `audit_log` is append-only for the app role: a trigger refuses `UPDATE` and `DELETE` (R10 for what it does not stop) | B2 | `tests/integration/test_audit_log.py::test_app_role_cannot_change_audit_rows` |
 
 ## Accepted risks
 
@@ -71,3 +73,6 @@ A living document (plan Phase 1 task 6, rev 2.10). It covers what exists today. 
 | R6 | `run_command` effects outside the workspace (for example `git` against a remote) are not idempotent | No remote or credentials reach commands (C5) | Phase 5 |
 | R7 | No authentication on Temporal, the UI, S3 or the database beyond passwords in `infra/.env`; no TLS | Local, single-user, `127.0.0.1` only | Phase 7 (deployment) and Phase 9 (security hardening) |
 | R8 | Request scope, sender identity and the fence (C15-C17) are enforced by the comms server's code, not by the database: `praxis_comms` may insert or update any message row. They hold only while the comms URL stays out of an agent's reach. On `openai_agents` it does not: `run_command` with `sh` or `python3` runs in the worker container and can read the worker's environment, which holds the comms URL and the application role's credentials (R1), so an agent can bypass all three there, and more. DSH runs commands in its isolated container. Every task of a request can message every other | Single-user local deployment; C14 still confines the role's writes to the message tables | Phase 5 sandbox (R1), or earlier row-level security on the message tables; finer scope and tenants by a new ADR (Phase 4) |
+| R9 | No encryption at rest: SeaweedFS objects, the databases and (from Phase 3A's backup) backups under `backups/` hold prompts, transcripts and outputs in clear text; `backups/` is git-ignored | Local, single-user deployment; owner decision (issue #92) | Phase 9 (security hardening) |
+| R10 | The app role owns `audit_log`, so it can `TRUNCATE` the table or disable its trigger; C18 stops only ordinary updates and deletes | One role for workers, CLI and migrations today | Phase 9: a separate owner role for the audit log |
+| R11 | Temporal histories keep each turn's summary, questions and outcome for `TEMPORAL_RETENTION` (72 hours by default) after a Workflow closes, and in every backup taken before; deleting a request does not rewrite history (§4.13). `finish_task` bounds them (summary 2,000 characters; 20 questions of 500) | §4.13 keeps content out of history; these small values are the residual | Phase 9, if moving them behind blobs is needed |
