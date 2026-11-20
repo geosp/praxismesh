@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import exc, text
 
+from common.persistence.audit import AuditRepository, cli_actor
 from common.persistence.repositories import make_engine
 from tests.support.stack import run_id
 
@@ -40,3 +41,30 @@ async def test_app_role_cannot_change_audit_rows(statement: str) -> None:
             assert row.scalar_one() == "subject"
     finally:
         await engine.dispose()
+
+
+async def test_append_joins_the_callers_transaction() -> None:
+    engine = make_engine()
+    op = f"test-{run_id()}"
+    details = {"reason": "test", "rows": 2, "references": 3, "blobs": 1}
+    try:
+        with pytest.raises(RuntimeError, match="rolled back"):
+            async with engine.begin() as conn:
+                await AuditRepository.append(conn, "gc", "rolled-back", {}, operation_id=op)
+                raise RuntimeError("rolled back")
+        async with engine.begin() as conn:
+            row_id = await AuditRepository.append(conn, "gc", "batch 1", details, operation_id=op)
+        async with engine.connect() as conn:
+            rows = await conn.execute(
+                text(
+                    "SELECT id, actor, action, subject, details, retention_class, created_at "
+                    "FROM audit_log WHERE operation_id = :op"
+                ),
+                {"op": op},
+            )
+            (row,) = list(rows)
+    finally:
+        await engine.dispose()
+    assert row.id == row_id and row.actor == cli_actor() and row.actor.startswith("cli:")
+    assert (row.action, row.subject, row.details) == ("gc", "batch 1", details)
+    assert row.retention_class == "audit" and row.created_at is not None
