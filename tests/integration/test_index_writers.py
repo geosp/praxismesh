@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from common.events import TableTransport, Writer
 from common.persistence.fence import FenceRejected
+from common.persistence.messages import MessageRepository
 from common.persistence.refs import DELETE_OPERATION, index_refs, upload_holder
 from common.persistence.repositories import (
     AttemptRepository,
@@ -187,3 +188,32 @@ async def test_conflict_keeps_the_stronger_class_and_a_delete_mark(engine: Async
             text("SELECT request_id FROM blob_refs WHERE task_id = :t"), {"t": task}
         )
         assert request.scalar_one() is None  # an upload reference names no request
+
+
+@pytest.mark.parametrize("status", ["succeeded", "failed", "needs_input"])
+async def test_end_task_sets_ended_at_and_indexes_artifacts(
+    engine: AsyncEngine, status: str
+) -> None:
+    """R1, R20: in end_task's transaction."""
+    task = new_task()
+    await record(engine, task, request=f"req-{task}")
+    artifact = blob_ref(f"{task} artifact")
+    result = {
+        "task_id": task,
+        "status": status,
+        "artifacts": [{"path": "out.md", "ref": artifact.model_dump(mode="json")}],
+    }
+    await MessageRepository(engine).end_task(task, status, result)
+    await MessageRepository(engine).end_task(task, status, result)  # a retried Activity
+    row = await TaskRepository(engine).get(task)
+    assert row is not None and row["status"] == status and row["ended_at"] is not None
+    assert row["ended_at"] <= datetime.now(UTC)
+    assert ("tasks", task, "result", artifact.key, "artifact") in await index_rows(engine, task)
+    async with engine.connect() as conn:
+        request = await conn.execute(
+            text(
+                "SELECT request_id FROM blob_refs WHERE task_id = :t AND holder_column = 'result'"
+            ),
+            {"t": task},
+        )
+        assert request.scalar_one() == f"req-{task}"

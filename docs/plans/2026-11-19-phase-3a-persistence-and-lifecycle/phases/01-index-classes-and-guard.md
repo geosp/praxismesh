@@ -32,7 +32,7 @@ Nothing is removed yet.
 
 - [x] 2.1 One helper, `index_refs`, writes `blob_refs` rows in the caller's transaction. `record_task`, both checkpoint inserts and the event publish call it; the unused `TaskRepository.complete` is removed (R1, D2). Verify: integration tests per writer; a refused fenced checkpoint leaves no index row.
 - [x] 2.2 `BlobStore.put` gains an optional `task_id` in the protocol and all three stores; `RecordingBlobStore.put` writes `last_put_at` and the upload reference in one transaction, `blob_objects` locked first, the stronger class winning (notes.md#revive steps 1-2); `prepare_task` mints the task ID before uploading; the harness passes its task (R1, D2, D10). Verify: integration test that a submit's uploads are held by its task before `record_task` runs; mypy passes.
-- [ ] 2.3 `end_task` indexes the artifacts and sets `tasks.ended_at`, in its transaction (R1, R20). Verify: integration test for each terminal status.
+- [x] 2.3 `end_task` indexes the artifacts and sets `tasks.ended_at`, in its transaction (R1, R20). Verify: integration test for each terminal status.
 - [ ] 2.4 Writers use the new classes: instructions and inputs `transcript`, workspace and session blobs `checkpoint`, artifacts `artifact`; checkpoint inserts stop hardcoding `'task'` (R4). Verify: integration test of a fake-model task reads each class back from rows and `blob_refs`.
 - [ ] 2.5 `AuditRepository.append(conn, action, subject, details)` in the caller's transaction, with actor `cli:<OS user>` (R13's store). Verify: integration test.
 

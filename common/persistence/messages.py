@@ -25,6 +25,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from common.persistence.fence import NO_NEWER_ATTEMPT, TASK_LOCK, FenceRejected
+from common.persistence.refs import index_keys, task_holder
 
 MAX_BODY = 16_384
 OPEN = ("pending", "claimed", "read")
@@ -291,15 +292,25 @@ class MessageRepository:
     async def end_task(self, task_id: str, status: str, result: dict[str, Any]) -> None:
         """Record the task's end and close its messages in one transaction (D17):
         questions to and from it are cancelled, messages it never read become
-        undelivered, and askers waiting on it are woken."""
+        undelivered, and askers waiting on it are woken. The same transaction sets
+        `ended_at` and indexes the result's artifacts (Phase 3A persistence plan
+        R1, R20)."""
         async with self.engine.begin() as conn:
-            await conn.execute(_REQUEST_LOCK, {"r": await self._request_of(conn, task_id)})
+            request = await self._request_of(conn, task_id)
+            await conn.execute(_REQUEST_LOCK, {"r": request})
             await conn.execute(
                 text(
-                    "UPDATE tasks SET status = :s, result = :r, updated_at = CURRENT_TIMESTAMP "
-                    "WHERE task_id = :t"
+                    "UPDATE tasks SET status = :s, result = :r, updated_at = CURRENT_TIMESTAMP, "
+                    "ended_at = coalesce(ended_at, CURRENT_TIMESTAMP) WHERE task_id = :t"
                 ),
                 {"t": task_id, "s": status, "r": json.dumps(result)},
+            )
+            await index_keys(
+                conn,
+                task_holder(task_id, "result"),
+                [a["ref"]["key"] for a in result.get("artifacts") or []],
+                task_id=task_id,
+                request_id=request,
             )
             await conn.execute(
                 text(
