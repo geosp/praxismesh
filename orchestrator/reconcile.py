@@ -87,8 +87,9 @@ async def reconcile(
     async with engine.connect() as conn:
         # One snapshot, taken before the listing: every reference it holds had
         # its bytes uploaded before it committed, so it is in the listing unless
-        # it really is missing. An upload after the snapshot can only show as
-        # a young orphan.
+        # it is missing, or a gc or request delete committed and removed it
+        # after the snapshot (no lock is taken: rerun once the removal is done).
+        # An upload after the snapshot can only show as a young orphan.
         conn = await conn.execution_options(isolation_level="REPEATABLE READ")
         await conn.execute(text("SELECT 1"))
         listing = await bucket.list_objects()
@@ -101,6 +102,17 @@ async def reconcile(
         candidates = list(unended.scalars())
     for task_id in candidates:
         status = await status_of(task_id)
-        if status != "running":
+        if status != "running" and not await _ended(engine, task_id):
             report.never_ended[task_id] = status
     return report
+
+
+async def _ended(engine: AsyncEngine, task_id: str) -> bool:
+    """Whether the task has ended by now: the unended list comes from the
+    snapshot, and a task can end and its Workflow close before Temporal is
+    asked (impl-review F201)."""
+    async with engine.connect() as conn:
+        found = await conn.scalar(
+            text("SELECT ended_at IS NOT NULL FROM tasks WHERE task_id = :t"), {"t": task_id}
+        )
+    return bool(found)

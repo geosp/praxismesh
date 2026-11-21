@@ -19,6 +19,7 @@ from common.blob_store import MemoryBlobStore
 from common.persistence.removal import RemovalBusy, run_lock
 from common.persistence.repositories import RecordingBlobStore
 from orchestrator.reconcile import reconcile
+from orchestrator.workflow_status import WorkflowStatus
 from tests.support.lifecycle import FakeTemporal, end_task, one, record_task
 from tests.support.scratch_db import scratch_database
 
@@ -111,6 +112,24 @@ async def test_a_task_whose_workflow_closed_is_listed_as_never_ended(
     report = await reconcile(engine, inner, temporal)
     assert report.never_ended == {closed.task_id: "closed", gone.task_id: "missing"}
     assert done.task_id not in temporal.asked  # only unended tasks are asked
+
+
+async def test_a_task_that_ends_while_reconcile_asks_is_not_listed(engine: AsyncEngine) -> None:
+    """The unended list comes from the snapshot, but Temporal is asked later
+    (impl-review F201): a task whose `end_task` commits and whose Workflow
+    closes in between, as after a restore restarts the workers, ended."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    finishing = await record_task(engine, store)
+    closed = await record_task(engine, store)
+
+    async def status_of(task_id: str) -> WorkflowStatus:
+        if task_id == finishing.task_id:
+            await end_task(engine, store, finishing)  # then its Workflow closes
+        return "closed"
+
+    report = await reconcile(engine, inner, status_of)
+    assert report.never_ended == {closed.task_id: "closed"}
 
 
 async def test_reindex_waits_for_no_one_and_fails_on_the_run_lock(engine: AsyncEngine) -> None:
