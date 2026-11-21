@@ -647,3 +647,41 @@ async def test_content_that_only_looks_redacted_is_redacted(engine: AsyncEngine)
     assert await one(
         engine, "SELECT CAST(result AS text) FROM idempotency_keys WHERE task_id = :t", t=a.task_id
     ) == json.dumps(mark)
+
+
+async def test_a_rerun_finishes_the_killed_deletes_own_task_list(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F122 (R24, R15): a rerun resumes the task list of the delete it finishes,
+    so a task that joined after the killed run is neither deleted nor blocking."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    first = await finished(engine, store, request)
+    real_run = RemovalEngine.run
+    runs = 0
+
+    class Killed(Exception):
+        pass
+
+    async def killing_run(self: RemovalEngine, batch: Batch) -> Any:
+        nonlocal runs
+        runs += 1
+        if runs == 2:  # after the first batch fixed the task list
+            raise Killed
+        return await real_run(self, batch)
+
+    monkeypatch.setattr(RemovalEngine, "run", killing_run)
+    with pytest.raises(Killed):
+        await delete_request(engine, inner, temporal(), request)
+    monkeypatch.undo()
+    joiner = await record_task(engine, store, request_id=request, inputs={"j": b"joined later"})
+
+    totals = await delete_request(engine, inner, temporal(), request)  # joiner is running
+    assert await expired(store, first.artifacts["report.md"])
+    assert await store.get(joiner.inputs["j"]) == b"joined later"
+    stones = await tombstones(engine, totals.operation)
+    assert stones[0][2]["tasks"] == [first.task_id] and stones[0][2]["resumed"]
+    assert stones[-1][2]["reason"] == "request delete complete"
+    with pytest.raises(DeleteRefused, match=joiner.task_id):  # a fresh delete sees it
+        await delete_request(engine, inner, temporal(), request)

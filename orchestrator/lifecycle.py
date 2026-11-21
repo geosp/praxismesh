@@ -525,6 +525,33 @@ MARKER_PATTERN = r"^\[deleted [0-9]{4}-[0-9]{2}-[0-9]{2}\]$"
 MARKER_JSON_PATTERN = r'^"\[deleted [0-9]{4}-[0-9]{2}-[0-9]{2}\]"$'
 _MARKER = re.compile(MARKER_PATTERN)
 DELETE_WORKER = "cli:request-delete"
+DELETE_START, DELETE_COMPLETE = "request delete", "request delete complete"
+
+
+async def unfinished_delete(conn: AsyncConnection, subject: str) -> list[str] | None:
+    """The task list of the request's latest delete, if it never completed."""
+    rows = await conn.execute(
+        text(
+            "SELECT operation_id, details FROM audit_log WHERE subject = :s "
+            "AND action = 'request.delete' ORDER BY id DESC"
+        ),
+        {"s": subject},
+    )
+    latest: str | None = None
+    tasks: list[str] | None = None
+    for operation, raw in rows:
+        details = raw if isinstance(raw, dict) else json.loads(raw)
+        if latest is None:
+            latest = operation
+        if operation != latest:
+            break
+        if details.get("reason") == DELETE_COMPLETE:
+            return None
+        if details.get("reason") == DELETE_START:
+            tasks = list(details["tasks"])
+    return tasks
+
+
 # Waits between tries when an attempt holds a task's lock (TaskBusy).
 DELETE_RETRY_S = (0.1, 0.2, 0.5, 1.0, 2.0, 2.0, 2.0, 2.0)
 DELETE_ROWS = (
@@ -592,12 +619,16 @@ async def _delete(
     totals = Totals(removal.operation)
     subject = f"request:{request_id}"
     async with _read(engine, removal) as conn:
+        # A delete that stopped partway is finished with its own task list, not
+        # the request's tasks now (R24, R15; review F122).
+        resumed = await unfinished_delete(conn, subject)
         found = await conn.execute(
             text(
-                "SELECT task_id, ended_at IS NOT NULL FROM tasks WHERE request_id = :r "
-                "ORDER BY task_id"
+                "SELECT task_id, ended_at IS NOT NULL FROM tasks WHERE "
+                + ("task_id = ANY(:ts)" if resumed is not None else "request_id = :r")
+                + " ORDER BY task_id"
             ),
-            {"r": request_id},
+            {"r": request_id, "ts": resumed or []},
         )
         rows = found.all()
     if not rows:
@@ -659,7 +690,12 @@ async def _delete(
             collect=uploads,
             task_locks=tasks,
             record_empty=True,
-            details={"reason": "request delete", "tasks": tasks, "forced": unended},
+            details={
+                "reason": DELETE_START,
+                "tasks": tasks,
+                "forced": unended,
+                "resumed": resumed is not None,
+            },
         )
     )
     totals.add(first.rows, first.references, first.blobs, "uploads")
@@ -714,6 +750,16 @@ async def _delete(
                 )
             )
             totals.add(result.rows, result.references, result.blobs, "references deleted")
+    # The delete is complete: a later run starts afresh from the request's tasks.
+    done = await removal.run(
+        Batch(
+            "request.delete",
+            subject,
+            record_empty=True,
+            details={"reason": DELETE_COMPLETE, "tasks": tasks},
+        )
+    )
+    totals.add(done.rows, done.references, done.blobs, "complete")
     return totals
 
 
