@@ -174,16 +174,24 @@ The markers keep `TaskResult` valid, so `agentctl task output` still reads the r
   and writes the list into its first tombstone. Every batch selects by that list, never by
   `request_id`, so a joining task's upload references, written before its `tasks` row, are untouched.
 - **Task locks.** The first batch takes `TASK_LOCK` for each task in its list, in task-ID order,
-  before it locks any `blob_objects` row, so a concurrent `put` for that task either commits first
-  or sees the delete's mark (revive step 2).
+  before it locks any `blob_objects` row, and marks the tasks' upload references with the delete's
+  operation, so a concurrent `put` for that task either commits first or sees the delete's mark
+  (revive step 2). It takes them without waiting (`pg_try_advisory_xact_lock`): an attempt's
+  message write holds its task lock and then waits for the request lock the delete holds
+  (`MessageRepository._enter`), a wait PostgreSQL cannot detect, because the delete's request
+  lock sits on an idle connection. When a task lock is held, the first batch commits nothing; the
+  delete releases the request lock and starts again after a short wait, and reports busy after
+  about 10 seconds of tries.
 - **Fence.** The first batch inserts, for each task, a `task_attempts` row with a turn and attempt
   above any existing one and status `deleted`. ADR-0007's fence (`NO_NEWER_ATTEMPT`) then refuses
   every later checkpoint, event and message write by a still-running attempt (R25).
 - **A retried end.** `end_task` does nothing once `ended_at` is set, so a `complete_task` retry
   after a delete cannot write back a redacted result (impl-review F82).
 - **`--force`**: a task that has not ended counts as ended when Temporal's `describe` reports its
-  Workflow closed (terminated, cancelled, timed out). The delete then sets the task to `failed`
-  with `ended_at` now, in the first batch.
+  Workflow closed (terminated, cancelled, timed out) or no longer knows it (beyond
+  `TEMPORAL_RETENTION`, so closed long ago); a running Workflow is always refused. The delete then
+  sets the task to `failed` with `ended_at` now, in the first batch. Fencing rows and forced ends
+  are recorded in the first tombstone's details, not counted as removed rows.
 - `agent_sessions.session_id` is the task ID on both runners (assumption; phase 02 task 3.1).
 - **Residual**: Temporal histories keep each turn's summary, questions and outcome for
   `TEMPORAL_RETENTION` (72 hours) after the Workflow closes, and in every backup taken before.
@@ -200,6 +208,9 @@ Order of one removal batch (GC or delete), at most 500 rows:
    (the operation ID); write the batch's tombstone (`audit_log`: action, subject, reason, actor,
    time, operation ID, counts of rows, references and blobs).
 2. For each marked blob, the bucket step in revive. A missing object is not an error.
+
+A dry run executes the same batches in one transaction and rolls it back at the end, so each
+batch sees the ones before it and the plan matches the real run.
 
 A run first finishes every blob with `removed_at` set and `bucket_deleted_at` null, from earlier
 runs, before new work; that set stays small. A run's tombstones share its operation ID; counts are

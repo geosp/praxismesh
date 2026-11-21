@@ -428,4 +428,7 @@ operator runs a command.
 
 ## Decision log
 
-- None.
+- 2026-11-20 · phase 02 apply: `request delete` takes its task locks without waiting and retries,
+  because a message write takes the task lock before the request lock; `--force` also accepts a
+  Workflow Temporal no longer knows; a dry run is one transaction rolled back at the end. Mechanics
+  within R21 and D12 (notes.md#redact, notes.md#d6); no requirement or decision changed.
