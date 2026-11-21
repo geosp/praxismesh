@@ -96,6 +96,32 @@ stack as the round 1 rerun, with `DEMO_BUILD=--no-build` and `DRILL_BUILD=--no-b
   at `4713b7b`, workers stopped: 363 passed and 4 skipped (`test_model_endpoints.py`, no
   `VLLM_BASE_URL` in this env file), in 15 min 17 s.
 
+## Gate verification run
+
+The independent verification (docs/reviews/phase-3a/verification-persistence-03.md, raw report
+`persistence-verification-phase-03-acceptance.md`), at `4d269bef0ec2e251515750eed0fe31a1befdc4ec`, in
+a disposable worktree whose `infra/.env` came from `infra/.env.example` (project `pmverify3a`,
+ports 55432, 57233, 58080, 58333, `VLLM_BASE_URL=http://spark-01:8000`), with
+`DEMO_BUILD=--no-build`. `ENV_FILE=infra/.env DEMO_BUILD=--no-build bash
+infra/demo/phase-3a-lifecycle.sh .verify/demo` exited 0 in 118 s.
+
+| # | Step | Observed | Result |
+| --- | --- | --- | --- |
+| 0 | fresh stack, fake model and three workers | no error | pass |
+| 1 | Request A | `task-f83a7111-…`, `# Order summary` | pass |
+| 2a | A's end 91 days back; `gc --dry-run` | `batches 8, rows 34, references 13, blobs 5`, by reason | pass |
+| 2b | `gc` | the same counts, operation `gc:0fb5b07b…`, 8 tombstones with counts and no content | pass |
+| 2c | `task output A` | `expired: removed on 2026-11-21 21:28 UTC` | pass |
+| 3 | Request B, `request delete` (dry run first) | `batches 9, rows 31, references 13, blobs 5`; `summary "[deleted 2026-11-21]"`, `artifacts []`, `tokens_in 400`; no outputs | pass |
+| 4 | Request C resubmits B's input, `gc` | `batches 0, blobs 0`; the input `removed_at None ... in the bucket: True` | pass |
+| 5 | backup, reset, up, restore | "a complete backup this checkout can restore", "loaded 5 object(s)", `"clean": true`, C `succeeded` and `# Order summary` | pass |
+
+Failure and recovery, in the same run: a restore into a stack with data refused ("refusing to
+restore into a stack that holds data", exit 2, unchanged); a restore killed (SIGKILL) while
+loading `praxismesh`, after which the next restore refused ("an earlier restore did not finish")
+and, after `make reset` and `make up`, a restore succeeded with `"clean": true`; and the drill's
+removed object listed as dangling under `tasks/<task>/input_refs` and `upload/<task>`.
+
 ## Cleanup
 
 The demo and the drill deleted their backups. The `pmaccept3a` stack was torn down with `make
