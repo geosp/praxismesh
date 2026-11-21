@@ -496,6 +496,10 @@ async def _gc(
     listing = await bucket.list_objects()
     async with _read(engine, removal) as conn:
         aged = [o for o in await refs.orphaned(conn, listing) if o.last_put_at < now - window]
+        back = await refs.returned(conn, listing)
+    # Bytes back under a removed row: run their bucket step again (F145).
+    if not removal.dry_run:
+        totals.finished += await removal.finish(back)
     orphans = [o for o in aged if refs.is_content_key(o.key)]
     totals.unrecognised = sorted(o.key for o in aged if not refs.is_content_key(o.key))
     for start in range(0, len(orphans), BATCH_LIMIT):

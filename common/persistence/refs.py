@@ -316,6 +316,23 @@ async def orphaned(conn: AsyncConnection, bucket: Mapping[str, BucketObject]) ->
     ]
 
 
+async def returned(conn: AsyncConnection, bucket: Mapping[str, BucketObject]) -> list[str]:
+    """Bucket objects whose row says removed and bucket-deleted, with no live
+    reference: bytes a `put` uploaded in a transaction that never committed
+    (review F145). The bucket step removes them again; it waits on the row lock,
+    so an upload still in flight is left to finish."""
+    found = await conn.execute(
+        text(
+            "SELECT b.key FROM blob_objects b WHERE b.key = ANY(:k) "
+            "AND b.removed_at IS NOT NULL AND b.bucket_deleted_at IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM blob_refs r WHERE r.blob_key = b.key "
+            "AND r.removed_at IS NULL) ORDER BY b.key"
+        ),
+        {"k": list(bucket)},
+    )
+    return [row[0] for row in found]
+
+
 async def expired(
     conn: AsyncConnection,
     now: datetime,

@@ -433,3 +433,22 @@ async def test_a_second_gc_or_a_delete_fails_at_once_while_gc_runs(
     assert totals.batches > 2
     monkeypatch.undo()
     await delete_request(engine, inner, FakeTemporal(), other.request_id)  # free again
+
+
+async def test_bytes_back_under_a_removed_row_are_removed_again(engine: AsyncEngine) -> None:
+    """F145 (R6, R15): a re-upload whose transaction never committed leaves the
+    bytes in the bucket under a row still marked and bucket-deleted; gc removes
+    them again, while bytes a committed put revived stay."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    content = f"input {uuid.uuid4()}".encode()
+    old = await ended(engine, store, 100, **{"in.txt": content})
+    removed = old.inputs["in.txt"]
+    await gc(engine, inner, FakeTemporal())
+    assert removed.key not in inner.objects
+    # The upload of a put whose commit then failed: bytes in, row rolled back.
+    await inner.put(content, retention="transcript")
+    assert removed.key in inner.objects
+    totals = await gc(engine, inner, FakeTemporal())
+    assert removed.key not in inner.objects
+    assert totals.finished >= 1
