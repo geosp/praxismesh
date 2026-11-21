@@ -235,3 +235,9 @@ Diff base 9a81933..dd999f3 (frozen review commit dd999f3). Reviewers: contract �
 | F164 | Nit | contract, failure | R13, R15 | Kill tests raise in-process; a real process death (the session lock's release) is not observed | accepted: phase 03's drill stops a real process |
 
 After the fixes (2026-11-21): every Major fixed test first; each new test failed before its fix and again with the fix reverted. This was the last round (the second): nothing is left open.
+
+## 2026-11-21 · verification · phase 02 · pass
+code_sha 4dde76d, docs_sha 0d9db27 (both on origin/feat/92-phase-3a-gc-and-delete). Record: docs/reviews/phase-3a/verification-persistence-02.md; raw: docs/reviews/phase-3a/raw/persistence-verification-phase-02-*.md. The as-built check's Major (the runbook overstated what the audit log refuses) and nine Nits were fixed in 0d9db27, documentation only.
+
+## 2026-11-21 · done · phase 02
+Tests, acceptance and verification passed (verification-persistence-02.md); impl review round 2 passed with nothing open.

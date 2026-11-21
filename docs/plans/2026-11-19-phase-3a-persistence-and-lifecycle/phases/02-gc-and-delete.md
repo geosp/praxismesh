@@ -1,13 +1,21 @@
 ---
 phase: 2
 title: GC and delete-by-request
-status: impl-reviewed
+status: done
 branch: feat/92-phase-3a-gc-and-delete
 base: 9a81933360104aa0d9abf9ed89db7c357fb17b8b
 delivers: [R3, R6, R7, R8, R9, R10, R11, R12, R13, R15, R21, R22, R24, R25]
 design_review: { status: passed, rounds: 3, last: 2026-11-20 }
 impl_review: { status: passed, rounds: 2, last: 2026-11-21 }
 approved: 2026-11-20
+verification: { status: passed, last: 2026-11-21 }
+demo: { status: passed, last: 2026-11-21 }
+evidence:
+  code_sha: 4dde76d70a3a7e378dddb1a7714f0a9ddc76362a
+  docs_sha: 0d9db273d179c27f8abb203e85524625c1ef040d
+  review: docs/plans/2026-11-19-phase-3a-persistence-and-lifecycle/reviews.md
+  verification: docs/reviews/phase-3a/verification-persistence-02.md
+  demo: docs/demos/phase-3a-persistence-02.md
 ---
 
 # Phase 02 · GC and delete-by-request
