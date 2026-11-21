@@ -14,6 +14,8 @@ evidence:
   code_sha: 4d269bef0ec2e251515750eed0fe31a1befdc4ec
   docs_sha: 1b91b617ab80247b6d9f2f3bdd34023ba47924b5
   review: docs/plans/2026-11-19-phase-3a-persistence-and-lifecycle/reviews.md
+  verification: docs/reviews/phase-3a/verification-persistence-03.md
+  demo: docs/demos/phase-3a-lifecycle.md
 ---
 
 # Phase 03 · Backup, restore, reconciliation and acceptance
