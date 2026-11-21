@@ -285,3 +285,24 @@ async def test_gc_fails_at_once_while_another_run_holds_the_lock(engine: AsyncEn
     async with run_lock(engine):
         with pytest.raises(RemovalBusy):
             await gc(engine, MemoryBlobStore(), Temporal())
+
+
+async def test_an_object_that_is_not_a_content_key_is_reported_not_removed(
+    engine: AsyncEngine,
+) -> None:
+    """F119 (R8, R15): gc never records a key it cannot address; it reports it,
+    and every later run still works."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    real = await store.put(f"orphan {uuid.uuid4()}".encode(), retention="ephemeral")
+    await set_last_put(engine, real.key, NOW - timedelta(hours=25))
+    inner.objects["notes/readme.txt"] = replace(
+        inner.objects[real.key], created_at=NOW - timedelta(days=3)
+    )
+    first = await gc(engine, inner, Temporal())
+    second = await gc(engine, inner, Temporal())
+    assert "notes/readme.txt" in inner.objects and real.key not in inner.objects
+    assert first.unrecognised == ["notes/readme.txt"] == second.unrecognised
+    assert (
+        await count(engine, "SELECT count(*) FROM blob_objects WHERE key = 'notes/readme.txt'") == 0
+    )

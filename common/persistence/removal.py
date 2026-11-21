@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from common.blob_store.base import BlobStore
 from common.errors import PraxisError
 from common.persistence.audit import AuditRepository
+from common.persistence.refs import is_content_key
 from common.schemas import BlobRef
 
 BATCH_LIMIT = 500  # rows per batch at most (D4)
@@ -342,6 +343,8 @@ class RemovalEngine:
         its blob). A key with no `blob_objects` row gets one, at that time."""
         marked: list[str] = []
         for key, seen in sorted(orphans.items()):
+            if not is_content_key(key):
+                continue  # never recorded: its row could not be addressed (F119)
             await conn.execute(
                 text(
                     "INSERT INTO blob_objects (key, checksum, bytes, content_type, "

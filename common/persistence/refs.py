@@ -79,6 +79,12 @@ _COLUMNS = "blob_key, holder_table, holder_key, holder_column, task_id, request_
 _CONTENT_KEY = re.compile(r"^sha256/([0-9a-f]{64})$")
 
 
+def is_content_key(key: str) -> bool:
+    """Whether `key` is a content key (`sha256/<hex>`). Only those are recorded
+    in `blob_objects` or removed; others are reported (review F119)."""
+    return _CONTENT_KEY.match(key) is not None
+
+
 def rank_sql(column: str) -> str:
     """A SQL expression ranking the class in `column` by `RETENTION_ORDER`."""
     cases = " ".join(f"WHEN '{c}' THEN {n}" for c, n in RETENTION_ORDER.items())

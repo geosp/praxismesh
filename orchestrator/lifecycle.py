@@ -49,6 +49,8 @@ class Totals:
     references: int = 0
     blobs: int = 0
     by_reason: dict[str, dict[str, int]] = field(default_factory=dict)
+    # Bucket objects that are not content keys: reported, never removed (F119).
+    unrecognised: list[str] = field(default_factory=list)
 
     def add(self, rows: int, references: int, blobs: int, reason: str = "") -> None:
         self.batches += 1
@@ -69,6 +71,7 @@ class Totals:
             "references": self.references,
             "blobs": self.blobs,
             "by_reason": self.by_reason,
+            "unrecognised": self.unrecognised,
         }
 
 
@@ -475,7 +478,9 @@ async def _gc(
     # 5. Orphans: bucket objects with no live reference, past the window (R8).
     listing = await bucket.list_objects()
     async with _read(engine, removal) as conn:
-        orphans = [o for o in await refs.orphaned(conn, listing) if o.last_put_at < now - window]
+        aged = [o for o in await refs.orphaned(conn, listing) if o.last_put_at < now - window]
+    orphans = [o for o in aged if refs.is_content_key(o.key)]
+    totals.unrecognised = sorted(o.key for o in aged if not refs.is_content_key(o.key))
     for start in range(0, len(orphans), BATCH_LIMIT):
         some = orphans[start : start + BATCH_LIMIT]
         result = await removal.run(

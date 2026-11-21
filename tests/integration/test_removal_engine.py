@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import text
@@ -199,3 +200,17 @@ async def test_a_put_between_the_batch_and_the_bucket_step_keeps_the_object(
     assert a.instructions.key in inner.objects  # the mark was cleared: kept
     assert await blob_state(engine, a.instructions.key) == (False, False)
     assert await store.get(a.instructions)
+
+
+async def test_the_engine_never_records_a_key_that_is_not_a_content_key(
+    engine: AsyncEngine,
+) -> None:
+    """F119: an orphan batch skips a key it could not address in the bucket step."""
+    inner = MemoryBlobStore()
+    op = operation_id("test")
+    result = await RemovalEngine(engine, inner, op).run(
+        Batch("test.orphans", "orphans", orphans={"notes/readme.txt": datetime.now(UTC)})
+    )
+    assert result.marked == () and result.tombstone is None
+    async with engine.connect() as conn:
+        assert await conn.scalar(text("SELECT count(*) FROM blob_objects")) == 0
