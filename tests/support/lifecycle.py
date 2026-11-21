@@ -244,3 +244,16 @@ async def content_rows(engine: AsyncEngine, task_id: str, request_id: str) -> No
             ("INSERT INTO task_inbox (task_id) VALUES (:t)", {}),
         ):
             await conn.execute(text(sql), {"t": task_id, **params})
+
+
+class Borrowed:
+    """A test's engine handed to code that disposes of its own (the CLI)."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._engine, name)
+
+    async def dispose(self) -> None:
+        return None

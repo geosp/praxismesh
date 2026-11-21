@@ -175,7 +175,11 @@ async def test_a_killed_delete_finishes_when_run_again(
     await check_consistent(engine, inner, "request.delete")
     async with engine.connect() as conn:
         live = await conn.scalar(
-            text("SELECT count(*) FROM blob_refs WHERE request_id = :r AND removed_at IS NULL"),
+            # By task: upload references carry no request (F132).
+            text(
+                "SELECT count(*) FROM blob_refs WHERE removed_at IS NULL AND task_id IN "
+                "(SELECT task_id FROM tasks WHERE request_id = :r)"
+            ),
             {"r": request},
         )
     assert live == 0

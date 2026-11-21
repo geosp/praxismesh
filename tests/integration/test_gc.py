@@ -19,6 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from common.blob_store import BlobExpired, MemoryBlobStore
+from common.blob_store.base import content_key
 from common.events import TableTransport
 from common.persistence.removal import RemovalBusy, run_lock
 from common.persistence.repositories import Checkpoint, CheckpointRepository, RecordingBlobStore
@@ -97,8 +98,11 @@ async def test_gc_removes_what_expired_and_keeps_the_rest(engine: AsyncEngine) -
     await checkpoint(engine, store, running)
     ancient = await ended(engine, store, 400)
     audit = await store.put(b"audit record", retention="audit", task_id=ancient.task_id)
+    audit_rows = await one(engine, "SELECT count(*) FROM audit_log")
 
     totals = await gc(engine, inner, FakeTemporal())
+    # F132 (R7): audit rows of any age are kept; gc only appends its tombstones.
+    assert await one(engine, "SELECT count(*) FROM audit_log") == audit_rows + totals.batches
 
     # R6: the 8-day-old task's checkpoints, their references, the late upload
     # and the blobs left without a live reference are gone.
@@ -116,6 +120,23 @@ async def test_gc_removes_what_expired_and_keeps_the_rest(engine: AsyncEngine) -
             == 1
         )
     assert await readable(store, recent, "instructions")
+    for kept in (recent, running):  # F132: their workspaces still read
+        workspace = content_key(f"workspace {kept.task_id}".encode())[0]
+        assert workspace in inner.objects
+        assert not await one(
+            engine, "SELECT removed_at IS NOT NULL FROM blob_objects WHERE key = :k", k=workspace
+        )
+    # F132: the expired references are marked, by this run.
+    assert (
+        await one(
+            engine,
+            "SELECT count(*) FROM blob_refs WHERE task_id = :t AND holder_table = 'checkpoints' "
+            "AND removed_by = :o",
+            t=old.task_id,
+            o=totals.operation,
+        )
+        == 1
+    )
     # A 400-day-old task loses its artifact, but `audit` of any age is kept,
     # and so are the task rows themselves (class audit).
     assert not await readable(store, ancient, "out.md")
@@ -371,3 +392,44 @@ async def test_every_row_rule_and_the_event_prune_expire_with_their_task(
     assert {"events expired", "agent_sessions expired", "task_messages expired"} <= set(
         totals.by_reason
     )
+
+
+async def test_a_second_gc_or_a_delete_fails_at_once_while_gc_runs(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D4 across several batches (review F141): while one gc is between batches,
+    another gc and a request delete fail at once; the first then completes."""
+    import asyncio
+
+    from common.persistence.removal import Batch, RemovalEngine
+    from orchestrator.lifecycle import delete_request
+
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    for _ in range(3):
+        await ended(engine, store, 100)
+    other = await ended(engine, store, 1)
+    paused, resume = asyncio.Event(), asyncio.Event()
+    real_run = RemovalEngine.run
+    runs = 0
+
+    async def pausing_run(self: RemovalEngine, batch: Batch) -> Any:
+        nonlocal runs
+        runs += 1
+        if runs == 2:
+            paused.set()
+            await resume.wait()
+        return await real_run(self, batch)
+
+    monkeypatch.setattr(RemovalEngine, "run", pausing_run)
+    first = asyncio.create_task(gc(engine, inner, FakeTemporal()))
+    await asyncio.wait_for(paused.wait(), 30)
+    with pytest.raises(RemovalBusy):
+        await asyncio.wait_for(gc(engine, inner, FakeTemporal(), dry_run=True), 5)
+    with pytest.raises(RemovalBusy):
+        await asyncio.wait_for(delete_request(engine, inner, FakeTemporal(), other.request_id), 5)
+    resume.set()
+    totals = await first
+    assert totals.batches > 2
+    monkeypatch.undo()
+    await delete_request(engine, inner, FakeTemporal(), other.request_id)  # free again

@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -14,9 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from common.blob_store import BlobExpired, MemoryBlobStore
 from common.blob_store.s3 import S3BlobStore
-from common.persistence.repositories import RecordingBlobStore, make_engine
+from common.persistence.repositories import RecordingBlobStore
 from orchestrator import cli
-from tests.support.lifecycle import end_task, record_task
+from orchestrator.lifecycle import gc
+from tests.support.lifecycle import Borrowed, FakeTemporal, end_task, record_task
+from tests.support.scratch_db import scratch_database
 
 pytestmark = pytest.mark.integration
 
@@ -25,9 +27,9 @@ REMOVED = datetime(2026, 11, 2, 3, 4, tzinfo=UTC)
 
 @pytest.fixture
 async def engine() -> AsyncIterator[AsyncEngine]:
-    eng = make_engine()
-    yield eng
-    await eng.dispose()
+    # A scratch database: the marks these tests set never reach the stack's (F133).
+    async with scratch_database("head") as (_, eng):
+        yield eng
 
 
 async def mark_removed(engine: AsyncEngine, key: str) -> None:
@@ -52,19 +54,26 @@ async def test_get_stream_and_stat_raise_expired_with_the_date(engine: AsyncEngi
         [chunk async for chunk in store.stream(ref)]
 
 
-async def test_task_output_reports_an_expired_artifact(
+async def test_task_output_reports_an_artifact_gc_removed(
     engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """R9 end to end (review F132): gc removes the artifact of a task that ended
+    100 days ago; `task output` reports it expired, with the date, not missing."""
     inner = MemoryBlobStore()
     store = RecordingBlobStore(inner, engine)
     stored = await record_task(engine, store)
     await end_task(
-        engine, store, stored, artifacts={"report.md": f"report {uuid.uuid4()}".encode()}
+        engine,
+        store,
+        stored,
+        artifacts={"report.md": f"report {uuid.uuid4()}".encode()},
+        ended_at=datetime.now(UTC) - timedelta(days=100),
     )
+    await gc(engine, inner, FakeTemporal())
+    monkeypatch.setattr(cli, "make_engine", lambda: Borrowed(engine))
     monkeypatch.setattr(S3BlobStore, "from_env", lambda: inner)
     args = argparse.Namespace(task_id=stored.task_id, path="report.md", to=None)
-
-    await mark_removed(engine, stored.artifacts["report.md"].key)
-    with pytest.raises(BlobExpired, match="expired: removed on 2026-11-02") as error:
+    today = f"{datetime.now(UTC):%Y-%m-%d}"
+    with pytest.raises(BlobExpired, match=f"expired: removed on {today}") as error:
         await cli.output(args)
     assert "not found" not in str(error.value)

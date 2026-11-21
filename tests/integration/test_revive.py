@@ -16,7 +16,8 @@ from common.blob_store import MemoryBlobStore
 from common.persistence import refs
 from common.persistence.removal import Batch, RemovalEngine, live_references, operation_id
 from common.persistence.repositories import RecordingBlobStore
-from tests.support.lifecycle import StoredTask, end_task, record_task
+from orchestrator.lifecycle import delete_request, gc
+from tests.support.lifecycle import FakeTemporal, StoredTask, end_task, record_task
 from tests.support.scratch_db import scratch_database
 
 pytestmark = pytest.mark.integration
@@ -144,3 +145,18 @@ async def test_an_old_orphan_uploaded_again_restarts_its_window(engine: AsyncEng
         later = {o.key for o in await refs.orphaned(conn, await inner.list_objects())}
     assert ref.key not in later  # the upload reference keeps it live
     assert await ref_marks(engine, task, ref.key) == {None}
+
+
+async def test_a_file_resubmitted_after_a_request_delete_survives_the_next_gc(
+    engine: AsyncEngine,
+) -> None:
+    """R22 scenario 1 end to end (review F132): delete a request, submit the same
+    file again, run gc: the new task still reads it."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    data = f"orders.csv {uuid.uuid4()}".encode()
+    old = await end_task(engine, store, await record_task(engine, store, inputs={"in": data}))
+    await delete_request(engine, inner, FakeTemporal(), old.request_id)
+    new = await record_task(engine, store, inputs={"in": data})
+    await gc(engine, inner, FakeTemporal())
+    assert await store.get(new.inputs["in"]) == data

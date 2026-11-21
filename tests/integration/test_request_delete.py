@@ -20,6 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from common.blob_store import MemoryBlobStore
+from common.blob_store.base import content_key
 from common.blob_store.s3 import S3BlobStore
 from common.errors import InvalidTaskInput
 from common.persistence.fence import REQUEST_LOCK, TASK_LOCK, FenceRejected
@@ -34,6 +35,7 @@ from common.schemas import BlobRef
 from orchestrator import cli
 from orchestrator.lifecycle import DeleteRefused, delete_request, marker
 from tests.support.lifecycle import (
+    Borrowed,
     FakeTemporal,
     StoredTask,
     content_rows,
@@ -91,6 +93,11 @@ async def test_a_finished_request_is_removed_redacted_and_recorded(engine: Async
     for t in (a, b):  # R10: nothing of theirs can be read
         for ref in (t.instructions, *t.inputs.values(), *t.artifacts.values()):
             assert await expired(store, ref)
+        workspace = content_key(f"workspace {t.task_id}".encode())[0]  # F132
+        assert workspace not in inner.objects
+        assert await one(
+            engine, "SELECT removed_at IS NOT NULL FROM blob_objects WHERE key = :k", k=workspace
+        )
         assert (
             await one(engine, "SELECT count(*) FROM checkpoints WHERE task_id = :t", t=t.task_id)
             == 0
@@ -168,23 +175,10 @@ async def test_task_output_of_a_redacted_task_reports_no_output(
     request = f"req-del-{uuid.uuid4().hex[:8]}"
     a = await finished(engine, store, request)
     await delete_request(engine, inner, FakeTemporal(), request)
-    monkeypatch.setattr(cli, "make_engine", lambda: _Borrowed(engine))
+    monkeypatch.setattr(cli, "make_engine", lambda: Borrowed(engine))
     monkeypatch.setattr(S3BlobStore, "from_env", lambda: inner)
     with pytest.raises(InvalidTaskInput, match=r"has no output 'report.md' \(outputs: none\)"):
         await cli.output(argparse.Namespace(task_id=a.task_id, path="report.md", to=None))
-
-
-class _Borrowed:
-    """The test's engine, which the CLI must not dispose."""
-
-    def __init__(self, engine: AsyncEngine) -> None:
-        self._engine = engine
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._engine, name)
-
-    async def dispose(self) -> None:
-        return None
 
 
 async def test_a_request_with_a_running_task_is_refused(engine: AsyncEngine) -> None:
