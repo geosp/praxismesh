@@ -90,12 +90,14 @@ cp infra/.env.example infra/.env   # then edit: passwords, and VLLM_BASE_URL if 
 make up                            # start and wait until healthy (safe to repeat)
 make status                        # addresses, service health, model endpoint; fails if unhealthy
 make migrate                       # apply application database migrations
-make smoke                         # integration tests against the stack
+make smoke                         # integration tests against the stack (workers stopped; see below)
 make restart-check                 # a repeat start changes nothing; state survives down/up
 make unhealthy-check               # a stopped database is reported by name
 make down                          # stop, keep data
 make reset                         # stop and delete all data volumes
 ```
+
+Run `make smoke`, or `uv run --env-file infra/.env pytest -m integration`, with the worker containers stopped (`make workers-down`): the orchestrator container's wake dispatcher otherwise consumes the messaging tests' wake rows and those tests fail. CI runs `make smoke` before it starts the workers.
 
 `infra/.env` is git-ignored; keep hosts, passwords and keys there, never in the repository. Make never reads it: Docker Compose reads it with `--env-file`, and the tests and migrations get it through `uv run --env-file`. Write it as plain `KEY=value` lines using the names in `infra/.env.example`; values may use only `A-Z a-z 0-9 . _ : / @ % + , = -`. `make up` names whatever is wrong: Docker not running, `infra/.env` absent, a line that breaks these rules, or a required variable unset. A variable set in your shell overrides the file, except `COMPOSE_PROJECT_NAME`, which comes only from the file.
 

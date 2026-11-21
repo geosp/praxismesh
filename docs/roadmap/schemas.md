@@ -38,8 +38,9 @@ As built for the Phase 2 events plan (migration 0005, plan D1-D3): `AgentEvent`s
 are stored in `agent_events` at a gap-free `offset` per workflow (the task's
 workflow ID), with `event_logs` holding each workflow's next offset and retained
 base and `event_batches` the batch IDs (`<workflow>:<attempt_id>:<n>`) seen in the
-last 600 s, so a re-sent batch is stored once. All three carry retention class
-`task`. `seq` stays per attempt. Event types and payloads (counts, names, IDs and
+last 600 s, so a re-sent batch is stored once. All three carried retention class
+`task` until migration 0007, which moved `event_logs` and `agent_events` to `transcript` and
+`event_batches` to `ephemeral`. `seq` stays per attempt. Event types and payloads (counts, names, IDs and
 statuses only; never model or tool text):
 
 | Type | Payload | Emitted by |

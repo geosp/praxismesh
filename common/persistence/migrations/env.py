@@ -19,7 +19,9 @@ from common.persistence.settings import APP_DB_NAME, app_database_url
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep loggers that already exist: a migration run in-process (the test
+    # helpers in tests/support/scratch_db.py) must not silence the app's.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = None
 

@@ -156,3 +156,18 @@ Diff base 8cc4355..dccc8ff (frozen review commit dccc8ff). Reviewers (the lenses
 | F111 | Nit | scope | R2 | The migration test seeds only a `succeeded` ended task, not `failed` or `needs_input` | open |
 | F112 | Nit | scope | R14 | The append-only trigger is per row: an `UPDATE`/`DELETE` matching no rows succeeds (no data can change) | open |
 | F113 | Nit | scope | R4 | Tests still `put(..., retention="task")`; mapped to `transcript`, never stored | open |
+
+## 2026-11-20 · impl-review · phase 01 · round 3 · passed
+Targeted follow-up of the verification fix only. Diff base 619593b..56c0170 (frozen review commit 56c0170: `common/persistence/migrations/env.py`, `tests/integration/test_migration_0007.py`). Reviewers: contract ✅ (raw: docs/reviews/phase-3a/raw/persistence-impl-review-phase-01-round-3-contract.md). Failure and scope not run: the diff adds no retry, resume, limit or scope mechanism.
+
+| ID | Sev | Lens | Req | Finding | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| F114 | Nit | contract | tests | `fileConfig` still replaces root handlers with alembic.ini's stderr handler (WARNING) after an in-process migration; a later `capsys` stderr test could see its lines | deferred: phase 02 (`migrate()` skips `fileConfig` in-process) |
+| F115 | Nit | contract | tests | The regression test checks `disabled`, not that a `praxis.harness` warning still reaches `caplog` after `migrate` | deferred: phase 02 (assert a `caplog` warning after `migrate`) |
+| F116 | Nit | contract | tests | The test sits in the 0007 file and migrates to 0007; `test_database.py` is the general home | deferred: phase 02 (move the test to `test_database.py`) |
+
+## 2026-11-20 · verification · phase 01 · pass
+code_sha = docs_sha = 56c0170 (on origin/docs/92-phase-3a-01-verification). Record: docs/reviews/phase-3a/verification-persistence-01.md; raw: docs/reviews/phase-3a/raw/persistence-verification-phase-01-*.md. Fixed during verification: F1 (README, dc83f97), F2 (in-process Alembic disabled loggers, 56c0170), N1-N3 (dc83f97).
+
+## 2026-11-20 · done · phase 01
+Tests, acceptance and verification passed at 56c0170 (verification-persistence-01.md); impl review round 3 passed; F114-F116 deferred to phase 02.
