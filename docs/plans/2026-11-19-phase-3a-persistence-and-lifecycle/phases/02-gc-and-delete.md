@@ -36,7 +36,7 @@ removed blob reads as expired, and a run stopped partway finishes when run again
 
 - [x] 3.1 Check the assumption that each `agent_sessions` row belongs to one task, through its `session_id`, on both runners (notes.md#redact). Verify: a test that reads the session IDs of a finished task on each runner. If it fails, pause and propose a plan update.
 - [x] 3.2 `agentctl request delete REQ [--dry-run] [--force]`: holds the session-level request lock for the whole run (and `record_task` takes the lock for a joining task); fixes the task list in its first tombstone, takes each task's `TASK_LOCK` in task-ID order before any `blob_objects` lock (notes.md#redact, impl-review F81), and inserts each task's fencing attempt row; refuses while any task has not ended, unless `--force` and Temporal reports its Workflow closed; redacts and removes as notes.md#redact (R10, R11, R12, R21, R24, R25, D12). Verify: integration tests for a finished two-task request, a running one, a terminated Workflow with and without `--force`, a request sharing a blob with another, a task joining mid-delete, a `--force` delete while the Activity still runs (its later checkpoint, event and upload change nothing), and `task output` of a redacted task.
-- [ ] 3.3 Kill tests: a delete and a GC killed mid-batch, then run again (R13, R15). Verify: every committed batch has its tombstone, the counts sum once, and the dangling check finds nothing.
+- [x] 3.3 Kill tests: a delete and a GC killed mid-batch, then run again (R13, R15). Verify: every committed batch has its tombstone, the counts sum once, and the dangling check finds nothing.
 
 ### 4. Documentation
 
