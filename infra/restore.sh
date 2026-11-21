@@ -87,7 +87,9 @@ echo "restore: done; reconcile's report follows"
 rc=0
 report=$(uv_run python -m orchestrator.cli reconcile) || rc=$?
 printf '%s\n' "$report"
-if [ "$rc" -eq 1 ] && printf '%s\n' "$report" | grep -q '"clean": false'; then
+# A here-string, not a pipe: under pipefail, `grep -q` closing the pipe early
+# would fail the printf, and the findings would read as a failure.
+if [ "$rc" -eq 1 ] && grep -q '"clean": false' <<<"$report"; then
     echo "restore: reconcile listed the findings above (information only; restore succeeded)"
 elif [ "$rc" -ne 0 ]; then
     echo "restore: reconcile failed (exit $rc; restore succeeded): run './agentctl reconcile' again" >&2

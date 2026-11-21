@@ -93,8 +93,11 @@ mk reset
 mk up
 
 step "5. restore"
-mk restore BACKUP="$backup" | tee "$scratch/restore.out"
+mk restore BACKUP="$backup" 2>&1 | tee "$scratch/restore.out"
 grep -q "restore: done" "$scratch/restore.out" || fail "restore did not finish"
+if grep -q "restore: reconcile failed" "$scratch/restore.out"; then
+    fail "restore reported reconcile as failed"
+fi
 [ "$(cli task status "$task" | json "d['task']['status']")" = succeeded ] || fail "task status"
 cli task output "$task" "$OUTPUT" | cmp -s - "$scratch/before.md" || fail "task output differs"
 uv_run python - "$task" <<'EOF' || fail "comms_mcp's role cannot connect"
