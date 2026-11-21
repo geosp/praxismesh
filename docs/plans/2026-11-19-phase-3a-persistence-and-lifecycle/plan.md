@@ -1,6 +1,6 @@
 ---
 title: Phase 3A persistence and data lifecycle - blob references, retention, deletion and backup
-status: in-progress
+status: implemented
 created: 2026-11-19
 updated: 2026-11-21
 design_review: { status: passed, rounds: 3, last: 2026-11-20 }
@@ -424,7 +424,7 @@ operator runs a command.
 | --- | --- | --- | --- | --- |
 | 01 | Reference index, classes, audit log and the payload guard | R1, R2, R4, R5, R14, R18, R19, R20 | done | 13/13 |
 | 02 | GC and delete-by-request | R3, R6, R7, R8, R9, R10, R11, R12, R13, R15, R21, R22, R24, R25 | done | 10/10 |
-| 03 | Backup, restore, reconciliation and acceptance | R16, R17, R23 | in-progress | 7/7 |
+| 03 | Backup, restore, reconciliation and acceptance | R16, R17, R23 | done | 7/7 |
 
 ## Decision log
 

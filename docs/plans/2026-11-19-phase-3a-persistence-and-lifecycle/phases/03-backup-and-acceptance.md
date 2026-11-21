@@ -1,13 +1,19 @@
 ---
 phase: 3
 title: Backup, restore, reconciliation and acceptance
-status: impl-reviewed
+status: done
 branch: feat/92-phase-3a-backup-restore
 base: 9920f3601335040d8aae069097c950c50a0572c3
 delivers: [R16, R17, R23]
 design_review: { status: passed, rounds: 3, last: 2026-11-20 }
 impl_review: { status: passed, rounds: 2, last: 2026-11-21 }
 approved: 2026-11-20
+verification: { status: passed, last: 2026-11-21 }
+demo: { status: passed, last: 2026-11-21 }
+evidence:
+  code_sha: 4d269bef0ec2e251515750eed0fe31a1befdc4ec
+  docs_sha: 1b91b617ab80247b6d9f2f3bdd34023ba47924b5
+  review: docs/plans/2026-11-19-phase-3a-persistence-and-lifecycle/reviews.md
 ---
 
 # Phase 03 · Backup, restore, reconciliation and acceptance

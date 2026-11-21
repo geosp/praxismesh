@@ -315,3 +315,6 @@ After the fixes (2026-11-21, last fix commit 4713b7b): every Major fixed test fi
 
 ## 2026-11-21 · verification · phase 03 · pass
 code_sha 4d269be, docs_sha 1b91b61 (both on origin/feat/92-phase-3a-backup-restore). Record: docs/reviews/phase-3a/verification-persistence-03.md; raw: docs/reviews/phase-3a/raw/persistence-verification-phase-03-*.md. The as-built check's four Nits and one unverifiable claim were fixed in 1b91b61, documentation only, and a follow-up confirmed them. The link check, gitleaks, actionlint and the drill as a CI step run in the pull request's CI.
+
+## 2026-11-21 · done · phase 03
+Tests, acceptance, the drill, the demo and verification passed (verification-persistence-03.md); impl review round 2 passed with nothing open. Every phase is done: the plan is implemented.
