@@ -7,6 +7,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
+
 from common.blob_store.s3 import S3BlobStore
 from common.schemas import BlobRef, TaskStart
 from orchestrator import cli
@@ -249,3 +251,32 @@ def test_request_delete_passes_force_and_dry_run(monkeypatch: Any, capsys: Any) 
     assert cli.main(["request", "delete", "req-1", "--force", "--dry-run"]) == 0
     assert seen == {"request_id": "req-1", "force": True, "dry_run": True}
     assert json.loads(capsys.readouterr().out)["request_id"] == "req-1"
+
+
+@pytest.mark.parametrize("clean", [True, False])
+def test_reconcile_exits_1_when_anything_is_listed(
+    monkeypatch: Any, capsys: Any, clean: bool
+) -> None:
+    """`agentctl reconcile [--reindex]` (Phase 3A persistence plan phase 03 task 1.1, R17)."""
+    from orchestrator.reconcile import Report
+
+    seen: dict[str, Any] = {}
+
+    async def reconcile(engine: Any, bucket: Any, status_of: Any, *, reindex: bool) -> Report:
+        seen["reindex"] = reindex
+        return Report() if clean else Report(never_ended={"task-1": "closed"})
+
+    async def connect() -> object:
+        return object()
+
+    monkeypatch.setattr(cli, "PROVIDER", _Provider())
+    monkeypatch.setattr(cli, "make_engine", _Engine)
+    monkeypatch.setattr(S3BlobStore, "from_env", lambda: _S3())
+    monkeypatch.setattr(cli, "connect", connect)
+    monkeypatch.setattr(cli, "reconcile", reconcile)
+    assert cli.main(["reconcile", "--reindex"]) == (0 if clean else 1)
+    report = json.loads(capsys.readouterr().out)
+    assert seen == {"reindex": True}
+    assert report["clean"] is clean
+    if not clean:
+        assert report["never_ended"] == [{"task_id": "task-1", "workflow": "closed"}]

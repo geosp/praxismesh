@@ -21,7 +21,7 @@ plan's acceptance suite and demo pass, and the as-built documentation describes 
 
 ### 1. Reconciliation
 
-- [ ] 1.1 `agentctl reconcile [--reindex]`: prints the phase 01 checks (dangling references, orphaned blobs with age, unindexed references) and tasks left unended whose Workflow Temporal reports closed; read-only without `--reindex`; exit status 1 when anything is listed (R17). Verify: integration tests that seed each case.
+- [x] 1.1 `agentctl reconcile [--reindex]`: prints the phase 01 checks (dangling references, orphaned blobs with age, unindexed references) and tasks left unended whose Workflow Temporal reports closed; read-only without `--reindex`; exit status 1 when anything is listed (R17). Verify: integration tests that seed each case.
 
 ### 2. Backup and restore
 

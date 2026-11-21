@@ -4,6 +4,7 @@
 #   ./agentctl events prune --task TASK_ID (--below N | --older-than 7d) [--dry-run]
 #   ./agentctl gc [--dry-run]
 #   ./agentctl request delete REQ [--dry-run] [--force]
+#   ./agentctl reconcile [--reindex]
 #   ./agentctl task submit|status|output ...
 # ENV_FILE selects another env file (default: infra/.env next to this script).
 ROOT=$(cd "$(dirname "$0")" && pwd) || exit 1

@@ -19,7 +19,7 @@ from common.persistence.messages import MessageRepository
 from common.persistence.repositories import RecordingBlobStore, TaskRepository
 from common.schemas import BlobRef, TaskResult, TaskStart
 from common.schemas.events import AgentEvent
-from orchestrator.lifecycle import WorkflowStatus
+from orchestrator.workflow_status import WorkflowStatus
 
 
 def new_task_id(prefix: str = "task-life") -> str:

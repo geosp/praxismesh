@@ -131,3 +131,10 @@ async def collect(data: bytes | AsyncIterator[bytes]) -> bytes:
     if isinstance(data, bytes):
         return data
     return b"".join([chunk async for chunk in data])
+
+
+class Bucket(BlobStore, Protocol):
+    """A store that can also list its objects: the S3 adapter and the memory
+    store (Phase 3A persistence plan, the orphan and dangling checks)."""
+
+    async def list_objects(self) -> dict[str, BucketObject]: ...

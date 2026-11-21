@@ -12,6 +12,7 @@
     ./agentctl events prune --task TASK_ID (--below N | --older-than 7d) [--dry-run]
     ./agentctl gc [--dry-run]
     ./agentctl request delete REQ [--dry-run] [--force]
+    ./agentctl reconcile [--reindex]
 """
 
 from __future__ import annotations
@@ -29,9 +30,9 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from temporalio.client import Client, WorkflowExecutionStatus
+from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
-from temporalio.service import RPCError, RPCStatusCode
+from temporalio.service import RPCError
 
 from common.blob_store.s3 import S3BlobStore
 from common.errors import InvalidTaskInput, PraxisError
@@ -50,8 +51,10 @@ from common.persistence.repositories import (
     make_engine,
 )
 from common.schemas import TaskResult
-from orchestrator.lifecycle import WorkflowStatus, delete_request, gc, prune_events
+from orchestrator.lifecycle import delete_request, gc, prune_events
+from orchestrator.reconcile import reconcile
 from orchestrator.submit import prepare_task, start_task
+from orchestrator.workflow_status import status_of, workflow_status
 from registry.loader import load_registry
 
 PROVIDER = configure_tracing("praxis-cli")
@@ -278,18 +281,6 @@ async def _closed() -> bool:
     return True
 
 
-async def workflow_status(client: Client, workflow_id: str) -> WorkflowStatus:
-    """`running`, `closed` or `missing` (unknown, or beyond Temporal's retention);
-    other Temporal errors propagate."""
-    try:
-        description = await client.get_workflow_handle(workflow_id).describe()
-    except RPCError as e:
-        if e.status == RPCStatusCode.NOT_FOUND:
-            return "missing"
-        raise
-    return "running" if description.status == WorkflowExecutionStatus.RUNNING else "closed"
-
-
 async def gc_command(args: argparse.Namespace) -> int:
     """`agentctl gc [--dry-run]` (Phase 3A persistence plan R6-R8, D4, D5)."""
     engine = make_engine()
@@ -298,7 +289,7 @@ async def gc_command(args: argparse.Namespace) -> int:
         totals = await gc(
             engine,
             S3BlobStore.from_env(),
-            lambda task_id: workflow_status(client, task_id),
+            status_of(client),
             dry_run=args.dry_run,
         )
     finally:
@@ -347,7 +338,7 @@ async def request_delete(args: argparse.Namespace) -> int:
         totals = await delete_request(
             engine,
             S3BlobStore.from_env(),
-            lambda task_id: workflow_status(client, task_id),
+            status_of(client),
             args.request_id,
             force=args.force,
             dry_run=args.dry_run,
@@ -357,6 +348,21 @@ async def request_delete(args: argparse.Namespace) -> int:
     report = {"request_id": args.request_id, "dry_run": args.dry_run, **totals.report()}
     print(json.dumps(report, indent=2))
     return 0
+
+
+async def reconcile_command(args: argparse.Namespace) -> int:
+    """`agentctl reconcile [--reindex]` (Phase 3A persistence plan R17): exit 1
+    when anything is listed."""
+    engine = make_engine()
+    try:
+        client = await connect()
+        report = await reconcile(
+            engine, S3BlobStore.from_env(), status_of(client), reindex=args.reindex
+        )
+    finally:
+        await engine.dispose()
+    print(json.dumps(report.as_json(), indent=2))
+    return 0 if report.clean else 1
 
 
 def parser() -> argparse.ArgumentParser:
@@ -393,6 +399,12 @@ def parser() -> argparse.ArgumentParser:
     pr.add_argument("--dry-run", action="store_true", help="print what would go; change nothing")
     g = commands.add_parser("gc", help="remove everything whose retention has expired")
     g.add_argument("--dry-run", action="store_true", help="print the plan; change nothing")
+    rc = commands.add_parser(
+        "reconcile", help="list dangling, orphaned and unindexed references, unended tasks"
+    )
+    rc.add_argument(
+        "--reindex", action="store_true", help="index unindexed references first (idempotent)"
+    )
     req = commands.add_parser("request").add_subparsers(dest="command", required=True)
     d = req.add_parser("delete", help="delete a request's data: blobs, content, events")
     d.add_argument("request_id")
@@ -408,7 +420,7 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str]) -> int:
     args = parser().parse_args(argv)
     configure_logging(os.environ.get("LOG_LEVEL", "INFO"), stream=sys.stderr)
-    command = args.group if args.group in ("tail", "gc") else args.command
+    command = args.group if args.group in ("tail", "gc", "reconcile") else args.command
     handler = {
         "submit": submit,
         "status": status,
@@ -416,6 +428,7 @@ def main(argv: list[str]) -> int:
         "tail": tail,
         "prune": prune,
         "gc": gc_command,
+        "reconcile": reconcile_command,
         "delete": request_delete,
     }[command]
     try:
