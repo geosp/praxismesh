@@ -162,9 +162,12 @@ Targeted follow-up of the verification fix only. Diff base 619593b..56c0170 (fro
 
 | ID | Sev | Lens | Req | Finding | Resolution |
 | --- | --- | --- | --- | --- | --- |
-| F114 | Nit | contract | tests | `fileConfig` still replaces root handlers with alembic.ini's stderr handler (WARNING) after an in-process migration; a later `capsys` stderr test could see its lines | open |
-| F115 | Nit | contract | tests | The regression test checks `disabled`, not that a `praxis.harness` warning still reaches `caplog` after `migrate` | open |
-| F116 | Nit | contract | tests | The test sits in the 0007 file and migrates to 0007; `test_database.py` is the general home | open |
+| F114 | Nit | contract | tests | `fileConfig` still replaces root handlers with alembic.ini's stderr handler (WARNING) after an in-process migration; a later `capsys` stderr test could see its lines | deferred: phase 02 (`migrate()` skips `fileConfig` in-process) |
+| F115 | Nit | contract | tests | The regression test checks `disabled`, not that a `praxis.harness` warning still reaches `caplog` after `migrate` | deferred: phase 02 (assert a `caplog` warning after `migrate`) |
+| F116 | Nit | contract | tests | The test sits in the 0007 file and migrates to 0007; `test_database.py` is the general home | deferred: phase 02 (move the test to `test_database.py`) |
 
 ## 2026-11-20 · verification · phase 01 · pass
 code_sha = docs_sha = 56c0170 (on origin/docs/92-phase-3a-01-verification). Record: docs/reviews/phase-3a/verification-persistence-01.md; raw: docs/reviews/phase-3a/raw/persistence-verification-phase-01-*.md. Fixed during verification: F1 (README, dc83f97), F2 (in-process Alembic disabled loggers, 56c0170), N1-N3 (dc83f97).
+
+## 2026-11-20 · done · phase 01
+Tests, acceptance and verification passed at 56c0170 (verification-persistence-01.md); impl review round 3 passed; F114-F116 deferred to phase 02.
