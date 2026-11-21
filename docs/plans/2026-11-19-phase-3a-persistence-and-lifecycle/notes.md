@@ -183,8 +183,9 @@ The markers keep `TaskResult` valid, so `agentctl task output` still reads the r
   lock sits on an idle connection. When a task lock is held, the first batch commits nothing; the
   delete releases the request lock and starts again after a short wait, and reports busy after
   about 10 seconds of tries.
-- **Fence.** The first batch inserts, for each task, a `task_attempts` row with a turn and attempt
-  above any existing one and status `deleted`. ADR-0007's fence (`NO_NEWER_ATTEMPT`) then refuses
+- **Fence.** The first batch inserts, for each task, a `task_attempts` row at the turn after any
+  existing one (attempt 1) with outcome `deleted`; the fence condition refuses every later write
+  of a task with such a row, whatever its turn (impl-review F118). ADR-0007's fence (`NO_NEWER_ATTEMPT`) then refuses
   every later checkpoint, event and message write by a still-running attempt (R25).
 - **A retried end.** `end_task` does nothing once `ended_at` is set, so a `complete_task` retry
   after a delete cannot write back a redacted result (impl-review F82).
@@ -193,7 +194,7 @@ The markers keep `TaskResult` valid, so `agentctl task output` still reads the r
   `TEMPORAL_RETENTION`, so closed long ago); a running Workflow is always refused. The delete then
   sets the task to `failed` with `ended_at` now, in the first batch. Fencing rows and forced ends
   are recorded in the first tombstone's details, not counted as removed rows.
-- `agent_sessions.session_id` is the task ID on both runners (assumption; phase 02 task 3.1).
+- `agent_sessions.session_id` is the task ID on openai_agents, and DSH writes no `agent_sessions` rows (checked by phase 02 task 3.1).
 - **Residual**: Temporal histories keep each turn's summary, questions and outcome for
   `TEMPORAL_RETENTION` (72 hours) after the Workflow closes, and in every backup taken before.
   The threat model records it (phase 01 task 4.1).
@@ -206,8 +207,8 @@ Order of one removal batch (GC or delete), at most 500 rows:
    order (the order `put` uses); delete, prune (`prune(conn=..., limit=...)`, both optional so
    `MemoryTransport` and the `EventTransport` protocol still fit) or redact the rows; mark their
    references removed; for each blob left with no live reference set `removed_at` and `removed_by`
-   (the operation ID); write the batch's tombstone (`audit_log`: action, subject, reason, actor,
-   time, operation ID, counts of rows, references and blobs).
+   (the operation ID); write the batch's tombstone (`audit_log`: action, subject, actor,
+   time, operation ID, counts of rows, references and blobs; `gc` and `request delete` add a reason).
 2. For each marked blob, the bucket step in revive. A missing object is not an error.
 
 A dry run executes the same batches in one transaction and rolls it back at the end, so each

@@ -224,13 +224,16 @@ leftover `message_wakes` rows and redeploy the old workers.
 ## Removing data
 
 Stored data has a retention class and a lifetime ([Phase 3A persistence
-plan](../plans/2026-11-19-phase-3a-persistence-and-lifecycle/plan.md), D3): `ephemeral`
-1 day after it was written; from the task's end, `checkpoint` 7 days, `transcript` 30
-days and `artifact` 90 days; `audit` (tasks, attempts, usage and the audit log) is kept.
-Nothing is removed on its own: an operator runs the commands below. Each prints its plan
-with `--dry-run`, which changes nothing. A dry run holds the locks of the rows it would
-change until it ends, so uploads and checkpoints of the same tasks wait for it; its plan
-leaves out the bucket deletes a real run first finishes for an earlier, stopped run.
+plan](../plans/2026-11-19-phase-3a-persistence-and-lifecycle/plan.md), D3): from the
+task's end, `checkpoint` 7 days, `transcript` 30 days and `artifact` 90 days; `ephemeral`
+1 day (a blob reference from when it was written; a wake or event-batch row from its task's
+end); `audit` (tasks, attempts, usage and the audit log) is kept. Apart from the housekeeping
+the services already did before (the event publisher drops its old batch IDs; the dispatcher
+deletes a wake once delivered), nothing is removed on its own: an operator runs the commands
+below. Each prints its plan with `--dry-run`, which changes nothing. A dry run holds the locks
+of the rows it would change until it ends, so uploads of the same blobs wait for it, and for
+`request delete --dry-run` also checkpoints and other writes of its tasks; its plan leaves out
+the bucket deletes a real run first finishes for an earlier, stopped run.
 
 ```bash
 ./agentctl gc --dry-run                      # what has expired, by reason
@@ -284,8 +287,9 @@ instead of "not found". After a delete, `task output` reports the task has no ou
 **Tombstones.** Every batch a removal commits (at most 500 rows) writes a row to
 `audit_log` in the same transaction: the action (`gc`, `request.delete`, `events.prune`),
 the subject (`task:...`, `request:...`, `orphans`), the operation ID shared by the run, and
-counts of rows, references and blobs removed, never content. The app role cannot change or
-delete these rows.
+counts of rows, references and blobs removed, never content. A trigger refuses `UPDATE` and
+`DELETE` on these rows. The app role owns the table, though, so it could still `TRUNCATE` it
+or drop the trigger (threat model R10, until Phase 9 gives the log its own owner).
 
 **A run that stopped partway** (killed, or the bucket unreachable) is safe to run again:
 removals commit before the bucket is touched, and the next run first deletes the objects an
