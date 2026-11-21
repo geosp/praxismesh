@@ -27,7 +27,9 @@ REQUEST_LOCK_KEY = 2
 REQUEST_LOCK = text("SELECT pg_advisory_xact_lock(2, hashtext(:r))")
 
 # A SQL condition; bind `:t`, `:turn` and `:a` (the writer's task, turn and attempt).
+# A `deleted` row (the fencing row of `request delete`) refuses every later write
+# of the task, whatever its turn (Phase 3A persistence plan R25, review F118).
 NO_NEWER_ATTEMPT = (
     "NOT EXISTS (SELECT 1 FROM task_attempts n WHERE n.task_id = :t "
-    "AND (n.turn > :turn OR (n.turn = :turn AND n.attempt > :a)))"
+    "AND (n.turn > :turn OR (n.turn = :turn AND n.attempt > :a) OR n.outcome = 'deleted'))"
 )

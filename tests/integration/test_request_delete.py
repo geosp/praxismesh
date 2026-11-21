@@ -462,3 +462,67 @@ async def test_a_put_during_the_delete_already_revives_nothing(
     resume.set()
     await deleting
     assert live == 0 and late.key not in inner.objects
+
+
+async def test_an_attempt_of_a_later_turn_is_fenced_too(engine: AsyncEngine) -> None:
+    """F118 (R25): the fencing row's own turn, or any later one, passes no write."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    task = await record_task(engine, store, request_id=request)
+    await AttemptRepository(engine).start(task.task_id, 1, 1, "worker-a")
+    await delete_request(engine, inner, temporal({task.task_id: "closed"}), request, force=True)
+    for turn, attempt in ((2, 1), (2, 2), (9, 1)):
+        with pytest.raises(FenceRejected):
+            await AttemptRepository(engine).start(task.task_id, turn, attempt, "worker-late")
+        ws = await store.put(f"ws {turn}".encode(), retention="checkpoint", task_id=task.task_id)
+        with pytest.raises(FenceRejected):
+            await CheckpointRepository(engine).insert_fenced(
+                Checkpoint(
+                    f"{task.task_id}:{turn}:{attempt}:0",
+                    task.task_id,
+                    turn,
+                    attempt,
+                    0,
+                    task.task_id,
+                    0,
+                    ws,
+                    None,
+                )
+            )
+        with pytest.raises(FenceRejected):
+            await publish(engine, task.task_id, turn, 1)
+    assert (
+        await one(
+            engine,
+            "SELECT worker_identity FROM task_attempts WHERE task_id = :t AND outcome = 'deleted'",
+            t=task.task_id,
+        )
+        == "cli:request-delete"
+    )
+
+
+async def test_a_deleted_task_with_no_upload_left_still_revives_nothing(
+    engine: AsyncEngine,
+) -> None:
+    """F125 (R25, D10): a task counts as deleted by its `deleted` attempt row,
+    even when the delete marked none of its references."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    task = await record_task(engine, store, request_id=request)
+    async with engine.begin() as conn:  # as if a pre-0007 task: no upload references
+        await conn.execute(text("DELETE FROM blob_refs WHERE task_id = :t"), {"t": task.task_id})
+    await delete_request(engine, inner, temporal({task.task_id: "closed"}), request, force=True)
+    late = await store.put(
+        b"late " + task.task_id.encode(), retention="checkpoint", task_id=task.task_id
+    )
+    assert late.key not in inner.objects
+    assert (
+        await one(
+            engine,
+            "SELECT count(*) FROM blob_refs WHERE task_id = :t AND removed_at IS NULL",
+            t=task.task_id,
+        )
+        == 0
+    )

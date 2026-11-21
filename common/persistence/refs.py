@@ -122,7 +122,9 @@ def upload_holder(task_id: str) -> Holder:
 
 async def delete_mark(conn: AsyncConnection, task_id: str) -> str | None:
     """The operation of a delete that marked the task's references, if any: such
-    a task is deleted and its late uploads revive nothing (R25; review F80, F81)."""
+    a task is deleted and its late uploads revive nothing (R25; review F80, F81).
+    A task with a `deleted` attempt row is deleted too, even if the delete marked
+    none of its references (review F125)."""
     found = await conn.execute(
         text(
             "SELECT removed_by FROM blob_refs WHERE task_id = :t "
@@ -130,7 +132,14 @@ async def delete_mark(conn: AsyncConnection, task_id: str) -> str | None:
         ),
         {"t": task_id, "d": f"{DELETE_OPERATION}%"},
     )
-    return found.scalar_one_or_none()
+    mark = found.scalar_one_or_none()
+    if mark is not None:
+        return str(mark)
+    fenced = await conn.execute(
+        text("SELECT 1 FROM task_attempts WHERE task_id = :t AND outcome = 'deleted' LIMIT 1"),
+        {"t": task_id},
+    )
+    return f"{DELETE_OPERATION}{task_id}" if fenced.first() is not None else None
 
 
 async def index_refs(
