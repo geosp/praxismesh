@@ -301,7 +301,10 @@ the bucket, and changes nothing. It lists dangling references (a live reference 
 is missing from the bucket or marked removed), orphaned bucket objects with their age in
 hours (`content_key: false` marks a key `gc` never removes), unindexed references, and
 tasks that never ended although Temporal reports their Workflow closed or no longer knows
-it. It exits 1 when it lists anything. `agentctl reconcile --reindex` first indexes the
+it. It exits 1 when it lists anything, and 2 with an `error:` line when it cannot finish (Temporal
+unreachable, for example). It takes no lock, so a `gc` or `request delete` committing between its
+snapshot and its bucket listing can make it list a dangling reference that is not real: run it
+again once the removal has finished. `agentctl reconcile --reindex` first indexes the
 unindexed references, as migration 0007 did, under the removal lock; running it again
 changes nothing. A dangling reference means bytes are lost: restore them from a backup, or
 delete the request that holds them. A task listed as never ended can be deleted with
@@ -324,9 +327,13 @@ make drill                                    # backup, reset, restore, check: D
 `events prune` runs meanwhile (each fails at once with "another gc, request delete,
 events prune or backup is running"). It stops the running worker services while it dumps
 `praxismesh`, `temporal` and `temporal_visibility`, so no Workflow gets ahead of its rows,
-and starts them again afterwards, even when a dump fails; an Activity that was running is
-retried by Temporal. It then copies every bucket object and writes `manifest.json` last;
-a directory without it is incomplete. `backups/` is git-ignored. **Backups hold prompts,
+and starts them again afterwards, even when a dump or the stop fails; an Activity that was
+running is retried by Temporal. It then copies every bucket object and writes `manifest.json`
+last, whole or not at all; a directory without it is incomplete. A bucket it cannot list or
+read fails the backup. The backup directory is new (an existing one is refused) and readable by
+its owner only (mode 0700). `backups/` is git-ignored. **A backup killed while it dumps**
+(SIGKILL, a closed terminal) leaves the workers stopped: start them with `make workers-up`, and
+delete the incomplete directory. **Backups hold prompts,
 outputs and conversations in clear text** (threat model): keep them where only operators
 can read them, and delete them when no longer needed. A backup taken before a `request
 delete` still holds that request's data.
@@ -341,12 +348,15 @@ make up
 make restore BACKUP=backups/<UTC time>
 ```
 
-`make restore` refuses, changing nothing, if the backup has no `manifest.json`, if the
-stack has task rows, if Temporal lists any Workflow in the app's namespace, or if the bucket
-holds objects. It then stops the workers and Temporal, drops and recreates the three
+`make restore` refuses, changing nothing, if the backup is not whole (no `manifest.json`, or a
+dump or object missing or not the size the manifest gives), if it has another backup format or
+migration head than this checkout (check out a commit with the backup's head, restore, then
+migrate), if any application table has rows, if Temporal lists any Workflow in the app's
+namespace, or if the bucket holds objects. It then stops the workers and Temporal, drops and recreates the three
 databases with their grants and the `praxis_comms` role, loads the dumps and the objects,
 starts Temporal and the workers that were running, and prints `agentctl reconcile`'s report.
-The report is information: restore succeeds even when it lists something. Expect orphans
+The report is information: restore succeeds even when it lists something, and says so if
+reconcile itself failed. Expect orphans
 for blobs uploaded after the database dump (`gc` removes them after 24 hours), and dangling
 references if an object could not be copied.
 

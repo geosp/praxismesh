@@ -238,14 +238,16 @@ Order: the application database first, so no restored row names a blob newer tha
 uploaded after the dump is restored as a bucket object with no row: an orphan by the bucket listing
 (d2), which `gc` removes after the window. The lock keeps removals out between the dump and the
 copy. With the workers stopped, no Workflow advances between the dumps. Reconcile covers
-references, blobs and unended tasks whose Workflow is closed; a full comparison of every Workflow
+references, blobs and unended tasks whose Workflow is closed or missing; a full comparison of every Workflow
 with its rows is Phase 9 hardening.
 
 `make restore BACKUP=backups/<time>` (`infra/restore.sh`):
 
-1. Refuse unless `tasks` is missing or empty, Temporal's API lists no Workflow in the app's
-   namespace (system namespaces ignored; no SQL on Temporal's databases, ADR-0002), and the
-   bucket is empty (R23).
+1. Refuse unless the backup is whole and fits this checkout (its manifest, backup format and
+   migration head, and every dump and object at the size the manifest gives), no application
+   table has rows (impl-review F171; it was `tasks` alone), Temporal's API lists no Workflow in
+   the app's namespace (system namespaces ignored; no SQL on Temporal's databases, ADR-0002),
+   and the bucket is empty (R23).
 2. Stop the workers and Temporal.
 3. Drop `praxismesh`, `temporal` and `temporal_visibility`, then run `infra/db/databases.sh`: the
    `CREATE DATABASE`, `REVOKE`/`GRANT CONNECT` and extension statements, moved out of `init.sh`
