@@ -3,10 +3,11 @@
 # R16, R23, D8; notes.md#d8). Run through `make restore BACKUP=backups/<time>`,
 # which sets PROJECT_NAME (from the env file only) and ENV_FILE.
 #
-#  1. Refuse unless the backup is complete (it has its manifest), no earlier
-#     restore was left unfinished, and the stack holds no data: no task rows, no
-#     Workflow in the app's namespace (asked through Temporal's API) and no
-#     bucket objects (R23).
+#  1. Refuse unless the backup is complete and fits this checkout (its manifest,
+#     format, migration head, and every dump and object at its size), no
+#     earlier restore was left unfinished, and the stack holds no data: no row
+#     in an application table, no Workflow in the app's namespace (asked
+#     through Temporal's API) and no bucket objects (R23).
 #  2. Mark the restore as started, then stop the workers and Temporal.
 #  3. Drop praxismesh, temporal and temporal_visibility, recreate them with
 #     databases.sh and roles.sh, so the grants return, and pg_restore each dump.
@@ -30,10 +31,9 @@ compose() { docker compose -p "$PROJECT_NAME" --env-file "$ENV_FILE" -f infra/do
 uv_run() { uv run --env-file "$ENV_FILE" "$@"; }
 
 [ -n "$backup" ] || die "usage: make restore BACKUP=backups/<time>"
-[ -f "$backup/manifest.json" ] || die "$backup has no manifest.json: not a complete backup"
-for db in $DATABASES; do
-    [ -s "$backup/$db.dump" ] || die "$backup has no $db.dump"
-done
+# The manifest whole, this checkout's format and migration head, and every
+# dump and object at its size (impl-review F179).
+uv_run python -m orchestrator.backup check-backup "$backup" || exit 1
 
 psql_super() { compose exec -T -u postgres db psql -v ON_ERROR_STOP=1 -X -q -tA "$@"; }
 
