@@ -22,6 +22,7 @@ from common.schemas import TaskResult
 from orchestrator.submit import prepare_task, start_task
 from registry.loader import load_registry
 from tests.support.fake_model import FakeModel
+from tests.support.lifecycle import session_ids
 from tests.support.stack import env, run_id
 from tests.support.workers import running_workers
 from workers.main import build_worker, connect
@@ -134,7 +135,11 @@ async def test_scripted_task_end_to_end(tmp_path: Path, fake: FakeModel) -> None
                 {"k": artifact.ref.key},
             )
         ).scalar_one()
+    sessions = await session_ids(engine, task_id)
     await engine.dispose()
+    # Phase 3A persistence plan phase 02 task 3.1: openai_agents keeps the task's
+    # conversation under one session, whose ID is the task ID.
+    assert sessions == {name: {task_id} for name in sessions}
     # Phase 3A persistence plan R4: every row and reference carries its D3 class.
     assert row_classes == {
         "tasks": {"audit"},

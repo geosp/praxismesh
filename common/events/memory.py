@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Any
 
 from common.events.transport import RESEND_HORIZON_S, Item, Writer, expiry_for, guarded
 from common.schemas.events import AgentEvent
@@ -73,12 +74,21 @@ class MemoryTransport:
         return log.next_offset - 1 if log.next_offset > 1 else None
 
     async def prune(
-        self, workflow_id: str, *, below: int | None = None, older_than: timedelta | None = None
+        self,
+        workflow_id: str,
+        *,
+        below: int | None = None,
+        older_than: timedelta | None = None,
+        conn: Any = None,
+        limit: int | None = None,
+        removed_by: str | None = None,
     ) -> int | None:
         log = self._log(workflow_id)
         if log.next_offset == 1:
             return None
         cutoff = _cutoff(log, below, older_than)
+        if limit is not None:
+            cutoff = min(cutoff, log.base + limit)
         for o in range(log.base, min(cutoff, log.next_offset)):
             log.events.pop(o, None)
         log.base = max(log.base, min(cutoff, log.next_offset))

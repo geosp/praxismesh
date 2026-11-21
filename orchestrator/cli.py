@@ -9,7 +9,9 @@
 `./agentctl` runs this module with `infra/.env` (Phase 2 events plan D5):
 
     ./agentctl tail TASK_ID [--after N] [--no-follow]
-    ./agentctl events prune --task TASK_ID (--below N | --older-than 7d)
+    ./agentctl events prune --task TASK_ID (--below N | --older-than 7d) [--dry-run]
+    ./agentctl gc [--dry-run]
+    ./agentctl request delete REQ [--dry-run] [--force]
 """
 
 from __future__ import annotations
@@ -48,6 +50,7 @@ from common.persistence.repositories import (
     make_engine,
 )
 from common.schemas import TaskResult
+from orchestrator.lifecycle import WorkflowStatus, delete_request, gc, prune_events
 from orchestrator.submit import prepare_task, start_task
 from registry.loader import load_registry
 
@@ -119,18 +122,19 @@ async def output(args: argparse.Namespace) -> int:
     engine = make_engine()
     try:
         row = await TaskRepository(engine).get(args.task_id)
+        if row is None or not row.get("result"):
+            raise InvalidTaskInput(f"task {args.task_id} has no result yet")
+        result = TaskResult.model_validate(row["result"])
+        artifact = next((a for a in result.artifacts if a.path == args.path), None)
+        if artifact is None:
+            names = ", ".join(a.path for a in result.artifacts) or "none"
+            raise InvalidTaskInput(
+                f"task {args.task_id} has no output {args.path!r} (outputs: {names})"
+            )
+        # Through the recording store, so a removed blob reads as expired (R9).
+        data = await RecordingBlobStore(S3BlobStore.from_env(), engine).get(artifact.ref)
     finally:
         await engine.dispose()
-    if row is None or not row.get("result"):
-        raise InvalidTaskInput(f"task {args.task_id} has no result yet")
-    result = TaskResult.model_validate(row["result"])
-    artifact = next((a for a in result.artifacts if a.path == args.path), None)
-    if artifact is None:
-        names = ", ".join(a.path for a in result.artifacts) or "none"
-        raise InvalidTaskInput(
-            f"task {args.task_id} has no output {args.path!r} (outputs: {names})"
-        )
-    data = await S3BlobStore.from_env().get(artifact.ref)
     if args.to:
         Path(args.to).write_bytes(data)
     else:
@@ -254,14 +258,12 @@ async def tail(args: argparse.Namespace) -> int:
 
         async def closed() -> bool:
             try:
-                description = await client.get_workflow_handle(args.task_id).describe()
+                # Unknown or beyond retention counts as closed: nothing more arrives.
+                return await workflow_status(client, args.task_id) != "running"
             except RPCError as e:
-                if e.status == RPCStatusCode.NOT_FOUND:
-                    return True  # unknown or beyond retention: nothing more will arrive
                 log.warning("cannot read the Workflow status; still following",
                             extra={"fields": {"error": str(e)}})  # fmt: skip
                 return False
-            return description.status != WorkflowExecutionStatus.RUNNING
 
         # The workflow ID is the task ID (orchestrator/submit.py).
         await print_events(
@@ -276,15 +278,84 @@ async def _closed() -> bool:
     return True
 
 
-async def prune(args: argparse.Namespace) -> int:
+async def workflow_status(client: Client, workflow_id: str) -> WorkflowStatus:
+    """`running`, `closed` or `missing` (unknown, or beyond Temporal's retention);
+    other Temporal errors propagate."""
+    try:
+        description = await client.get_workflow_handle(workflow_id).describe()
+    except RPCError as e:
+        if e.status == RPCStatusCode.NOT_FOUND:
+            return "missing"
+        raise
+    return "running" if description.status == WorkflowExecutionStatus.RUNNING else "closed"
+
+
+async def gc_command(args: argparse.Namespace) -> int:
+    """`agentctl gc [--dry-run]` (Phase 3A persistence plan R6-R8, D4, D5)."""
     engine = make_engine()
     try:
-        base = await TableTransport(engine).prune(
-            args.task, below=args.below, older_than=args.older_than
+        client = await connect()
+        totals = await gc(
+            engine,
+            S3BlobStore.from_env(),
+            lambda task_id: workflow_status(client, task_id),
+            dry_run=args.dry_run,
         )
     finally:
         await engine.dispose()
-    print(json.dumps({"task_id": args.task, "retained_base": base}))
+    print(json.dumps({"dry_run": args.dry_run, **totals.report()}, indent=2))
+    return 0
+
+
+async def prune(args: argparse.Namespace) -> int:
+    """`events prune` through the removal engine: batches with tombstones, the
+    events' references marked, and `--dry-run` (Phase 3A persistence plan D11)."""
+    engine = make_engine()
+    try:
+        totals, base = await prune_events(
+            engine,
+            S3BlobStore.from_env(),
+            args.task,
+            below=args.below,
+            older_than=args.older_than,
+            dry_run=args.dry_run,
+        )
+    finally:
+        await engine.dispose()
+    print(
+        json.dumps(
+            {
+                "task_id": args.task,
+                "retained_base": base,
+                "dry_run": args.dry_run,
+                "operation": totals.operation,
+                "events": totals.rows,
+                "references": totals.references,
+                "blobs": totals.blobs,
+            }
+        )
+    )
+    return 0
+
+
+async def request_delete(args: argparse.Namespace) -> int:
+    """`agentctl request delete REQ [--dry-run] [--force]` (Phase 3A persistence
+    plan R10-R12, R21, R24, R25, D12)."""
+    engine = make_engine()
+    try:
+        client = await connect()
+        totals = await delete_request(
+            engine,
+            S3BlobStore.from_env(),
+            lambda task_id: workflow_status(client, task_id),
+            args.request_id,
+            force=args.force,
+            dry_run=args.dry_run,
+        )
+    finally:
+        await engine.dispose()
+    report = {"request_id": args.request_id, "dry_run": args.dry_run, **totals.report()}
+    print(json.dumps(report, indent=2))
     return 0
 
 
@@ -319,19 +390,33 @@ def parser() -> argparse.ArgumentParser:
     which = pr.add_mutually_exclusive_group(required=True)
     which.add_argument("--below", type=int, help="delete offsets below this one")
     which.add_argument("--older-than", type=parse_duration, help="for example 7d, 12h, 30m")
+    pr.add_argument("--dry-run", action="store_true", help="print what would go; change nothing")
+    g = commands.add_parser("gc", help="remove everything whose retention has expired")
+    g.add_argument("--dry-run", action="store_true", help="print the plan; change nothing")
+    req = commands.add_parser("request").add_subparsers(dest="command", required=True)
+    d = req.add_parser("delete", help="delete a request's data: blobs, content, events")
+    d.add_argument("request_id")
+    d.add_argument("--dry-run", action="store_true", help="print the plan; change nothing")
+    d.add_argument(
+        "--force",
+        action="store_true",
+        help="treat a task that never ended as ended if Temporal reports its Workflow closed",
+    )
     return p
 
 
 def main(argv: list[str]) -> int:
     args = parser().parse_args(argv)
     configure_logging(os.environ.get("LOG_LEVEL", "INFO"), stream=sys.stderr)
-    command = "tail" if args.group == "tail" else args.command
+    command = args.group if args.group in ("tail", "gc") else args.command
     handler = {
         "submit": submit,
         "status": status,
         "output": output,
         "tail": tail,
         "prune": prune,
+        "gc": gc_command,
+        "delete": request_delete,
     }[command]
     try:
         return asyncio.run(handler(args))

@@ -29,17 +29,26 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from common.blob_store.base import RETENTION_ORDER, BucketObject, current_class
+from common.persistence.fence import DELETED
 from common.persistence.retention import DEFAULT_LIFETIME, REFERENCE_CLASS, SAFETY_WINDOW
 from common.schemas import BlobRef, RetentionClass
 
 UPLOAD = "upload"  # holder table of an upload reference
+
+
+def checkpoint_holder_sql(alias: str = "") -> str:
+    """The SQL of a checkpoint's holder key, as `checkpoint_holder` builds it."""
+    a = f"{alias}." if alias else ""
+    return f"{a}task_id || '/' || {a}turn || '/' || {a}attempt || '/' || {a}seq"
+
+
 # A delete's operation ID starts with this; its marks are never cleared (D10, R25).
 DELETE_OPERATION = "delete:"
 
 # Every BlobRef stored in a row (notes.md#refs), with its holder and its class
 # from notes.md#d3's blob table, never the class in the JSON. Identical to
 # migration 0007's REFERENCES; a unit test keeps them in step.
-REFERENCES = """
+REFERENCES = f"""
 SELECT t.instructions_ref->>'key' AS blob_key, 'tasks' AS holder_table,
     t.task_id AS holder_key, 'instructions_ref' AS holder_column, t.task_id,
     t.request_id, 'transcript' AS retention_class
@@ -48,7 +57,7 @@ UNION
 SELECT e.value->>'key', 'tasks', t.task_id, 'input_refs', t.task_id, t.request_id,
     'transcript'
 FROM tasks t, json_each(CASE WHEN json_typeof(t.input_refs) = 'object'
-    THEN t.input_refs ELSE '{}'::json END) e
+    THEN t.input_refs ELSE '{{}}'::json END) e
 UNION
 SELECT a.value->'ref'->>'key', 'tasks', t.task_id, 'result', t.task_id, t.request_id,
     'artifact'
@@ -57,13 +66,13 @@ FROM tasks t, json_array_elements(CASE WHEN json_typeof(t.result) = 'object'
     THEN t.result->'artifacts' ELSE '[]'::json END) a
 UNION
 SELECT c.workspace_ref->>'key', 'checkpoints',
-    c.task_id || '/' || c.turn || '/' || c.attempt || '/' || c.seq, 'workspace_ref',
+    {checkpoint_holder_sql("c")}, 'workspace_ref',
     c.task_id, t.request_id, 'checkpoint'
 FROM checkpoints c LEFT JOIN tasks t ON t.task_id = c.task_id
 WHERE json_typeof(c.workspace_ref) = 'object'
 UNION
 SELECT c.session_ref->>'key', 'checkpoints',
-    c.task_id || '/' || c.turn || '/' || c.attempt || '/' || c.seq, 'session_ref',
+    {checkpoint_holder_sql("c")}, 'session_ref',
     c.task_id, t.request_id, 'checkpoint'
 FROM checkpoints c LEFT JOIN tasks t ON t.task_id = c.task_id
 WHERE c.session_ref IS NOT NULL AND json_typeof(c.session_ref) = 'object'
@@ -76,6 +85,12 @@ WHERE e.blob_ref IS NOT NULL AND json_typeof(e.blob_ref) = 'object'
 
 _COLUMNS = "blob_key, holder_table, holder_key, holder_column, task_id, request_id, retention_class"
 _CONTENT_KEY = re.compile(r"^sha256/([0-9a-f]{64})$")
+
+
+def is_content_key(key: str) -> bool:
+    """Whether `key` is a content key (`sha256/<hex>`). Only those are recorded
+    in `blob_objects` or removed; others are reported (review F119)."""
+    return _CONTENT_KEY.match(key) is not None
 
 
 def rank_sql(column: str) -> str:
@@ -122,7 +137,9 @@ def upload_holder(task_id: str) -> Holder:
 
 async def delete_mark(conn: AsyncConnection, task_id: str) -> str | None:
     """The operation of a delete that marked the task's references, if any: such
-    a task is deleted and its late uploads revive nothing (R25; review F80, F81)."""
+    a task is deleted and its late uploads revive nothing (R25; review F80, F81).
+    A task with a `deleted` attempt row is deleted too, even if the delete marked
+    none of its references (review F125)."""
     found = await conn.execute(
         text(
             "SELECT removed_by FROM blob_refs WHERE task_id = :t "
@@ -130,7 +147,11 @@ async def delete_mark(conn: AsyncConnection, task_id: str) -> str | None:
         ),
         {"t": task_id, "d": f"{DELETE_OPERATION}%"},
     )
-    return found.scalar_one_or_none()
+    mark = found.scalar_one_or_none()
+    if mark is not None:
+        return str(mark)
+    fenced = await conn.execute(text(f"SELECT 1 WHERE {DELETED}"), {"t": task_id})
+    return f"{DELETE_OPERATION}{task_id}" if fenced.first() is not None else None
 
 
 async def index_refs(
@@ -295,6 +316,23 @@ async def orphaned(conn: AsyncConnection, bucket: Mapping[str, BucketObject]) ->
     ]
 
 
+async def returned(conn: AsyncConnection, bucket: Mapping[str, BucketObject]) -> list[str]:
+    """Bucket objects whose row says removed and bucket-deleted, with no live
+    reference: bytes a `put` uploaded in a transaction that never committed
+    (review F145). The bucket step removes them again; it waits on the row lock,
+    so an upload still in flight is left to finish."""
+    found = await conn.execute(
+        text(
+            "SELECT b.key FROM blob_objects b WHERE b.key = ANY(:k) "
+            "AND b.removed_at IS NOT NULL AND b.bucket_deleted_at IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM blob_refs r WHERE r.blob_key = b.key "
+            "AND r.removed_at IS NULL) ORDER BY b.key"
+        ),
+        {"k": list(bucket)},
+    )
+    return [row[0] for row in found]
+
+
 async def expired(
     conn: AsyncConnection,
     now: datetime,
@@ -367,8 +405,7 @@ async def reindex(conn: AsyncConnection, bucket: Mapping[str, BucketObject]) -> 
         )
     blobs = 0
     for key, obj in sorted(bucket.items()):
-        match = _CONTENT_KEY.match(key)
-        if match is None:
+        if not is_content_key(key):
             continue  # not a content key: reported as an orphan, never recorded
         inserted = await conn.execute(
             text(
@@ -377,7 +414,7 @@ async def reindex(conn: AsyncConnection, bucket: Mapping[str, BucketObject]) -> 
                 f"coalesce({strongest.replace('b.key', ':k')}, 'ephemeral'), now() "
                 "ON CONFLICT (key) DO NOTHING RETURNING key"
             ),
-            {"k": key, "c": f"sha256:{match.group(1)}", "b": obj.size},
+            {"k": key, "c": f"sha256:{key.removeprefix('sha256/')}", "b": obj.size},
         )
         blobs += len(inserted.all())
     return Reindexed(references=len(added_keys), blobs=blobs)

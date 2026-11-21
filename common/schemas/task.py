@@ -126,6 +126,7 @@ AttemptOutcome = Literal[
     "lost",
     "refused",
     "cancelled",
+    "deleted",  # the fencing row of a request delete (Phase 3A persistence plan D12)
 ]
 
 

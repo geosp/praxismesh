@@ -177,45 +177,93 @@ class TableTransport:
         return bounds[0] - 1 if bounds and bounds[0] > 1 else None
 
     async def prune(
-        self, workflow_id: str, *, below: int | None = None, older_than: timedelta | None = None
+        self,
+        workflow_id: str,
+        *,
+        below: int | None = None,
+        older_than: timedelta | None = None,
+        conn: AsyncConnection | None = None,
+        limit: int | None = None,
+        removed_by: str | None = None,
     ) -> int | None:
+        """Delete an offset prefix and advance the retained base, so a reader is
+        told the events expired rather than seeing a gap (D11). With `conn`, run
+        in the caller's transaction (a removal batch, D6); `limit` caps the events
+        deleted; `removed_by` marks the deleted events' references removed."""
         if (below is None) == (older_than is None):
             raise ValueError("give exactly one of below and older_than")
-        async with self.engine.begin() as conn:
-            row = (
-                await conn.execute(
-                    text(
-                        "SELECT next_offset, retained_base FROM event_logs "
-                        "WHERE workflow_id = :w FOR UPDATE"
-                    ),
-                    {"w": workflow_id},
-                )
-            ).first()
-            if row is None or row[0] == 1:
-                return None
-            next_offset, base = row
-            if below is not None:
-                cutoff = below
-            else:
-                assert older_than is not None
-                newest = await conn.execute(
-                    text(
-                        'SELECT min("offset") FROM agent_events WHERE workflow_id = :w '
-                        "AND stored_at >= now() - make_interval(secs => :s)"
-                    ),
-                    {"w": workflow_id, "s": older_than.total_seconds()},
-                )
-                cutoff = newest.scalar_one() or next_offset
-            new_base = max(base, min(cutoff, next_offset))
+        if conn is not None:
+            return await self._prune(conn, workflow_id, below, older_than, limit, removed_by)
+        async with self.engine.begin() as own:
+            return await self._prune(own, workflow_id, below, older_than, limit, removed_by)
+
+    async def _prune(
+        self,
+        conn: AsyncConnection,
+        workflow_id: str,
+        below: int | None,
+        older_than: timedelta | None,
+        limit: int | None,
+        removed_by: str | None,
+    ) -> int | None:
+        row = (
             await conn.execute(
-                text('DELETE FROM agent_events WHERE workflow_id = :w AND "offset" < :c'),
-                {"w": workflow_id, "c": new_base},
+                text(
+                    "SELECT next_offset, retained_base FROM event_logs "
+                    "WHERE workflow_id = :w FOR UPDATE"
+                ),
+                {"w": workflow_id},
             )
+        ).first()
+        if row is None or row[0] == 1:
+            return None
+        next_offset, base = row
+        cutoff = await self.cutoff(conn, workflow_id, below, older_than, next_offset)
+        if limit is not None:
+            cutoff = min(cutoff, base + limit)
+        new_base = max(base, min(cutoff, next_offset))
+        if removed_by is not None:
             await conn.execute(
-                text("UPDATE event_logs SET retained_base = :b WHERE workflow_id = :w"),
-                {"w": workflow_id, "b": new_base},
+                text(
+                    "UPDATE blob_refs SET removed_at = now(), removed_by = :op "
+                    "WHERE holder_table = 'agent_events' AND holder_key = ANY(:k) "
+                    "AND removed_at IS NULL"
+                ),
+                {
+                    "op": removed_by,
+                    "k": [event_holder(workflow_id, o).key for o in range(base, new_base)],
+                },
             )
-            return int(new_base)
+        await conn.execute(
+            text('DELETE FROM agent_events WHERE workflow_id = :w AND "offset" < :c'),
+            {"w": workflow_id, "c": new_base},
+        )
+        await conn.execute(
+            text("UPDATE event_logs SET retained_base = :b WHERE workflow_id = :w"),
+            {"w": workflow_id, "b": new_base},
+        )
+        return int(new_base)
+
+    async def cutoff(
+        self,
+        conn: AsyncConnection,
+        workflow_id: str,
+        below: int | None,
+        older_than: timedelta | None,
+        next_offset: int,
+    ) -> int:
+        """The first offset a prune keeps, before any limit."""
+        if below is not None:
+            return below
+        assert older_than is not None
+        newest = await conn.execute(
+            text(
+                'SELECT min("offset") FROM agent_events WHERE workflow_id = :w '
+                "AND stored_at >= now() - make_interval(secs => :s)"
+            ),
+            {"w": workflow_id, "s": older_than.total_seconds()},
+        )
+        return int(newest.scalar_one() or next_offset)
 
     async def close(self) -> None:
         return None  # the engine belongs to the caller

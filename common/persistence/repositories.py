@@ -12,10 +12,11 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
-from common.blob_store import BlobStore
+from common.blob_store import BlobExpired, BlobStore
 from common.blob_store.base import collect, content_key, current_class, make_ref
 from common.errors import TaskAlreadyExists
 from common.persistence.fence import NO_NEWER_ATTEMPT as _NO_NEWER_ATTEMPT
+from common.persistence.fence import REQUEST_LOCK as _REQUEST_LOCK
 from common.persistence.fence import TASK_LOCK as _TASK_LOCK
 from common.persistence.fence import FenceRejected
 from common.persistence.refs import (
@@ -56,6 +57,9 @@ class TaskRepository:
         reused: refuse, so the new run never reaches the old run's idempotency
         keys. A retry from the same run finds its own row and succeeds."""
         async with self.engine.begin() as conn:
+            # The request lock: a task joining a request that `request delete` is
+            # deleting waits until the delete ends (Phase 3A persistence plan R24).
+            await conn.execute(_REQUEST_LOCK, {"r": start.request_id})
             inserted = await conn.execute(
                 text(
                     """
@@ -669,7 +673,8 @@ class RecordingBlobStore:
         2. in one transaction, `blob_objects` row first (locked by the upsert,
            the order every removal uses), clear any removal mark, set
            `last_put_at`, and write the task's upload reference;
-        3. upload through the inner store, which skips bytes it already holds.
+        3. upload through the inner store, which skips bytes it already holds,
+           still inside that transaction, holding the row lock (review F124).
 
         A task whose references a delete marked revives nothing (R25; review
         F80, F81): its upload reference is written with the delete's mark, the
@@ -727,17 +732,37 @@ class RecordingBlobStore:
                     retention=retention,
                     removed_by=deleted,
                 )
-        if deleted is not None and not live:
-            return make_ref(key, checksum, content_type, len(body), retention, datetime.now(UTC))
-        return await self.inner.put(body, content_type=content_type, retention=retention)
+            if deleted is not None and not live:
+                return make_ref(
+                    key, checksum, content_type, len(body), retention, datetime.now(UTC)
+                )
+            # Upload while this transaction holds the row lock: a removal marks
+            # the blob only after the bytes are in, so its bucket step deletes
+            # them, never before they land (review F124).
+            return await self.inner.put(body, content_type=content_type, retention=retention)
+
+    async def check_live(self, key: str) -> None:
+        """Raise `BlobExpired` if the blob's removal is recorded (R9, D6). A removed
+        blob reads as expired, not as missing, even before the bucket step."""
+        async with self.engine.connect() as conn:
+            found = await conn.execute(
+                text("SELECT removed_at FROM blob_objects WHERE key = :k"), {"k": key}
+            )
+            removed_at = found.scalar_one_or_none()
+        if removed_at is not None:
+            raise BlobExpired(key, removed_at)
 
     async def get(self, ref: BlobRef) -> bytes:
+        await self.check_live(ref.key)
         return await self.inner.get(ref)
 
-    def stream(self, ref: BlobRef) -> AsyncIterator[bytes]:
-        return self.inner.stream(ref)
+    async def stream(self, ref: BlobRef) -> AsyncIterator[bytes]:
+        await self.check_live(ref.key)
+        async for chunk in self.inner.stream(ref):
+            yield chunk
 
     async def stat(self, ref: BlobRef) -> BlobRef:
+        await self.check_live(ref.key)
         return await self.inner.stat(ref)
 
     async def delete(self, ref: BlobRef) -> None:

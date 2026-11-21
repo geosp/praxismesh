@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from agents.extensions.memory.sqlalchemy_session import SQLAlchemySession
 from agents.memory import Session
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from common.persistence.fence import refuse_if_deleted
 from common.persistence.repositories import Checkpoint
 from common.schemas import BlobRef
 
@@ -46,9 +47,25 @@ class SessionStore(Protocol):
         """Describe the session now, for the next fenced checkpoint."""
 
 
+class FencedSQLAlchemySession(SQLAlchemySession):
+    """`SQLAlchemySession` that adds no item once the task's request is deleted
+    (Phase 3A persistence plan R25, review F117). The task lock is held across
+    the SDK's own insert: a delete that commits first is refused here, and one
+    that starts meanwhile finds the lock taken, retries, and redacts the item."""
+
+    def __init__(self, task_id: str, *, engine: AsyncEngine) -> None:
+        super().__init__(task_id, engine=engine)
+        self._task_id, self._engine = task_id, engine
+
+    async def add_items(self, items: list[Any]) -> None:
+        async with self._engine.begin() as conn:
+            await refuse_if_deleted(conn, self._task_id)
+            await super().add_items(items)  # on the SDK's own connection
+
+
 class SQLAlchemySessionStore:
     def __init__(self, task_id: str, engine: AsyncEngine) -> None:
-        self._session = SQLAlchemySession(task_id, engine=engine)
+        self._session = FencedSQLAlchemySession(task_id, engine=engine)
 
     @property
     def session(self) -> SQLAlchemySession:

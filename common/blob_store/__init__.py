@@ -3,6 +3,7 @@
 from common.blob_store.base import (
     BlobCorrupt,
     BlobError,
+    BlobExpired,
     BlobNotFound,
     BlobStore,
     BlobUnauthorized,
@@ -13,6 +14,7 @@ from common.blob_store.memory import MemoryBlobStore
 __all__ = [
     "BlobCorrupt",
     "BlobError",
+    "BlobExpired",
     "BlobNotFound",
     "BlobStore",
     "BlobUnauthorized",

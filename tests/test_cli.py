@@ -197,3 +197,55 @@ def test_join_refuses_an_unknown_request(monkeypatch: Any, capsys: Any) -> None:
     assert "request req-nope has no task to join" in capsys.readouterr().err
     args = cli.parser().parse_args(["task", "submit", "--instructions", "x", "--join", "req-1"])
     assert args.join == "req-1" and args.request is None
+
+
+def test_gc_dry_run_reaches_gc_and_prints_its_plan(monkeypatch: Any, capsys: Any) -> None:
+    """`agentctl gc --dry-run` (Phase 3A persistence plan phase 02 task 2.1)."""
+    from common.persistence.removal import BatchResult
+    from orchestrator.lifecycle import Totals
+
+    seen: dict[str, Any] = {}
+
+    async def gc(engine: Any, bucket: Any, status_of: Any, *, dry_run: bool) -> Totals:
+        seen["dry_run"] = dry_run
+        totals = Totals("gc:test")
+        totals.add(BatchResult(2, 3, 1, (), 1), "checkpoints expired")
+        return totals
+
+    async def connect() -> object:
+        return object()
+
+    monkeypatch.setattr(cli, "PROVIDER", _Provider())
+    monkeypatch.setattr(cli, "make_engine", _Engine)
+    monkeypatch.setattr(S3BlobStore, "from_env", lambda: _S3())
+    monkeypatch.setattr(cli, "connect", connect)
+    monkeypatch.setattr(cli, "gc", gc)
+    assert cli.main(["gc", "--dry-run"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert seen == {"dry_run": True}
+    assert report["dry_run"] is True and report["by_reason"]["checkpoints expired"]["rows"] == 2
+
+
+def test_request_delete_passes_force_and_dry_run(monkeypatch: Any, capsys: Any) -> None:
+    """`agentctl request delete REQ --force --dry-run` (phase 02 task 3.2)."""
+    from orchestrator.lifecycle import Totals
+
+    seen: dict[str, Any] = {}
+
+    async def delete_request(
+        engine: Any, bucket: Any, status_of: Any, request_id: str, *, force: bool, dry_run: bool
+    ) -> Totals:
+        seen.update(request_id=request_id, force=force, dry_run=dry_run)
+        return Totals("delete:test")
+
+    async def connect() -> object:
+        return object()
+
+    monkeypatch.setattr(cli, "PROVIDER", _Provider())
+    monkeypatch.setattr(cli, "make_engine", _Engine)
+    monkeypatch.setattr(S3BlobStore, "from_env", lambda: _S3())
+    monkeypatch.setattr(cli, "connect", connect)
+    monkeypatch.setattr(cli, "delete_request", delete_request)
+    assert cli.main(["request", "delete", "req-1", "--force", "--dry-run"]) == 0
+    assert seen == {"request_id": "req-1", "force": True, "dry_run": True}
+    assert json.loads(capsys.readouterr().out)["request_id"] == "req-1"
