@@ -9,7 +9,7 @@ import asyncio
 import json
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol
@@ -21,7 +21,7 @@ from common.blob_store.base import BlobStore, BucketObject
 from common.errors import PraxisError
 from common.events import TableTransport
 from common.persistence import refs
-from common.persistence.fence import REQUEST_LOCK_KEY
+from common.persistence.fence import REQUEST_LOCK_ARGS
 from common.persistence.refs import Reference, event_holder
 from common.persistence.removal import (
     BATCH_LIMIT,
@@ -35,6 +35,7 @@ from common.persistence.removal import (
     live_references,
     operation_id,
     run_lock,
+    session_lock,
 )
 from common.persistence.retention import DEFAULT_LIFETIME, SAFETY_WINDOW, TABLE_CLASS
 from common.schemas import RetentionClass
@@ -56,6 +57,9 @@ class Totals:
 
     # Objects deleted for blobs an earlier run left marked (finish_pending).
     finished: int = 0
+    # A delete's forced tasks, with why each counted as ended: Temporal reported
+    # its Workflow `closed`, or no longer knows it (`missing`).
+    forced: dict[str, str] = field(default_factory=dict)
 
     def add(self, result: BatchResult, reason: str = "") -> None:
         """Count a batch, if it committed (review F135)."""
@@ -81,6 +85,7 @@ class Totals:
             "by_reason": self.by_reason,
             "unrecognised": self.unrecognised,
             "finished_from_earlier_runs": self.finished,
+            "forced": self.forced,
         }
 
 
@@ -307,7 +312,7 @@ def row_batch(
             return []
         found = await conn.execute(
             text(
-                "SELECT checkpoint_id, task_id || '/' || turn || '/' || attempt || '/' || seq "
+                f"SELECT checkpoint_id, {refs.checkpoint_holder_sql()} "
                 "FROM checkpoints WHERE task_id = :t ORDER BY turn, attempt, seq LIMIT :n"
             ),
             params,
@@ -406,13 +411,6 @@ async def _gc(
         )
     totals.finished = await removal.finish_pending()
 
-    async def drain(make: Callable[[], Batch], reason: str) -> None:
-        while True:
-            result = await removal.run(make())
-            if (result.rows, result.references, result.blobs) == (0, 0, 0):
-                return
-            totals.add(result, reason)
-
     # 1. Rows that expired with their task, with the references they hold.
     for rule in ROW_RULES:
         life = _life(lifetimes, rule.retention)
@@ -421,7 +419,9 @@ async def _gc(
         async with _read(engine, removal) as conn:
             tasks = await _expired_tasks(conn, rule, now, life)
         for task_id in tasks:
-            await drain(
+            await _drain(
+                removal,
+                totals,
                 lambda r=rule, t=task_id, s=life: row_batch(r, t, now, s),  # type: ignore[misc]
                 f"{rule.table} expired",
             )
@@ -442,7 +442,9 @@ async def _gc(
             logs = [row[0] for row in found]
         transport = TableTransport(engine)
         for workflow_id in logs:
-            await drain(
+            await _drain(
+                removal,
+                totals,
                 lambda w=workflow_id: event_batch(  # type: ignore[misc]
                     transport,
                     w,
@@ -576,18 +578,21 @@ DELETE_ROWS = tuple(
 )
 
 
-@asynccontextmanager
-async def request_lock(engine: AsyncEngine, request_id: str) -> AsyncIterator[None]:
+def request_lock(engine: AsyncEngine, request_id: str) -> AbstractAsyncContextManager[None]:
     """The session form of the request lock, held for the whole delete (D12):
     `end_task`, messaging and a joining `record_task` wait until it ends."""
-    async with engine.connect() as conn:
-        conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
-        params = {"c": REQUEST_LOCK_KEY, "r": request_id}
-        await conn.execute(text("SELECT pg_advisory_lock(:c, hashtext(:r))"), params)
-        try:
-            yield
-        finally:
-            await conn.execute(text("SELECT pg_advisory_unlock(:c, hashtext(:r))"), params)
+    return session_lock(engine, REQUEST_LOCK_ARGS, {"r": request_id}, wait=True)
+
+
+async def _drain(
+    removal: RemovalEngine, totals: Totals, make: Callable[[], Batch], reason: str
+) -> None:
+    """Run batches from `make` until one changes nothing."""
+    while True:
+        result = await removal.run(make())
+        if (result.rows, result.references, result.blobs) == (0, 0, 0):
+            return
+        totals.add(result, reason)
 
 
 async def delete_request(
@@ -654,20 +659,15 @@ async def _delete(
             f"request {request_id} has tasks that have not ended: {', '.join(unended)}. "
             "Wait for them, or, if their Workflows are closed, use --force"
         )
-    running = [t for t in unended if await status_of(t) == "running"]
+    statuses = {t: await status_of(t) for t in unended}
+    running = [t for t, status in statuses.items() if status == "running"]
     if running:
         raise DeleteRefused(
             f"request {request_id} has tasks whose Workflow is still running: "
             f"{', '.join(running)}. --force applies only to closed Workflows"
         )
+    totals.forced = dict(sorted(statuses.items()))  # shown before anything changes
     totals.finished = await removal.finish_pending()
-
-    async def drain(make: Callable[[], Batch], reason: str) -> None:
-        while True:
-            result = await removal.run(make())
-            if (result.rows, result.references, result.blobs) == (0, 0, 0):
-                return
-            totals.add(result, reason)
 
     # 1. Fix the task list, fence every attempt, end forced tasks, and mark the
     # uploads with the delete's operation, under each task's lock (review F81):
@@ -707,7 +707,7 @@ async def _delete(
             details={
                 "reason": DELETE_START,
                 "tasks": tasks,
-                "forced": unended,
+                "forced": totals.forced,
                 "resumed": resumed is not None,
             },
         )
@@ -719,14 +719,18 @@ async def _delete(
     for task_id in tasks:
         # 2. Rows deleted, with the references they hold.
         for rule in DELETE_ROWS:
-            await drain(
+            await _drain(
+                removal,
+                totals,
                 lambda r=rule, t=task_id: row_batch(  # type: ignore[misc]
                     r, t, now, 0, action="request.delete", subject=subject, reason="deleted"
                 ),
                 f"{rule.table} deleted",
             )
         # 3. Events, pruned to the end of the log (D11).
-        await drain(
+        await _drain(
+            removal,
+            totals,
             lambda t=task_id: event_batch(  # type: ignore[misc]
                 transport,
                 t,
@@ -742,7 +746,9 @@ async def _delete(
         )
         # 4. Content redacted; IDs, statuses and usage kept (R11).
         for name, change in _redactions(task_id, redacted):
-            await drain(
+            await _drain(
+                removal,
+                totals,
                 lambda c=change, n=name, t=task_id: Batch(  # type: ignore[misc]
                     "request.delete",
                     subject,

@@ -619,3 +619,20 @@ async def test_a_rerun_finishes_the_killed_deletes_own_task_list(
     assert stones[-1].details["reason"] == "request delete complete"
     with pytest.raises(DeleteRefused, match=joiner.task_id):  # a fresh delete sees it
         await delete_request(engine, inner, FakeTemporal(), request)
+
+
+async def test_force_says_why_each_task_counted_as_ended(engine: AsyncEngine) -> None:
+    """F143 (R21, engineer decision): the plan, the report and the first
+    tombstone name each forced task with Temporal's answer."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    closed = await record_task(engine, store, request_id=request)
+    gone = await record_task(engine, store, request_id=request)
+    temporal = FakeTemporal({closed.task_id: "closed"})  # `gone` is unknown: missing
+    expected = {closed.task_id: "closed", gone.task_id: "missing"}
+    dry = await delete_request(engine, inner, temporal, request, force=True, dry_run=True)
+    assert dry.forced == expected and dry.report()["forced"] == expected
+    totals = await delete_request(engine, inner, temporal, request, force=True)
+    assert totals.forced == expected
+    assert (await tombstones(engine, totals.operation))[0].details["forced"] == expected

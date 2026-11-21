@@ -24,19 +24,22 @@ reports exactly what the run would change and changes nothing.
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from common.blob_store.base import BlobStore
 from common.errors import PraxisError
 from common.persistence.audit import AuditRepository
+from common.persistence.fence import TRY_TASK_LOCK
 from common.persistence.refs import is_content_key
 from common.schemas import BlobRef
 
@@ -59,31 +62,43 @@ class TaskBusy(RemovalBusy):
         self.task_id = task_id
 
 
-# The transaction form of fence.TASK_LOCK, without waiting.
-TRY_TASK_LOCK = text("SELECT pg_try_advisory_xact_lock(hashtext(:t))")
-
-
 @asynccontextmanager
-async def run_lock(engine: AsyncEngine) -> AsyncIterator[None]:
-    """Hold D4's run lock on a dedicated connection for the body; fail at once,
-    without waiting, if another run holds it. The lock is the session's, so it
-    lasts across the run's batch transactions and ends with the connection."""
+async def session_lock(
+    engine: AsyncEngine,
+    args: str,
+    params: Mapping[str, Any],
+    *,
+    wait: bool,
+    busy: str = "",
+) -> AsyncIterator[None]:
+    """Hold a session-level advisory lock (`args` are its SQL arguments) on a
+    dedicated connection for the body, so it lasts across the body's own
+    transactions. Without `wait`, fail at once with RemovalBusy(`busy`)."""
     async with engine.connect() as conn:
         conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
-        got = await conn.scalar(
-            text("SELECT pg_try_advisory_lock(:c, :k)"), {"c": RUN_LOCK[0], "k": RUN_LOCK[1]}
-        )
-        if not got:
-            raise RemovalBusy(
-                "another gc, request delete, events prune or backup is running; "
-                "try again when it ends"
-            )
+        if wait:
+            await conn.execute(text(f"SELECT pg_advisory_lock({args})"), params)
+        elif not await conn.scalar(text(f"SELECT pg_try_advisory_lock({args})"), params):
+            raise RemovalBusy(busy)
         try:
             yield
         finally:
-            await conn.execute(
-                text("SELECT pg_advisory_unlock(:c, :k)"), {"c": RUN_LOCK[0], "k": RUN_LOCK[1]}
-            )
+            # A broken connection has released the lock already; never let the
+            # unlock hide the body's own error (review F138).
+            with contextlib.suppress(SQLAlchemyError):
+                await conn.execute(text(f"SELECT pg_advisory_unlock({args})"), params)
+
+
+def run_lock(engine: AsyncEngine) -> AbstractAsyncContextManager[None]:
+    """D4's run lock for a whole removal run; fails at once if another holds it."""
+    return session_lock(
+        engine,
+        f"{RUN_LOCK[0]}, {RUN_LOCK[1]}",
+        {},
+        wait=False,
+        busy="another gc, request delete, events prune or backup is running; "
+        "try again when it ends",
+    )
 
 
 def operation_id(kind: str) -> str:

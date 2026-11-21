@@ -34,13 +34,21 @@ from common.persistence.retention import DEFAULT_LIFETIME, REFERENCE_CLASS, SAFE
 from common.schemas import BlobRef, RetentionClass
 
 UPLOAD = "upload"  # holder table of an upload reference
+
+
+def checkpoint_holder_sql(alias: str = "") -> str:
+    """The SQL of a checkpoint's holder key, as `checkpoint_holder` builds it."""
+    a = f"{alias}." if alias else ""
+    return f"{a}task_id || '/' || {a}turn || '/' || {a}attempt || '/' || {a}seq"
+
+
 # A delete's operation ID starts with this; its marks are never cleared (D10, R25).
 DELETE_OPERATION = "delete:"
 
 # Every BlobRef stored in a row (notes.md#refs), with its holder and its class
 # from notes.md#d3's blob table, never the class in the JSON. Identical to
 # migration 0007's REFERENCES; a unit test keeps them in step.
-REFERENCES = """
+REFERENCES = f"""
 SELECT t.instructions_ref->>'key' AS blob_key, 'tasks' AS holder_table,
     t.task_id AS holder_key, 'instructions_ref' AS holder_column, t.task_id,
     t.request_id, 'transcript' AS retention_class
@@ -49,7 +57,7 @@ UNION
 SELECT e.value->>'key', 'tasks', t.task_id, 'input_refs', t.task_id, t.request_id,
     'transcript'
 FROM tasks t, json_each(CASE WHEN json_typeof(t.input_refs) = 'object'
-    THEN t.input_refs ELSE '{}'::json END) e
+    THEN t.input_refs ELSE '{{}}'::json END) e
 UNION
 SELECT a.value->'ref'->>'key', 'tasks', t.task_id, 'result', t.task_id, t.request_id,
     'artifact'
@@ -58,13 +66,13 @@ FROM tasks t, json_array_elements(CASE WHEN json_typeof(t.result) = 'object'
     THEN t.result->'artifacts' ELSE '[]'::json END) a
 UNION
 SELECT c.workspace_ref->>'key', 'checkpoints',
-    c.task_id || '/' || c.turn || '/' || c.attempt || '/' || c.seq, 'workspace_ref',
+    {checkpoint_holder_sql("c")}, 'workspace_ref',
     c.task_id, t.request_id, 'checkpoint'
 FROM checkpoints c LEFT JOIN tasks t ON t.task_id = c.task_id
 WHERE json_typeof(c.workspace_ref) = 'object'
 UNION
 SELECT c.session_ref->>'key', 'checkpoints',
-    c.task_id || '/' || c.turn || '/' || c.attempt || '/' || c.seq, 'session_ref',
+    {checkpoint_holder_sql("c")}, 'session_ref',
     c.task_id, t.request_id, 'checkpoint'
 FROM checkpoints c LEFT JOIN tasks t ON t.task_id = c.task_id
 WHERE c.session_ref IS NOT NULL AND json_typeof(c.session_ref) = 'object'

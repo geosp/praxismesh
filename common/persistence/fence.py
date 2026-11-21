@@ -19,13 +19,16 @@ class FenceRejected(RuntimeError):
 
 # Bind `:t` (task ID).
 TASK_LOCK = text("SELECT pg_advisory_xact_lock(hashtext(:t))")
+# The same lock without waiting; returns whether it was taken.
+TRY_TASK_LOCK = text("SELECT pg_try_advisory_xact_lock(hashtext(:t))")
 
 # The per-request lock (Phase 2 messaging plan; bind `:r`, the request ID): taken
 # by messaging, `end_task` and a task's `record_task`. `request delete` holds the
 # session form, `pg_advisory_lock(2, hashtext(:r))`, for its whole run, and the
 # two forms conflict (Phase 3A persistence plan D12).
 REQUEST_LOCK_KEY = 2
-REQUEST_LOCK = text("SELECT pg_advisory_xact_lock(2, hashtext(:r))")
+REQUEST_LOCK_ARGS = f"{REQUEST_LOCK_KEY}, hashtext(:r)"  # also the session form's
+REQUEST_LOCK = text(f"SELECT pg_advisory_xact_lock({REQUEST_LOCK_ARGS})")
 
 # A SQL condition; bind `:t`, `:turn` and `:a` (the writer's task, turn and attempt).
 # A `deleted` row (the fencing row of `request delete`) refuses every later write
