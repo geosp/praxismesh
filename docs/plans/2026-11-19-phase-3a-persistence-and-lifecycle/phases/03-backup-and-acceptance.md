@@ -1,12 +1,12 @@
 ---
 phase: 3
 title: Backup, restore, reconciliation and acceptance
-status: in-progress
+status: impl-reviewed
 branch: feat/92-phase-3a-backup-restore
 base: 9920f3601335040d8aae069097c950c50a0572c3
 delivers: [R16, R17, R23]
 design_review: { status: passed, rounds: 3, last: 2026-11-20 }
-impl_review: { status: changes-requested, rounds: 2, last: 2026-11-21 }
+impl_review: { status: passed, rounds: 2, last: 2026-11-21 }
 approved: 2026-11-20
 ---
 

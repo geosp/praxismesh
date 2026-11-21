@@ -287,25 +287,28 @@ Diff base 9920f36..72bf8d6 (frozen review commit 72bf8d6, local). Reviewers: con
 
 | ID | Sev | Lens | Req | Finding | Resolution |
 | --- | --- | --- | --- | --- | --- |
-| F197 | Major | contract | R17 | `reconcile` exits 1 (a traceback) when Temporal's `connect` or the database fails; the runbook and overview say 2 (F186 reopened) | open |
-| F198 | Major | contract, failure, scope | R16, D8 | A backup whose bucket does not exist (wrong `S3_BUCKET`, lost volume) succeeds with 0 objects while rows name live blobs | open |
-| F199 | Major | failure | D8, task 2.1 | A SIGTERM or SIGHUP during the dumps skips the `finally`: the workers stay stopped, and nothing records which | open |
-| F200 | Major | failure, scope | D8 | Backup and restore stop only `running` workers; a restarting one comes up and runs Activities between the dumps | open |
-| F201 | Major | scope, failure | R17 | A task that ends while reconcile asks Temporal is listed as never ended (likely right after restore restarts the workers) | open |
-| F202 | Nit | contract | R17 | `WorkflowStatusUnavailable` now reaches gc and request delete too; only reconcile's path is tested | open |
-| F203 | Nit | contract, failure | R16 | A manifest without `databases` or `objects` raises `KeyError`, a traceback, not `RestoreRefused` | open |
-| F204 | Nit | contract | R16 | restore.sh loads fixed dump names; `check_backup` checks the manifest's `file` | open |
-| F205 | Nit | contract, failure | D8 | A `compose start` that fails in the `finally` replaces the dump error that caused it | open |
-| F206 | Nit | contract | task 2.1 | The test hook `after_dumps` is in production `backup()`'s signature | open |
-| F207 | Nit | contract | D8 | The runbook's `make workers-up` after a killed backup starts every worker, not the ones it stopped | open |
-| F208 | Nit | failure | D8 | The mark is cleared only after Temporal and the workers start; a start timeout after a full load asks for `make reset` | open |
-| F209 | Nit | failure | D8 | `make up` or `workers-up` run against a half-loaded database with no warning | open |
-| F210 | Nit | failure | R16 | `check-backup` compares sizes only; content keys could be hash-checked | open |
-| F211 | Nit | failure | D8 | Restore never compares the manifest's images with the checkout's | open |
-| F212 | Nit | failure | D8 | The manifest's row counts come from another connection than `pg_dump`'s snapshot | open |
-| F213 | Nit | contract | D4 | `reconcile --reindex` has no `--dry-run` | open |
-| F214 | Nit | scope | R17 | Reconcile's comment says a reference is listed "unless it really is missing", which a concurrent removal disproves | open |
-| F215 | Nit | scope | D5 | gc's orphan pass also reads a missing bucket as empty (the shared `list_objects` rule) | open |
-| F216 | Nit | scope | R23 | A refused `make restore` leaving the Workflow and the bucket unchanged is shown only by drill step 3 (one task's output) | open |
-| F217 | Nit | scope | D8, task 2.3 | The drill never stops or restarts the DSH worker pair | open |
-| F218 | Nit | contract | reuse | `json`/`field` shell one-liners, `_rows` and `check_empty` counting `APP_TABLES` twice, `_safe_path` vs `_relative_path`, the Makefile's worker lists | open |
+| F197 | Major | contract | R17 | `reconcile` exits 1 (a traceback) when Temporal's `connect` or the database fails; the runbook and overview say 2 (F186 reopened) | fixed: reconcile turns a failed Temporal connect or database read into ServiceUnavailable (exit 2); tests/test_cli.py::test_reconcile_exits_2_when_it_cannot_reach_a_service |
+| F198 | Major | contract, failure, scope | R16, D8 | A backup whose bucket does not exist (wrong `S3_BUCKET`, lost volume) succeeds with 0 objects while rows name live blobs | fixed: an empty listing while blob_objects has live rows fails the backup; test_backup.py::test_a_bucket_that_does_not_exist_fails_a_backup_with_live_blobs |
+| F199 | Major | failure | D8, task 2.1 | A SIGTERM or SIGHUP during the dumps skips the `finally`: the workers stay stopped, and nothing records which | fixed: SIGTERM and SIGHUP raise BackupFailed where the backup is, so the workers start again; workers-stopped is written first; test_backup.py::test_a_signal_during_the_dumps_starts_the_workers_again[SIGTERM, SIGHUP] (a child process, tests/support/backup_child.py) |
+| F200 | Major | failure, scope | D8 | Backup and restore stop only `running` workers; a restarting one comes up and runs Activities between the dumps | fixed: backup and restore stop every worker and start again those running or restarting; the call order in test_backup.py (worker-dsh-a reported restarting); restore.sh by make drill |
+| F201 | Major | scope, failure | R17 | A task that ends while reconcile asks Temporal is listed as never ended (likely right after restore restarts the workers) | fixed: reconcile reads ended_at again before listing a task; test_reconcile.py::test_a_task_that_ends_while_reconcile_asks_is_not_listed |
+| F202 | Nit | contract | R17 | `WorkflowStatusUnavailable` now reaches gc and request delete too; only reconcile's path is tested | fixed: tests/test_cli.py::test_gc_and_delete_report_temporal_errors_as_errors |
+| F203 | Nit | contract, failure | R16 | A manifest without `databases` or `objects` raises `KeyError`, a traceback, not `RestoreRefused` | fixed: a missing or wrong manifest field is a RestoreRefused; tests/test_backup_check.py::test_a_manifest_missing_a_field_is_refused |
+| F204 | Nit | contract | R16 | restore.sh loads fixed dump names; `check_backup` checks the manifest's `file` | fixed: check-backup refuses a manifest naming another dump file; tests/test_backup_check.py::test_a_dump_under_another_name_is_refused |
+| F205 | Nit | contract, failure | D8 | A `compose start` that fails in the `finally` replaces the dump error that caused it | fixed: a failed restart after a failure names both; test_backup.py::test_a_failed_restart_keeps_the_error_that_caused_it |
+| F206 | Nit | contract | task 2.1 | The test hook `after_dumps` is in production `backup()`'s signature | accepted: the hook is keyword-only with a None default; the CLI never passes it |
+| F207 | Nit | contract | D8 | The runbook's `make workers-up` after a killed backup starts every worker, not the ones it stopped | fixed: the runbook starts the workers listed in workers-stopped (F199) |
+| F208 | Nit | failure | D8 | The mark is cleared only after Temporal and the workers start; a start timeout after a full load asks for `make reset` | fixed: the mark is cleared once the load is complete; exercised by make drill (no test makes Temporal's start fail) |
+| F209 | Nit | failure | D8 | `make up` or `workers-up` run against a half-loaded database with no warning | accepted: the mark blocks the next restore, and the runbook says to reset first |
+| F210 | Nit | failure | R16 | `check-backup` compares sizes only; content keys could be hash-checked | accepted: sizes catch truncation, the likely failure; hashing every object is later hardening |
+| F211 | Nit | failure | D8 | Restore never compares the manifest's images with the checkout's | accepted: the runbook says to restore with the manifest's images |
+| F212 | Nit | failure | D8 | The manifest's row counts come from another connection than `pg_dump`'s snapshot | accepted: the row counts are information |
+| F213 | Nit | contract | D4 | `reconcile --reindex` has no `--dry-run` | accepted: a plain reconcile is the read-only run |
+| F214 | Nit | scope | R17 | Reconcile's comment says a reference is listed "unless it really is missing", which a concurrent removal disproves | fixed: the snapshot comment in reconcile.py |
+| F215 | Nit | scope | D5 | gc's orphan pass also reads a missing bucket as empty (the shared `list_objects` rule) | accepted: gc reads the env file the workers read; a mismatch needs a hand-edited environment |
+| F216 | Nit | scope | R23 | A refused `make restore` leaving the Workflow and the bucket unchanged is shown only by drill step 3 (one task's output) | accepted: check_empty, the only step before any change, is tested against real Temporal and SeaweedFS |
+| F217 | Nit | scope | D8, task 2.3 | The drill never stops or restarts the DSH worker pair | accepted: CI runs no DSH pair; F200's every-worker stop covers them |
+| F218 | Nit | contract | reuse | `json`/`field` shell one-liners, `_rows` and `check_empty` counting `APP_TABLES` twice, `_safe_path` vs `_relative_path`, the Makefile's worker lists | fixed in part: _rows and check_empty share _table_rows; accepted for the shell one-liners, the path guards and the Makefile lists |
+| F219 | Major | coordinator | R17 | `agentctl tail` still caught `RPCError`, which F186 turned into `WorkflowStatusUnavailable`, so a Temporal error ended a follow (a regression of round 1's fix, found while fixing F197) | fixed: tail catches WorkflowStatusUnavailable; tests/test_cli.py::test_tail_keeps_following_when_temporal_cannot_say |
+
+After the fixes (2026-11-21, last fix commit 4713b7b): every Major fixed test first; each new test failed before its fix and fails again with it reverted, except F202 (it covers code already right; it fails with workflow_status's translation reverted). The restore.sh changes (F200, F208) are exercised by make drill, which passed. AGENTS.md checks: 397 unit tests passed. make drill and the demo pass at 4713b7b. Integration suite on the pm3adev stack at 4713b7b, workers stopped: 363 passed, 4 skipped (`test_model_endpoints.py`: no `VLLM_BASE_URL` in that env file). This was the second and last round: nothing is left open.

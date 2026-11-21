@@ -83,6 +83,19 @@ change no worker code.
   `test_model_endpoints.py`, because this env file sets no `VLLM_BASE_URL`. The two later commits
   add comments and change the shell scripts the drill runs.
 
+## Rerun after impl review round 2
+
+Date: 2026-11-21. Tested commit: `4713b7b` (round 2 fixes, F197-F219), the same checkout and dev
+stack as the round 1 rerun, with `DEMO_BUILD=--no-build` and `DRILL_BUILD=--no-build`.
+
+- **Demo.** Exited 0 in 2 min 13 s. Step 4's probe: C's input `removed_at None ... in the bucket:
+  True`. Step 5: `check-backup` accepted the backup, and reconcile reported `"clean": true`.
+- **Drill.** `make drill` exited 0 in 2 min 4 s. Restore now stops every worker; its reconcile
+  report was read as findings ("information only; restore succeeded").
+- **Suites.** Every AGENTS.md check exited 0, with 397 unit tests passed. The integration suite
+  at `4713b7b`, workers stopped: 363 passed and 4 skipped (`test_model_endpoints.py`, no
+  `VLLM_BASE_URL` in this env file), in 15 min 17 s.
+
 ## Cleanup
 
 The demo and the drill deleted their backups. The `pmaccept3a` stack was torn down with `make
