@@ -13,11 +13,13 @@ workers. The drill (`make drill`) stops and starts real ones.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Sequence
+import stat
+from collections.abc import AsyncIterator, Iterator, Sequence
 from pathlib import Path
-from typing import IO
+from typing import IO, Any
 
 import pytest
+from botocore.awsrequest import AWSResponse, HTTPHeaders
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from common.blob_store.s3 import S3BlobStore
@@ -33,7 +35,8 @@ pytestmark = pytest.mark.integration
 
 class RecordingCompose:
     """The real Compose, except that `worker-a` is reported running and its
-    `stop` and `start` are recorded, not run. `fail` makes that dump fail."""
+    `stop` and `start` are recorded, not run. `fail` makes that dump, or the
+    `stop`, fail."""
 
     def __init__(self, fail: str | None = None) -> None:
         self.real = DockerCompose.from_env()
@@ -43,8 +46,12 @@ class RecordingCompose:
     def run(self, args: Sequence[str], *, stdout: IO[bytes] | None = None) -> str:
         if args[0] == "ps":
             return "db\ntemporal\nworker-a\n"
+        if args[0] == "config":
+            self.calls.append("config")
         if args[0] in ("stop", "start"):
             self.calls.append(" ".join(args))
+            if args[0] == self.fail:
+                raise BackupFailed("stop failed partway (test)")
             return ""
         if args[0] == "exec":
             self.calls.append(f"dump {args[-1]}")
@@ -86,6 +93,7 @@ async def test_a_backup_has_three_dumps_every_object_and_a_manifest(
     )
 
     assert compose.calls == [
+        "config",  # before anything stops: a failure here changes nothing
         "stop worker-a",
         "dump praxismesh",
         "dump temporal",
@@ -107,6 +115,7 @@ async def test_a_backup_has_three_dumps_every_object_and_a_manifest(
     assert manifest["migration"] and manifest["rows"]["tasks"] >= 1
     assert manifest["workers_stopped"] == ["worker-a"]
     assert any(i.startswith("paradedb/paradedb:") for i in manifest["images"])
+    assert stat.S_IMODE(target.stat().st_mode) == 0o700  # clear-text data (F185)
 
 
 async def test_the_workers_start_again_when_a_dump_fails(
@@ -115,7 +124,94 @@ async def test_the_workers_start_again_when_a_dump_fails(
     compose = RecordingCompose(fail="temporal")
     with pytest.raises(BackupFailed):
         await backup(engine, bucket, compose, to=tmp_path / "b")
-    assert compose.calls[0] == "stop worker-a" and compose.calls[-1] == "start worker-a"
+    assert compose.calls[:2] == ["config", "stop worker-a"]
+    assert compose.calls[-1] == "start worker-a"
     assert not (tmp_path / "b" / MANIFEST).exists()  # incomplete: restore refuses it
     async with run_lock(engine):
         pass  # released: a removal can run now
+
+
+def refusing(store: S3BlobStore, operation: str = "*") -> S3BlobStore:
+    """`store`'s bucket through a client of its own whose S3 `operation` (every
+    one by default) is answered 403 AccessDenied, as SeaweedFS answers a wrong
+    secret key."""
+    denied = S3BlobStore.from_env()
+    denied.bucket = store.bucket
+
+    class Raw:
+        def stream(self, **_: object) -> Iterator[bytes]:
+            yield (
+                b"<?xml version='1.0' encoding='UTF-8'?><Error><Code>AccessDenied</Code>"
+                b"<Message>denied (test)</Message></Error>"
+            )
+
+    def answer(request: Any, **_: object) -> AWSResponse:
+        return AWSResponse(request.url, 403, HTTPHeaders(), Raw())
+
+    event = "before-send.s3" if operation == "*" else f"before-send.s3.{operation}"
+    # A `before-send` handler that returns a response replaces the HTTP call.
+    denied.client.meta.events.register(event, answer)  # type: ignore[arg-type]
+    return denied
+
+
+async def test_a_bucket_the_backup_cannot_read_fails_it(
+    engine: AsyncEngine, bucket: S3BlobStore, tmp_path: Path
+) -> None:
+    """A refused bucket is not an empty one (impl-review F165): no manifest."""
+    await bucket.put(b"held by a task", retention="transcript")
+    with pytest.raises(BackupFailed, match="bucket"):
+        await backup(engine, refusing(bucket), RecordingCompose(), to=tmp_path / "b")
+    assert not (tmp_path / "b" / MANIFEST).exists()
+
+
+async def test_an_object_the_backup_cannot_read_fails_it(
+    engine: AsyncEngine, bucket: S3BlobStore, tmp_path: Path
+) -> None:
+    """A failed object read is a `BackupFailed`, not a traceback (F186)."""
+    await bucket.put(b"held by a task", retention="transcript")
+    with pytest.raises(BackupFailed, match="bucket"):
+        await backup(engine, refusing(bucket, "GetObject"), RecordingCompose(), to=tmp_path / "b")
+    assert not (tmp_path / "b" / MANIFEST).exists()
+
+
+async def test_the_workers_start_again_when_the_stop_fails(
+    engine: AsyncEngine, bucket: S3BlobStore, tmp_path: Path
+) -> None:
+    """A `compose stop` that fails partway may have stopped some (F166)."""
+    compose = RecordingCompose(fail="stop")
+    with pytest.raises(BackupFailed, match="stop failed"):
+        await backup(engine, bucket, compose, to=tmp_path / "b")
+    assert compose.calls[-1] == "start worker-a"
+
+
+async def test_a_backup_refused_on_the_lock_creates_nothing(
+    engine: AsyncEngine, bucket: S3BlobStore, tmp_path: Path
+) -> None:
+    """Refused, it leaves no directory, so the same `--to` works later (F176)."""
+    async with run_lock(engine):
+        with pytest.raises(RemovalBusy):
+            await backup(engine, bucket, RecordingCompose(), to=tmp_path / "b")
+    assert not (tmp_path / "b").exists()
+
+
+async def test_a_backup_into_an_existing_directory_is_refused(
+    engine: AsyncEngine, bucket: S3BlobStore, tmp_path: Path
+) -> None:
+    (tmp_path / "b").mkdir()
+    with pytest.raises(BackupFailed, match="already exists"):
+        await backup(engine, bucket, RecordingCompose(), to=tmp_path / "b")
+    assert list((tmp_path / "b").iterdir()) == []
+
+
+async def test_a_manifest_write_that_fails_leaves_no_manifest(
+    engine: AsyncEngine, bucket: S3BlobStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The manifest appears whole or not at all (F180)."""
+
+    def killed(*_: object) -> None:
+        raise OSError("killed (test)")
+
+    monkeypatch.setattr("orchestrator.backup.os.replace", killed)
+    with pytest.raises(OSError, match="killed"):
+        await backup(engine, bucket, RecordingCompose(), to=tmp_path / "b")
+    assert not (tmp_path / "b" / MANIFEST).exists()

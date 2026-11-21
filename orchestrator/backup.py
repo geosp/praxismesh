@@ -33,11 +33,12 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import IO, Any, Protocol
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from common.blob_store.base import BlobError
 from common.blob_store.s3 import S3BlobStore
 from common.errors import PraxisError
 from common.persistence.removal import run_lock
@@ -120,30 +121,47 @@ def _safe_path(root: Path, key: str) -> Path:
     return root.joinpath(*parts)
 
 
-def _copy_bucket(store: S3BlobStore, to: Path) -> list[dict[str, Any]]:
-    """Every object, with what `load_blobs` needs to put it back as it was."""
+def _copy_bucket(store: S3BlobStore, keys: Sequence[str], to: Path) -> list[dict[str, Any]]:
+    """Every listed object, with what `load_blobs` needs to put it back as it was."""
     objects: list[dict[str, Any]] = []
-    try:
-        store.client.head_bucket(Bucket=store.bucket)
-    except ClientError:
-        return objects  # not created yet (it is created on first use): nothing to copy
-    pages = store.client.get_paginator("list_objects_v2").paginate(Bucket=store.bucket)
-    for page in pages:
-        for listed in page.get("Contents", []):
-            key = listed["Key"]
+    for key in keys:
+        try:
             obj = store.client.get_object(Bucket=store.bucket, Key=key)
-            path = _safe_path(to, key)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(obj["Body"].read())
-            objects.append(
-                {
-                    "key": key,
-                    "bytes": int(listed["Size"]),
-                    "content_type": obj.get("ContentType", "application/octet-stream"),
-                    "metadata": obj.get("Metadata", {}),
-                }
-            )
+            body = obj["Body"].read()
+        except (ClientError, BotoCoreError) as e:
+            raise BackupFailed(f"cannot copy {key} from bucket {store.bucket}: {e}") from e
+        path = _safe_path(to, key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+        objects.append(
+            {
+                "key": key,
+                "bytes": len(body),
+                "content_type": obj.get("ContentType", "application/octet-stream"),
+                "metadata": obj.get("Metadata", {}),
+            }
+        )
     return objects
+
+
+async def _list_bucket(store: S3BlobStore) -> list[str]:
+    """The bucket's keys. Only a bucket not created yet (it is created on first
+    use) is empty; a refused or failing listing fails the backup (F165)."""
+    try:
+        return sorted(await store.list_objects())
+    except BlobError as e:
+        raise BackupFailed(f"cannot list bucket {store.bucket}: {e}") from e
+
+
+def _write_atomic(path: Path, content: str) -> None:
+    """Write `path` whole or not at all: through a temporary file and a rename."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(content)
+    try:
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 async def _rows(engine: AsyncEngine) -> tuple[dict[str, int], str | None]:
@@ -167,12 +185,21 @@ async def backup(
     """Back the stack up into `to` (default `backups/<UTC time>/`); returns it."""
     started = datetime.now(UTC)
     target = to or ROOT / "backups" / started.strftime("%Y%m%dT%H%M%SZ")
-    target.mkdir(parents=True, exist_ok=False)
     async with run_lock(engine):
-        stopped = running_workers(compose)
-        if stopped:
-            compose.run(["stop", *stopped])
+        # Made under the lock, so a refused backup leaves nothing behind; only
+        # operators may read it: it holds prompts and outputs in clear text.
+        target.parent.mkdir(parents=True, exist_ok=True)
         try:
+            target.mkdir(mode=0o700)
+        except FileExistsError:
+            raise BackupFailed(f"{target} already exists: back up into a new directory") from None
+        # Before anything stops: a failure here changes nothing.
+        images = compose.run(["config", "--images"]).split()
+        stopped = running_workers(compose)
+        try:
+            if stopped:
+                # Inside the `try`: a stop that fails partway may have stopped some.
+                compose.run(["stop", *stopped])
             rows, head = await _rows(engine)
             dumps: dict[str, int] = {}
             # The application database first: no restored row names a blob newer
@@ -190,8 +217,8 @@ async def backup(
                 compose.run(["start", *stopped])
         if after_dumps is not None:
             await after_dumps()
-        objects = await asyncio.to_thread(_copy_bucket, store, target / "blobs")
-    images = compose.run(["config", "--images"]).split()
+        keys = await _list_bucket(store)
+        objects = await asyncio.to_thread(_copy_bucket, store, keys, target / "blobs")
     manifest = {
         "format": FORMAT,
         "started_at": started.isoformat(),
@@ -204,7 +231,7 @@ async def backup(
         "workers_stopped": stopped,
         "images": sorted(set(images)),
     }
-    (target / MANIFEST).write_text(json.dumps(manifest, indent=2) + "\n")
+    _write_atomic(target / MANIFEST, json.dumps(manifest, indent=2) + "\n")
     return target
 
 
