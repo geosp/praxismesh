@@ -595,3 +595,55 @@ async def test_an_upload_in_flight_during_a_delete_leaves_no_object_behind(
     await asyncio.wait_for(deleting, 60)
     assert ref.key not in inner.objects  # removed with the rest of the task
     assert await expired(store, ref)
+
+
+async def test_content_that_only_looks_redacted_is_redacted(engine: AsyncEngine) -> None:
+    """F123 (R11): only the exact marker counts as redacted; model output that
+    starts with "[deleted " is redacted like any other content."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    a = await finished(engine, store, request)
+    fake = "[deleted draft] the key is 1234"
+    async with engine.begin() as conn:
+        raw = await conn.scalar(
+            text("SELECT result FROM tasks WHERE task_id = :t"), {"t": a.task_id}
+        )
+        result = raw if isinstance(raw, dict) else json.loads(raw)
+        result["summary"] = fake
+        await conn.execute(
+            text("UPDATE tasks SET result = CAST(:r AS json) WHERE task_id = :t"),
+            {"r": json.dumps(result), "t": a.task_id},
+        )
+        await conn.execute(
+            text("UPDATE task_messages SET body = :b WHERE sender_task = :t"),
+            {"b": fake, "t": a.task_id},
+        )
+        await conn.execute(
+            text("UPDATE agent_messages SET message_data = :m WHERE session_id = :t"),
+            {"m": json.dumps(fake), "t": a.task_id},
+        )
+        await conn.execute(
+            text("UPDATE idempotency_keys SET result = CAST(:r AS json) WHERE task_id = :t"),
+            {"r": json.dumps(fake), "t": a.task_id},
+        )
+    await delete_request(engine, inner, temporal(), request)
+    mark = marker(datetime.now(UTC))
+    raw = await one(engine, "SELECT result FROM tasks WHERE task_id = :t", t=a.task_id)
+    result = raw if isinstance(raw, dict) else json.loads(raw)
+    assert result["summary"] == mark and result["questions"] == [mark] and result["artifacts"] == []
+    assert (
+        await one(engine, "SELECT body FROM task_messages WHERE sender_task = :t", t=a.task_id)
+        == mark
+    )
+    assert (
+        json.loads(
+            await one(
+                engine, "SELECT message_data FROM agent_messages WHERE session_id = :t", t=a.task_id
+            )
+        )
+        == mark
+    )
+    assert await one(
+        engine, "SELECT CAST(result AS text) FROM idempotency_keys WHERE task_id = :t", t=a.task_id
+    ) == json.dumps(mark)

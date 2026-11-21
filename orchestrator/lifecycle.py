@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -518,7 +519,11 @@ def marker(now: datetime) -> str:
     return f"[deleted {now:%Y-%m-%d}]"
 
 
-_MARKED = "[deleted %"  # LIKE pattern of a marker: rerunning redacts nothing again
+# Exactly a marker, as text and as a JSON string: a rerun redacts nothing twice,
+# and content that merely starts like one is still redacted (review F123).
+MARKER_PATTERN = r"^\[deleted [0-9]{4}-[0-9]{2}-[0-9]{2}\]$"
+MARKER_JSON_PATTERN = r'^"\[deleted [0-9]{4}-[0-9]{2}-[0-9]{2}\]"$'
+_MARKER = re.compile(MARKER_PATTERN)
 DELETE_WORKER = "cli:request-delete"
 # Waits between tries when an attempt holds a task's lock (TaskBusy).
 DELETE_RETRY_S = (0.1, 0.2, 0.5, 1.0, 2.0, 2.0, 2.0, 2.0)
@@ -721,7 +726,14 @@ def _redactions(task_id: str, redacted: str) -> list[tuple[str, RowChange]]:
         async def change(conn: AsyncConnection) -> int:
             done = await conn.execute(
                 text(sql),
-                {"t": task_id, "m": redacted, "j": as_json, "p": _MARKED, "n": BATCH_LIMIT},
+                {
+                    "t": task_id,
+                    "m": redacted,
+                    "j": as_json,
+                    "p": MARKER_PATTERN,
+                    "pj": MARKER_JSON_PATTERN,
+                    "n": BATCH_LIMIT,
+                },
             )
             return done.rowcount
 
@@ -736,7 +748,7 @@ def _redactions(task_id: str, redacted: str) -> list[tuple[str, RowChange]]:
         value = row[0] if row is not None else None
         if isinstance(value, str):
             value = json.loads(value)
-        if not isinstance(value, dict) or str(value.get("summary", "")).startswith("[deleted "):
+        if not isinstance(value, dict) or _MARKER.match(str(value.get("summary", ""))):
             return 0
         value["summary"] = redacted
         if value.get("questions"):
@@ -757,7 +769,7 @@ def _redactions(task_id: str, redacted: str) -> list[tuple[str, RowChange]]:
             update(
                 "UPDATE agent_messages SET message_data = :j WHERE id = ANY(ARRAY("
                 "SELECT id FROM agent_messages WHERE session_id = :t "
-                "AND message_data NOT LIKE '\"' || :p LIMIT :n))"
+                "AND message_data !~ :pj LIMIT :n))"
             ),
         ),
         (
@@ -765,7 +777,7 @@ def _redactions(task_id: str, redacted: str) -> list[tuple[str, RowChange]]:
             update(
                 "UPDATE task_messages SET body = :m WHERE message_id = ANY(ARRAY("
                 "SELECT message_id FROM task_messages WHERE (sender_task = :t "
-                "OR recipient_task = :t) AND body NOT LIKE :p LIMIT :n))"
+                "OR recipient_task = :t) AND body !~ :p LIMIT :n))"
             ),
         ),
         (
@@ -773,7 +785,7 @@ def _redactions(task_id: str, redacted: str) -> list[tuple[str, RowChange]]:
             update(
                 "UPDATE idempotency_keys SET result = CAST(:j AS json) WHERE key = ANY(ARRAY("
                 "SELECT key FROM idempotency_keys WHERE task_id = :t "
-                "AND CAST(result AS text) NOT LIKE '\"' || :p LIMIT :n))"
+                "AND CAST(result AS text) !~ :pj LIMIT :n))"
             ),
         ),
     ]
