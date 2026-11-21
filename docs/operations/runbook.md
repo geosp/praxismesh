@@ -228,7 +228,9 @@ plan](../plans/2026-11-19-phase-3a-persistence-and-lifecycle/plan.md), D3): `eph
 1 day after it was written; from the task's end, `checkpoint` 7 days, `transcript` 30
 days and `artifact` 90 days; `audit` (tasks, attempts, usage and the audit log) is kept.
 Nothing is removed on its own: an operator runs the commands below. Each prints its plan
-with `--dry-run`, which changes nothing.
+with `--dry-run`, which changes nothing. A dry run holds the locks of the rows it would
+change until it ends, so uploads and checkpoints of the same tasks wait for it; its plan
+leaves out the bucket deletes a real run first finishes for an earlier, stopped run.
 
 ```bash
 ./agentctl gc --dry-run                      # what has expired, by reason
@@ -243,20 +245,27 @@ their class), the blob references that expired with them, and every blob left wi
 live reference. Uploads of a task that never got a row (no worker picked it up) go only
 after 24 hours and only if Temporal reports its Workflow missing or closed, so a queued
 task keeps its inputs. A bucket object with no reference at all goes once its last upload
-is more than 24 hours old. `gc` refuses while a stored reference is not in the index; the
-message names the repair (`agentctl reconcile --reindex`, added in phase 03).
+is more than 24 hours old. A bucket object whose key is not a content key
+(`sha256/<hex>`) is never removed; `gc` lists it as `unrecognised`. `gc` refuses while a
+stored reference is not in the index; the message names the repair (`agentctl reconcile
+--reindex`, added in phase 03).
 
 **`request delete REQ`** removes what the request's tasks hold: checkpoints, events,
-sample orders, inbox rows, and every blob no other request holds (identical bytes are
-stored once, so a shared blob stays). It redacts content to `[deleted <date>]`: task
+sample orders, inbox rows, and every blob nothing else still holds (identical bytes are
+stored once, so a blob another task or a pending upload holds stays). It redacts content to `[deleted <date>]`: task
 summaries, questions and failure reasons, message bodies, agent conversation items and
 tool results; artifacts are emptied. Task IDs, statuses, attempts and usage stay. It works
 on the tasks the request had when it started; a task that joins meanwhile waits and is
-untouched. It refuses while a task has not ended. `--force` treats such a task as ended,
-setting it `failed`, but only if Temporal reports its Workflow closed (terminated,
-cancelled, timed out) or no longer knows it; a running Workflow is always refused. After a
-delete, no attempt of its tasks can write a checkpoint, event or message (each task gets a
-`deleted` attempt row that fences them), and an upload revives nothing. Temporal keeps each
+untouched. A delete that stopped partway is finished by running it again, with its own task
+list; only once it has completed does a new delete pick up tasks that joined since. It
+refuses while a task has not ended. `--force` treats such a task as ended, setting it
+`failed`, but only if Temporal reports its Workflow closed (terminated, cancelled, timed
+out) or no longer knows it; a running Workflow is always refused. The plan (`--dry-run`),
+the report and the first tombstone list each forced task as `closed` or `missing`: if a
+task you believe is running shows `missing`, check that `agentctl` points at the right
+Temporal (`TEMPORAL_PORT`, `TEMPORAL_NAMESPACE`) before going on. After a delete, no attempt
+of its tasks writes anything: checkpoints, events, messages, conversation items and tool
+results are refused (each task gets a `deleted` attempt row), and an upload revives nothing. Temporal keeps each
 turn's summary, questions and outcome in its histories for `TEMPORAL_RETENTION` (72 hours)
 and in backups taken before; that is not rewritten (threat model).
 
@@ -278,7 +287,8 @@ delete these rows.
 
 **A run that stopped partway** (killed, or the bucket unreachable) is safe to run again:
 removals commit before the bucket is touched, and the next run first deletes the objects an
-earlier run marked, then carries on. Nothing is counted twice.
+earlier run marked (reported as `finished_from_earlier_runs`), then carries on. Nothing is
+counted twice.
 
 ## Known deviations
 

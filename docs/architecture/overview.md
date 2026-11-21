@@ -308,13 +308,15 @@ Draft: phases 01 and 02 of the [Phase 3A persistence plan](../plans/2026-11-19-p
 | Audit log | `audit_log`, `common/persistence/audit.py` | Append-only (a trigger refuses `UPDATE` and `DELETE`); removal tombstones, actor `cli:<OS user>`. |
 | Removal engine | `common/persistence/removal.py` | One transaction per batch: task locks (taken without waiting), `blob_objects` row locks in key order, the row changes, references marked, blobs left with no live reference marked, the tombstone. Then, per marked blob, the bucket step: under its row lock, delete the object only if the mark still stands, then set `bucket_deleted_at`. A run first finishes blobs an earlier run left marked. A dry run is one transaction, rolled back. `run_lock` holds `pg_advisory_lock(3, 0)` for a whole run and fails at once if another holds it. |
 | Removals | `orchestrator/lifecycle.py`, `orchestrator/cli.py` | `agentctl gc`, `agentctl request delete REQ [--force]` and `agentctl events prune`, each with `--dry-run`. `gc` refuses while any stored reference is unindexed; it asks Temporal before expiring the uploads of a task with no row. `request delete` holds the request lock (session form) for its run, fixes its task list in its first tombstone, fences each task with a `deleted` attempt row, marks its uploads under the task locks, then deletes checkpoints and task rows, prunes events and redacts content (notes.md#redact). |
+| Deleted tasks | `common/persistence/fence.py` | ADR-0007's fence condition refuses every write of a task with a `deleted` attempt row, whatever its turn; `refuse_if_deleted` does the same, under the task lock, for writes with no attempt identity (the openai session store's items, the sample MCP server's orders). |
 | Expired reads | `RecordingBlobStore.get`, `stream`, `stat` | Raise `BlobExpired`, naming the removal date, when `blob_objects.removed_at` is set; `agentctl task output` reads through it. |
 | Events | `common/events/table.py` | `prune` takes the caller's connection, a row limit and the operation that marks the pruned events' references; events leave only through it, so `tail` reports *expired*, not a gap. |
 
 ### Failure and recovery
 
 - A run killed inside a batch leaves nothing of that batch; one killed after a commit leaves the batch and its tombstone, and the next run deletes its marked objects first (`tests/integration/test_removal_kills.py`).
-- A `put` of removed bytes clears the mark before the bucket step, which then keeps the object; after the bucket step it uploads them again. A deleted task's late upload revives nothing.
+- A `put` of removed bytes clears the mark before the bucket step, which then keeps the object; after the bucket step it uploads them again. `put` uploads while it holds the blob's row lock, so a removal marks a blob only after its bytes are in. A deleted task's late upload revives nothing.
+- A delete that stopped partway is finished by its rerun with its own task list; a completed delete writes a `request delete complete` tombstone.
 - An attempt writing a message holds its task lock and then waits for the request lock a delete holds; the delete's first batch takes task locks without waiting, so it releases the request lock and retries instead of deadlocking.
 
 ### Tests
