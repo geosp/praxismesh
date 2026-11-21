@@ -33,14 +33,15 @@ REQUEST_LOCK = text(f"SELECT pg_advisory_xact_lock({REQUEST_LOCK_ARGS})")
 # A SQL condition; bind `:t`, `:turn` and `:a` (the writer's task, turn and attempt).
 # A `deleted` row (the fencing row of `request delete`) refuses every later write
 # of the task, whatever its turn (Phase 3A persistence plan R25, review F118).
+_DELETED_ROW = "outcome = 'deleted'"  # the fencing row of `request delete`
 NO_NEWER_ATTEMPT = (
     "NOT EXISTS (SELECT 1 FROM task_attempts n WHERE n.task_id = :t "
-    "AND (n.turn > :turn OR (n.turn = :turn AND n.attempt > :a) OR n.outcome = 'deleted'))"
+    f"AND (n.turn > :turn OR (n.turn = :turn AND n.attempt > :a) OR n.{_DELETED_ROW}))"
 )
 
 
 # A SQL condition; bind `:t`: the task's request was deleted (its fencing row).
-DELETED = "EXISTS (SELECT 1 FROM task_attempts d WHERE d.task_id = :t AND d.outcome = 'deleted')"
+DELETED = f"EXISTS (SELECT 1 FROM task_attempts d WHERE d.task_id = :t AND d.{_DELETED_ROW})"
 
 
 async def refuse_if_deleted(conn: AsyncConnection, task_id: str) -> None:

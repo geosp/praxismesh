@@ -405,8 +405,7 @@ async def reindex(conn: AsyncConnection, bucket: Mapping[str, BucketObject]) -> 
         )
     blobs = 0
     for key, obj in sorted(bucket.items()):
-        match = _CONTENT_KEY.match(key)
-        if match is None:
+        if not is_content_key(key):
             continue  # not a content key: reported as an orphan, never recorded
         inserted = await conn.execute(
             text(
@@ -415,7 +414,7 @@ async def reindex(conn: AsyncConnection, bucket: Mapping[str, BucketObject]) -> 
                 f"coalesce({strongest.replace('b.key', ':k')}, 'ephemeral'), now() "
                 "ON CONFLICT (key) DO NOTHING RETURNING key"
             ),
-            {"k": key, "c": f"sha256:{match.group(1)}", "b": obj.size},
+            {"k": key, "c": f"sha256:{key.removeprefix('sha256/')}", "b": obj.size},
         )
         blobs += len(inserted.all())
     return Reindexed(references=len(added_keys), blobs=blobs)

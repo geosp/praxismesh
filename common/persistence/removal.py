@@ -136,8 +136,9 @@ async def live_references(
 
 # The batch's own row changes, run inside its transaction; returns rows changed.
 RowChange = Callable[[AsyncConnection], Awaitable[int]]
-# Computes the batch's references inside its transaction, before any lock: for
-# a removal that learns its range only from the rows (an events prune).
+# Computes the batch's references inside its transaction, after the task locks and
+# before the `blob_objects` locks: for a removal that learns its range only from
+# the rows (an events prune).
 Collect = Callable[[AsyncConnection], Awaitable[Sequence["RefKey"]]]
 
 

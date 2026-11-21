@@ -687,3 +687,16 @@ async def test_a_large_request_is_deleted_in_batches_of_at_most_500(engine: Asyn
         )
         == 0
     )
+
+
+async def test_a_failed_tasks_failure_reason_is_redacted(engine: AsyncEngine) -> None:
+    """F147 (R11): a failed task's failure reason holds the marker; its status stays."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    task = await record_task(engine, store, request_id=request)
+    await end_task(engine, store, task, status="failed")
+    await delete_request(engine, inner, FakeTemporal(), request)
+    raw = await one(engine, "SELECT result FROM tasks WHERE task_id = :t", t=task.task_id)
+    result = raw if isinstance(raw, dict) else json.loads(raw)
+    assert result["failure_reason"] == marker(datetime.now(UTC)) and result["status"] == "failed"
