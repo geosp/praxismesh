@@ -98,3 +98,26 @@ async def end_task(
                 {"at": ended_at, "t": stored.task_id},
             )
     return stored
+
+
+async def session_ids(engine: AsyncEngine, task_id: str) -> dict[str, set[str]]:
+    """The session IDs a task's rows carry (Phase 3A persistence plan phase 02
+    task 3.1: a delete redacts `agent_sessions` by `session_id` = task ID)."""
+    async with engine.connect() as conn:
+        found: dict[str, set[str]] = {}
+        for name, sql in (
+            ("checkpoints", "SELECT DISTINCT session_id FROM checkpoints WHERE task_id = :t"),
+            # A session the task's attempts wrote, by the checkpoints that name it.
+            (
+                "agent_sessions",
+                "SELECT DISTINCT s.session_id FROM agent_sessions s JOIN checkpoints c "
+                "ON c.session_id = s.session_id WHERE c.task_id = :t",
+            ),
+            (
+                "agent_messages",
+                "SELECT DISTINCT m.session_id FROM agent_messages m JOIN checkpoints c "
+                "ON c.session_id = m.session_id WHERE c.task_id = :t",
+            ),
+        ):
+            found[name] = {r[0] for r in await conn.execute(text(sql), {"t": task_id})}
+        return found

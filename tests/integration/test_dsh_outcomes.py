@@ -58,6 +58,7 @@ from orchestrator.submit import prepare_task, start_task
 from registry.loader import Registry, load_registry
 from tests.support.dsh import DshContainer, build_image, make_dsh_registry, start_container
 from tests.support.fake_model import FakeModel
+from tests.support.lifecycle import session_ids
 from tests.support.stack import run_id
 from tests.support.worker_procs import ROOT, descendants
 
@@ -284,6 +285,17 @@ async def test_outcome_case(
     assert result.template == "local-dsh"
     assert result.inner_turns == recorded["inner_turns"] + case.extra_inner_turns
     assert await attempt_rows(task_id) == case.rows and len(case.rows) == recorded["attempts"]
+    # Phase 3A persistence plan phase 02 task 3.1: DSH names its session by the
+    # task ID and keeps it as a blob, writing no `agent_sessions` rows.
+    engine = make_engine()
+    try:
+        sessions = await session_ids(engine, task_id)
+    finally:
+        await engine.dispose()
+    assert sessions["checkpoints"] == ({task_id} if result.status == "succeeded" else
+                                       sessions["checkpoints"] & {task_id})  # fmt: skip
+    assert sessions["agent_sessions"] == sessions["agent_messages"] == set()
+    assert await query("SELECT 1 FROM agent_sessions WHERE session_id = :t", t=task_id) == []
     await check_usage(result, task_id, case.unknown)
     requests = answered(name)
     assert result.tokens_in == requests * ONE_REQUEST[0] + case.unknown * WINDOW
