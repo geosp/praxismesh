@@ -33,4 +33,4 @@ plan's acceptance suite and demo pass, and the as-built documentation describes 
 
 - [ ] 3.1 Run the acceptance suite: every scenario of R1-R25, mapped to its test in the phase file's verification evidence. Verify: unit and integration runs pass from a clean worktree whose `infra/.env` comes from `infra/.env.example`.
 - [ ] 3.2 Demo script `infra/demo/phase-3a-lifecycle.sh` and record `docs/demos/phase-3a-lifecycle.md`: a request with an artifact, a dry-run GC, a GC with its tombstone and the artifact's expired read, a delete of a second request with its tombstone and redacted output, a resubmit that revives the input, a backup, `make reset`, a restore and its reconcile report. Verify: the script runs end to end on the fake model.
-- [ ] 3.3 As-built overview section, runbook ("Backup and restore"), `schemas.md` and decision log. Verify: `check_plans.py` and the link check pass.
+- [x] 3.3 As-built overview section, runbook ("Backup and restore"), `schemas.md` and decision log. Verify: `check_plans.py` and the link check pass.

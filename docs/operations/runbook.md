@@ -251,7 +251,7 @@ task keeps its inputs. A bucket object with no reference at all goes once its la
 is more than 24 hours old. A bucket object whose key is not a content key
 (`sha256/<hex>`) is never removed; `gc` lists it as `unrecognised`. `gc` refuses while a
 stored reference is not in the index; the message names the repair (`agentctl reconcile
---reindex`, added in phase 03).
+--reindex`, below).
 
 **`request delete REQ`** removes what the request's tasks hold: checkpoints, events,
 sample orders, inbox rows, and every blob nothing else still holds (identical bytes are
@@ -295,6 +295,71 @@ or drop the trigger (threat model R10, until Phase 9 gives the log its own owner
 removals commit before the bucket is touched, and the next run first deletes the objects an
 earlier run marked (reported as `finished_from_earlier_runs`), then carries on. Nothing is
 counted twice.
+
+**Checking consistency.** `agentctl reconcile` compares the rows, the reference index and
+the bucket, and changes nothing. It lists dangling references (a live reference whose blob
+is missing from the bucket or marked removed), orphaned bucket objects with their age in
+hours (`content_key: false` marks a key `gc` never removes), unindexed references, and
+tasks that never ended although Temporal reports their Workflow closed or no longer knows
+it. It exits 1 when it lists anything. `agentctl reconcile --reindex` first indexes the
+unindexed references, as migration 0007 did, under the removal lock; running it again
+changes nothing. A dangling reference means bytes are lost: restore them from a backup, or
+delete the request that holds them. A task listed as never ended can be deleted with
+`request delete --force`.
+
+## Backup and restore
+
+A backup is three database dumps and a copy of the bucket ([Phase 3A persistence
+plan](../plans/2026-11-19-phase-3a-persistence-and-lifecycle/plan.md), D8). It is taken
+by hand: the recovery point is the last backup.
+
+```bash
+make backup                                   # into backups/<UTC time>/
+./agentctl backup --to /path/to/new/dir       # or somewhere else
+make restore BACKUP=backups/<UTC time>        # into an empty stack only
+make drill                                    # backup, reset, restore, check: DELETES DATA
+```
+
+**Backup** holds the removal lock for its whole run, so no `gc`, `request delete` or
+`events prune` runs meanwhile (each fails at once with "another gc, request delete,
+events prune or backup is running"). It stops the running worker services while it dumps
+`praxismesh`, `temporal` and `temporal_visibility`, so no Workflow gets ahead of its rows,
+and starts them again afterwards, even when a dump fails; an Activity that was running is
+retried by Temporal. It then copies every bucket object and writes `manifest.json` last;
+a directory without it is incomplete. `backups/` is git-ignored. **Backups hold prompts,
+outputs and conversations in clear text** (threat model): keep them where only operators
+can read them, and delete them when no longer needed. A backup taken before a `request
+delete` still holds that request's data.
+
+**Restore** loads a backup into a stack that holds no data. Use the same images as the
+backup (`images` in `manifest.json`) and this checkout's migrations. To restore into an
+existing stack, empty it first:
+
+```bash
+make reset          # deletes this stack's data volumes
+make up
+make restore BACKUP=backups/<UTC time>
+```
+
+`make restore` refuses, changing nothing, if the backup has no `manifest.json`, if the
+stack has task rows, if Temporal lists any Workflow in the app's namespace, or if the bucket
+holds objects. It then stops the workers and Temporal, drops and recreates the three
+databases with their grants and the `praxis_comms` role, loads the dumps and the objects,
+starts Temporal and the workers that were running, and prints `agentctl reconcile`'s report.
+The report is information: restore succeeds even when it lists something. Expect orphans
+for blobs uploaded after the database dump (`gc` removes them after 24 hours), and dangling
+references if an object could not be copied.
+
+**A restore that stopped partway** (killed, or a load error) leaves a mark, and the next
+`make restore` refuses with "an earlier restore did not finish". Run `make reset` and `make
+up`, then restore again.
+
+**The drill.** `make drill` exercises the whole procedure on a stack started with `make up`
+and migrated: it runs a task on the fake model, backs up, checks that a restore into the
+full stack is refused, resets, kills a restore while it loads, resets again, restores, and
+checks `task status`, `task output`, the `praxis_comms` role and that `reconcile` reports
+a deliberately removed object as dangling. It deletes the stack's data; CI runs it as the
+last step of the `stack` job. `DRILL_BUILD=--no-build` reuses the worker image.
 
 ## Known deviations
 
