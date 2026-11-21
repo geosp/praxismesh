@@ -2,7 +2,7 @@
 title: Phase 3A persistence and data lifecycle - blob references, retention, deletion and backup
 status: in-progress
 created: 2026-11-19
-updated: 2026-11-20
+updated: 2026-11-21
 design_review: { status: passed, rounds: 3, last: 2026-11-20 }
 approved: 2026-11-20
 adr_review: null
@@ -422,10 +422,17 @@ operator runs a command.
 
 | Phase | Title | Delivers | Status | Tasks |
 | --- | --- | --- | --- | --- |
-| 01 | Reference index, classes, audit log and the payload guard | R1, R2, R4, R5, R14, R18, R19, R20 | impl-reviewed | 13/13 |
-| 02 | GC and delete-by-request | R3, R6, R7, R8, R9, R10, R11, R12, R13, R15, R21, R22, R24, R25 | approved | 0/10 |
+| 01 | Reference index, classes, audit log and the payload guard | R1, R2, R4, R5, R14, R18, R19, R20 | done | 13/13 |
+| 02 | GC and delete-by-request | R3, R6, R7, R8, R9, R10, R11, R12, R13, R15, R21, R22, R24, R25 | done | 10/10 |
 | 03 | Backup, restore, reconciliation and acceptance | R16, R17, R23 | approved | 0/7 |
 
 ## Decision log
 
-- None.
+- 2026-11-20 · phase 02 apply: `request delete` takes its task locks without waiting and retries,
+  because a message write takes the task lock before the request lock; `--force` also accepts a
+  Workflow Temporal no longer knows; a dry run is one transaction rolled back at the end. Mechanics
+  within R21 and D12 (notes.md#redact, notes.md#d6); no requirement or decision changed.
+- 2026-11-21 · phase 02 impl-review round 2: a delete marks its tasks' uploads in its capped
+  later batches, the fencing row being the delete's mark (F125, F146); a delete refuses while a
+  reference of its tasks is unindexed, as gc does (F144). Mechanics within D4 and D12
+  (notes.md#redact); no requirement or decision changed.

@@ -97,7 +97,7 @@ make down                          # stop, keep data
 make reset                         # stop and delete all data volumes
 ```
 
-Run `make smoke`, or `uv run --env-file infra/.env pytest -m integration`, with the worker containers stopped (`make workers-down`): the orchestrator container's wake dispatcher otherwise consumes the messaging tests' wake rows and those tests fail. CI runs `make smoke` before it starts the workers.
+Run `make smoke` (`tests/integration` without the recovery tests), or the whole integration suite (`uv run --env-file infra/.env pytest -m integration`, which also runs `tests/test_runner_conformance.py` and the recovery tests), with the worker containers stopped (`make workers-down`): the orchestrator container's wake dispatcher otherwise consumes the messaging tests' wake rows and those tests fail. CI runs `make smoke` before it starts the workers.
 
 `infra/.env` is git-ignored; keep hosts, passwords and keys there, never in the repository. Make never reads it: Docker Compose reads it with `--env-file`, and the tests and migrations get it through `uv run --env-file`. Write it as plain `KEY=value` lines using the names in `infra/.env.example`; values may use only `A-Z a-z 0-9 . _ : / @ % + , = -`. `make up` names whatever is wrong: Docker not running, `infra/.env` absent, a line that breaks these rules, or a required variable unset. A variable set in your shell overrides the file, except `COMPOSE_PROJECT_NAME`, which comes only from the file.
 
@@ -153,7 +153,7 @@ Phase 1 runs one agent per task, as a durable Temporal Workflow, on the local mo
 ```bash
 # In infra/.env: VLLM_BASE_URL (your model server) and VLLM_MODEL (served name)
 make up && make migrate
-make workers-up       # build the worker image; start the orchestrator and two template workers
+make workers-up       # build the images; start the orchestrator, two openai workers and two DSH pairs
 make task PROMPT="Order 3 units of SKU-1 and write order-summary.md." OUTPUT=order-summary.md
 make task-status ID=task-...
 make task-output ID=task-... FILE=order-summary.md

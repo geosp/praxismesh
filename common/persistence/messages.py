@@ -25,12 +25,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from common.persistence.fence import NO_NEWER_ATTEMPT, TASK_LOCK, FenceRejected
+from common.persistence.fence import REQUEST_LOCK as _REQUEST_LOCK
 from common.persistence.refs import index_keys, task_holder
 
 MAX_BODY = 16_384
 OPEN = ("pending", "claimed", "read")
 OPEN_SQL = "('pending', 'claimed', 'read')"  # a question's open statuses, for SQL
-_REQUEST_LOCK = text("SELECT pg_advisory_xact_lock(2, hashtext(:r))")
 _COLUMNS = (
     "message_id, request_id, sender_task, recipient_task, kind, correlation_id, reply_to, "
     "deadline, status, reason, body, claimed_turn, notice_turn, created_at"

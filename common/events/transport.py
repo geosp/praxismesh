@@ -12,7 +12,7 @@ import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Protocol
+from typing import Any, Protocol
 
 from common.schemas.events import AgentEvent
 
@@ -100,12 +100,22 @@ class EventTransport(Protocol):
         """The highest offset stored, or None for an empty workflow."""
 
     async def prune(
-        self, workflow_id: str, *, below: int | None = None, older_than: timedelta | None = None
+        self,
+        workflow_id: str,
+        *,
+        below: int | None = None,
+        older_than: timedelta | None = None,
+        conn: Any = None,
+        limit: int | None = None,
+        removed_by: str | None = None,
     ) -> int | None:
         """Delete an offset prefix: below `below`, or the longest prefix whose events
-        were all stored more than `older_than` ago. Returns the new retained base
-        (the lowest remaining offset, or the next offset if none remain), or None
-        for an empty workflow."""
+        were all stored more than `older_than` ago, and at most `limit` events.
+        Returns the new retained base (the lowest remaining offset, or the next
+        offset if none remain), or None for an empty workflow. A store that keeps
+        a reference index runs in `conn`'s transaction when given and marks the
+        removed events' references with `removed_by` (Phase 3A persistence plan
+        D11); the others ignore both."""
 
     async def close(self) -> None:
         """Release connections."""

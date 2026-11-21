@@ -163,6 +163,7 @@ per task (the workflow ID is the task ID), start at 1 and have no gaps.
 ./agentctl tail TASK_ID --no-follow     # print what is stored and exit
 ./agentctl events prune --task TASK_ID --below 500       # delete offsets below 500
 ./agentctl events prune --task TASK_ID --older-than 7d   # delete the oldest events, up to the first newer than 7 days
+./agentctl events prune --task TASK_ID --below 500 --dry-run  # print what would go
 ```
 
 `agentctl` runs the CLI with `infra/.env` (`ENV_FILE=...` selects another file).
@@ -172,9 +173,11 @@ Each line is `offset<TAB>attempt<TAB>type<TAB>payload`. A line
 naming the checkpoint it restored from, so the events after an earlier
 attempt's last checkpoint are superseded by the new attempt's.
 
-Pruning is manual until Phase 3A's retention. Event rows carry retention class
-`task`. Deploy: `make migrate` (0005) before restarting the harness workers;
-running tasks need no drain, because `TaskWorkflow` did not change.
+`events prune` is a removal like `gc` (see [Removing data](#removing-data)): it holds the
+removal lock, prunes in batches of at most 500 events, each with a tombstone, and marks
+the pruned events' blob references. `gc` prunes a task's events 30 days after it ended.
+Deploy: `make migrate` (0005) before restarting the harness workers; running tasks need
+no drain, because `TaskWorkflow` did not change.
 
 If the database cannot store an attempt's last events, the attempt fails with
 the retryable `EventsUnavailable` and writes no finish; Temporal retries the turn.
@@ -217,6 +220,81 @@ worker at once.
 To roll back, drain every task started on the new code first (cancel waiting ones with
 `temporal workflow cancel`): the old code cannot replay their histories. Then delete
 leftover `message_wakes` rows and redeploy the old workers.
+
+## Removing data
+
+Stored data has a retention class and a lifetime ([Phase 3A persistence
+plan](../plans/2026-11-19-phase-3a-persistence-and-lifecycle/plan.md), D3): from the
+task's end, `checkpoint` 7 days, `transcript` 30 days and `artifact` 90 days; `ephemeral`
+1 day (a blob reference from when it was written; a wake or event-batch row from its task's
+end); `audit` (tasks, attempts, usage and the audit log) is kept. Apart from the housekeeping
+the services already did before (the event publisher drops its old batch IDs; the dispatcher
+deletes a wake once delivered), nothing is removed on its own: an operator runs the commands
+below. Each prints its plan with `--dry-run`, which changes nothing. A dry run holds the locks
+of the rows it would change until it ends, so uploads of the same blobs wait for it, and for
+`request delete --dry-run` also checkpoints and other writes of its tasks; its plan leaves out
+the bucket deletes a real run first finishes for an earlier, stopped run.
+
+```bash
+./agentctl gc --dry-run                      # what has expired, by reason
+./agentctl gc                                # remove it
+./agentctl request delete REQ --dry-run      # what deleting request REQ would remove
+./agentctl request delete REQ                # delete it
+./agentctl request delete REQ --force        # also a task left running by a closed Workflow
+```
+
+**`gc`** removes expired rows (checkpoints, sessions, messages, events and the rest, by
+their class), the blob references that expired with them, and every blob left with no
+live reference. Uploads of a task that never got a row (no worker picked it up) go only
+after 24 hours and only if Temporal reports its Workflow missing or closed, so a queued
+task keeps its inputs. A bucket object with no reference at all goes once its last upload
+is more than 24 hours old. A bucket object whose key is not a content key
+(`sha256/<hex>`) is never removed; `gc` lists it as `unrecognised`. `gc` refuses while a
+stored reference is not in the index; the message names the repair (`agentctl reconcile
+--reindex`, added in phase 03).
+
+**`request delete REQ`** removes what the request's tasks hold: checkpoints, events,
+sample orders, inbox rows, and every blob nothing else still holds (identical bytes are
+stored once, so a blob another task or a pending upload holds stays). It redacts content to `[deleted <date>]`: task
+summaries, questions and failure reasons, message bodies, agent conversation items and
+tool results; artifacts are emptied. Task IDs, statuses, attempts and usage stay. It works
+on the tasks the request had when it started; a task that joins meanwhile waits and is
+untouched. A delete that stopped partway is finished by running it again, with its own task
+list; only once it has completed does a new delete pick up tasks that joined since. It
+refuses while a task has not ended. `--force` treats such a task as ended, setting it
+`failed`, but only if Temporal reports its Workflow closed (terminated, cancelled, timed
+out) or no longer knows it; a running Workflow is always refused. The plan (`--dry-run`),
+the report and the first tombstone list each forced task as `closed` or `missing`: if a
+task you believe is running shows `missing`, check that `agentctl` points at the right
+Temporal (`TEMPORAL_PORT`, `TEMPORAL_NAMESPACE`) before going on. After a delete, no attempt
+of its tasks writes anything: checkpoints, events, messages, conversation items and tool
+results are refused (each task gets a `deleted` attempt row), and an upload revives nothing. Temporal keeps each
+turn's summary, questions and outcome in its histories for `TEMPORAL_RETENTION` (72 hours)
+and in backups taken before; that is not rewritten (threat model).
+
+**The lock.** `gc`, `request delete` and `events prune` hold one lock for their whole
+run. A second one started meanwhile fails at once with "another gc, request delete, events
+prune or backup is running"; run it again later. If an agent is writing a message for a
+task of the request, or uploading one of its files, the delete waits briefly and retries; if
+the task stays busy (about 10 seconds), the delete stops without changing the request and says
+to try again. A delete also refuses while a stored reference of its tasks is not in the index,
+naming the repair, as `gc` does.
+
+**What an expired read means.** A blob that was removed reads as expired, with the date:
+`agentctl task output` prints `error: blob sha256/... expired: removed on <date> UTC`
+instead of "not found". After a delete, `task output` reports the task has no outputs.
+
+**Tombstones.** Every batch a removal commits (at most 500 rows) writes a row to
+`audit_log` in the same transaction: the action (`gc`, `request.delete`, `events.prune`),
+the subject (`task:...`, `request:...`, `orphans`), the operation ID shared by the run, and
+counts of rows, references and blobs removed, never content. A trigger refuses `UPDATE` and
+`DELETE` on these rows. The app role owns the table, though, so it could still `TRUNCATE` it
+or drop the trigger (threat model R10, until Phase 9 gives the log its own owner).
+
+**A run that stopped partway** (killed, or the bucket unreachable) is safe to run again:
+removals commit before the bucket is touched, and the next run first deletes the objects an
+earlier run marked (reported as `finished_from_earlier_runs`), then carries on. Nothing is
+counted twice.
 
 ## Known deviations
 
