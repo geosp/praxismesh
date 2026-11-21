@@ -80,5 +80,13 @@ if [ -n "$restart" ]; then
 fi
 psql_super -d postgres -c "COMMENT ON ROLE postgres IS NULL"
 echo "restore: done; reconcile's report follows"
-uv_run python -m orchestrator.cli reconcile ||
+# Exit 1 with its report means findings; anything else (exit 2, or a traceback,
+# which also exits 1 but prints no report) means reconcile failed (F186).
+rc=0
+report=$(uv_run python -m orchestrator.cli reconcile) || rc=$?
+printf '%s\n' "$report"
+if [ "$rc" -eq 1 ] && printf '%s\n' "$report" | grep -q '"clean": false'; then
     echo "restore: reconcile listed the findings above (information only; restore succeeded)"
+elif [ "$rc" -ne 0 ]; then
+    echo "restore: reconcile failed (exit $rc; restore succeeded): run './agentctl reconcile' again" >&2
+fi

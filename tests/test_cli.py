@@ -12,6 +12,7 @@ import pytest
 from common.blob_store.s3 import S3BlobStore
 from common.schemas import BlobRef, TaskStart
 from orchestrator import cli
+from orchestrator.backup import DockerCompose
 
 
 class _Engine:
@@ -280,3 +281,59 @@ def test_reconcile_exits_1_when_anything_is_listed(
     assert report["clean"] is clean
     if not clean:
         assert report["never_ended"] == [{"task_id": "task-1", "workflow": "closed"}]
+
+
+def test_backup_prints_where_it_wrote(monkeypatch: Any, capsys: Any) -> None:
+    """`agentctl backup [--to DIR]` (Phase 3A persistence plan phase 03 task 2.1,
+    impl-review F183): `--to` reaches backup, which gets this checkout's
+    Compose, and the JSON names the directory."""
+    from pathlib import Path
+
+    seen: dict[str, Any] = {}
+
+    async def backup(engine: Any, store: Any, compose: Any, *, to: Path | None) -> Path:
+        seen.update(compose=compose, to=to)
+        return Path("/backups/b1")
+
+    compose = object()
+    monkeypatch.setattr(cli, "PROVIDER", _Provider())
+    monkeypatch.setattr(cli, "make_engine", _Engine)
+    monkeypatch.setattr(S3BlobStore, "from_env", lambda: _S3())
+    monkeypatch.setattr(DockerCompose, "from_env", lambda: compose)
+    monkeypatch.setattr(cli, "backup", backup)
+    assert cli.main(["backup", "--to", "/backups/b1"]) == 0
+    assert seen == {"compose": compose, "to": Path("/backups/b1")}
+    assert json.loads(capsys.readouterr().out) == {"backup": "/backups/b1"}
+    assert cli.main(["backup"]) == 0
+    assert seen["to"] is None  # backups/<UTC time>
+
+
+def test_reconcile_reports_temporal_errors_as_errors(monkeypatch: Any, capsys: Any) -> None:
+    """A Temporal error other than NOT_FOUND exits 2 with an `error:` line, not
+    a traceback and not 1, which means findings (impl-review F186)."""
+    from temporalio.service import RPCError, RPCStatusCode
+
+    from orchestrator.reconcile import Report
+
+    async def reconcile(engine: Any, bucket: Any, status_of: Any, *, reindex: bool) -> Report:
+        await status_of("task-1")
+        return Report()
+
+    class Unavailable:
+        def get_workflow_handle(self, workflow_id: str) -> Any:
+            class Handle:
+                async def describe(self) -> Any:
+                    raise RPCError("connection refused", RPCStatusCode.UNAVAILABLE, b"")
+
+            return Handle()
+
+    async def connect() -> object:
+        return Unavailable()
+
+    monkeypatch.setattr(cli, "PROVIDER", _Provider())
+    monkeypatch.setattr(cli, "make_engine", _Engine)
+    monkeypatch.setattr(S3BlobStore, "from_env", lambda: _S3())
+    monkeypatch.setattr(cli, "connect", connect)
+    monkeypatch.setattr(cli, "reconcile", reconcile)
+    assert cli.main(["reconcile"]) == 2
+    assert "error: Temporal" in capsys.readouterr().err
