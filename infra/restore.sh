@@ -8,15 +8,17 @@
 #     earlier restore was left unfinished, and the stack holds no data: no row
 #     in an application table, no Workflow in the app's namespace (asked
 #     through Temporal's API) and no bucket objects (R23).
-#  2. Mark the restore as started, then stop the workers and Temporal.
+#  2. Mark the restore as started, then stop every worker and Temporal.
 #  3. Drop praxismesh, temporal and temporal_visibility, recreate them with
 #     databases.sh and roles.sh, so the grants return, and pg_restore each dump.
-#  4. Load the bucket objects, start Temporal and the workers that were
-#     running, clear the mark, and print `agentctl reconcile`'s report. Its
-#     findings are information: restore does not fail on them.
+#  4. Load the bucket objects, clear the mark, start Temporal and the workers
+#     that were running or restarting, and print `agentctl reconcile`'s
+#     report. Its findings are information: restore does not fail on them.
 #
-# A restore stopped after step 2 leaves its mark, so the next one refuses: run
-# `make reset` and `make up`, then restore again.
+# A restore stopped between the mark and the end of the load leaves its mark,
+# so the next one refuses: run `make reset` and `make up`, then restore again.
+# One that fails to start Temporal or the workers after the load needs only
+# `make up`.
 set -euo pipefail
 
 backup=${1:-}
@@ -50,14 +52,16 @@ uv_run python -m orchestrator.backup check-empty || exit 1
 
 # 2. From here a stop leaves the mark.
 psql_super -d postgres -c "COMMENT ON ROLE postgres IS '$MARK'"
-running=$(compose ps --services --status running)
+# Those running, or between restarts (they come back by themselves), are
+# started again; every worker is stopped (impl-review F200).
+up=$(compose ps --services --status running; compose ps --services --status restarting)
 restart=""
 for w in $WORKERS; do
-    if printf '%s\n' "$running" | grep -qx "$w"; then restart="$restart $w"; fi
+    if grep -qx "$w" <<<"$up"; then restart="$restart $w"; fi
 done
 echo "restore: stopping the workers and Temporal"
 # shellcheck disable=SC2086 # word splitting intended
-compose stop $restart temporal-ui temporal >/dev/null
+compose stop $WORKERS temporal-ui temporal >/dev/null
 
 # 3. The databases, recreated with their grants, then loaded.
 for db in $DATABASES; do
@@ -75,12 +79,14 @@ compose exec -T -u postgres db bash /usr/local/bin/praxismesh-roles >/dev/null
 
 # 4. The bucket, then Temporal and the workers.
 uv_run python -m orchestrator.backup load-blobs "$backup"
+# Loaded whole: a Temporal or worker start that fails from here needs `make
+# up`, not `make reset` (impl-review F208).
+psql_super -d postgres -c "COMMENT ON ROLE postgres IS NULL"
 compose up -d --no-deps --wait --wait-timeout 180 temporal temporal-ui
 if [ -n "$restart" ]; then
     # shellcheck disable=SC2086
     compose start $restart
 fi
-psql_super -d postgres -c "COMMENT ON ROLE postgres IS NULL"
 echo "restore: done; reconcile's report follows"
 # Exit 1 with its report means findings; anything else (exit 2, or a traceback,
 # which also exits 1 but prints no report) means reconcile failed (F186).

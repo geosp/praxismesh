@@ -325,15 +325,19 @@ make drill                                    # backup, reset, restore, check: D
 
 **Backup** holds the removal lock for its whole run, so no `gc`, `request delete` or
 `events prune` runs meanwhile (each fails at once with "another gc, request delete,
-events prune or backup is running"). It stops the running worker services while it dumps
+events prune or backup is running"). It stops every worker service while it dumps
 `praxismesh`, `temporal` and `temporal_visibility`, so no Workflow gets ahead of its rows,
-and starts them again afterwards, even when a dump or the stop fails; an Activity that was
+and starts again those that were running or restarting, even when a dump or the stop fails,
+or the backup gets SIGTERM or SIGHUP; an Activity that was
 running is retried by Temporal. It then copies every bucket object and writes `manifest.json`
 last, whole or not at all; a directory without it is incomplete. A bucket it cannot list or
-read fails the backup. The backup directory is new (an existing one is refused) and readable by
+read fails the backup, and so does a bucket with no objects while rows name live blobs (check
+`S3_BUCKET`). The backup directory is new (an existing one is refused) and readable by
 its owner only (mode 0700). `backups/` is git-ignored. **A backup killed while it dumps**
-(SIGKILL, a closed terminal) leaves the workers stopped: start them with `make workers-up`, and
-delete the incomplete directory. **Backups hold prompts,
+(SIGKILL) leaves the workers stopped. It wrote the ones to start again into `workers-stopped`
+before stopping anything: run `docker compose -p <project> --env-file <env file> -f
+infra/docker-compose.yml start $(cat backups/<time>/workers-stopped)`, then delete the
+incomplete directory. **Backups hold prompts,
 outputs and conversations in clear text** (threat model): keep them where only operators
 can read them, and delete them when no longer needed. A backup taken before a `request
 delete` still holds that request's data.
@@ -352,9 +356,10 @@ make restore BACKUP=backups/<UTC time>
 dump or object missing or not the size the manifest gives), if it has another backup format or
 migration head than this checkout (check out a commit with the backup's head, restore, then
 migrate), if any application table has rows, if Temporal lists any Workflow in the app's
-namespace, or if the bucket holds objects. It then stops the workers and Temporal, drops and recreates the three
-databases with their grants and the `praxis_comms` role, loads the dumps and the objects,
-starts Temporal and the workers that were running, and prints `agentctl reconcile`'s report.
+namespace, or if the bucket holds objects. It then stops every worker and Temporal, drops
+and recreates the three databases with their grants and the `praxis_comms` role, loads the
+dumps and the objects, starts Temporal and the workers that were running or restarting, and
+prints `agentctl reconcile`'s report.
 The report is information: restore succeeds even when it lists something, and says so if
 reconcile itself failed. Expect orphans
 for blobs uploaded after the database dump (`gc` removes them after 24 hours), and dangling
@@ -362,7 +367,8 @@ references if an object could not be copied.
 
 **A restore that stopped partway** (killed, or a load error) leaves a mark, and the next
 `make restore` refuses with "an earlier restore did not finish". Run `make reset` and `make
-up`, then restore again.
+up`, then restore again. The mark is cleared once the dumps and objects are loaded, so a
+restore that fails only to start Temporal or the workers needs just `make up`.
 
 **The drill.** `make drill` exercises the whole procedure on a stack started with `make up`
 and migrated: it runs a task on the fake model, backs up, checks that a restore into the

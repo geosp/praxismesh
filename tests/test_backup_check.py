@@ -78,3 +78,28 @@ def test_a_missing_object_is_refused(tmp_path: Path) -> None:
     (make_backup(tmp_path) / "blobs" / "sha256" / "ab").unlink()
     with pytest.raises(RestoreRefused, match="sha256/ab is missing"):
         check_backup(tmp_path)
+
+
+@pytest.mark.parametrize("missing", ["databases", "objects", "bytes"])
+def test_a_manifest_missing_a_field_is_refused(tmp_path: Path, missing: str) -> None:
+    """A clear refusal, not a `KeyError` traceback (impl-review F203)."""
+    manifest = make_backup(tmp_path) / MANIFEST
+    body = json.loads(manifest.read_text())
+    if missing == "bytes":
+        del body["databases"]["temporal"]["bytes"]
+    else:
+        del body[missing]
+    manifest.write_text(json.dumps(body))
+    with pytest.raises(RestoreRefused, match="manifest"):
+        check_backup(tmp_path)
+
+
+def test_a_dump_under_another_name_is_refused(tmp_path: Path) -> None:
+    """restore.sh loads `<db>.dump`; the manifest must name that file (F204)."""
+    root = make_backup(tmp_path)
+    (root / "temporal.dump").rename(root / "t.dump")
+    body = json.loads((root / MANIFEST).read_text())
+    body["databases"]["temporal"]["file"] = "t.dump"
+    (root / MANIFEST).write_text(json.dumps(body))
+    with pytest.raises(RestoreRefused, match=r"names 't\.dump', not temporal\.dump"):
+        check_backup(tmp_path)

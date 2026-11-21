@@ -334,15 +334,22 @@ def check_backup(backup_dir: Path) -> None:
             f"migrations are at {head}: restore with a checkout whose head is "
             f"{manifest.get('migration')}, then migrate"
         )
-    files = [
-        (f"{db}.dump", backup_dir / manifest["databases"][db]["file"], manifest["databases"][db])
-        for db in DATABASES
-    ] + [(o["key"], _safe_path(backup_dir / "blobs", o["key"]), o) for o in manifest["objects"]]
-    for name, file, entry in files:
+    try:
+        files: list[tuple[str, Path, int]] = []
+        for db in DATABASES:
+            entry, name = manifest["databases"][db], f"{db}.dump"
+            if entry["file"] != name:  # restore.sh loads `<db>.dump` (F204)
+                raise RestoreRefused(f"the manifest names {entry['file']!r}, not {name}")
+            files.append((name, backup_dir / name, int(entry["bytes"])))
+        for o in manifest["objects"]:
+            files.append((o["key"], _safe_path(backup_dir / "blobs", o["key"]), int(o["bytes"])))
+    except (KeyError, TypeError, ValueError) as e:  # F203
+        raise RestoreRefused(f"{path} is not a complete manifest: {e!r} is missing or wrong") from e
+    for name, file, expected in files:
         if not file.is_file():
             raise RestoreRefused(f"{name} is missing from {backup_dir}")
-        if (size := file.stat().st_size) != entry["bytes"]:
-            raise RestoreRefused(f"{name} is {size} bytes; the manifest says {entry['bytes']}")
+        if (size := file.stat().st_size) != expected:
+            raise RestoreRefused(f"{name} is {size} bytes; the manifest says {expected}")
 
 
 async def check_empty(engine: AsyncEngine, store: S3BlobStore, workflows: int) -> None:
