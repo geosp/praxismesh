@@ -101,10 +101,9 @@ c=$(submit c "$OUT/orders-b.csv")
 echo "task C: $c (succeeded, reading B's removed input)" | log
 $CTL gc 2>/dev/null | tee "$OUT/gc-after-c.json" | log
 $CTL task status "$c" 2>/dev/null | field "next(iter(d['task']['input_refs'].values()))['key']" >"$OUT/c-input.key"
-probe tombstones "$(field "d['operation']" <"$OUT/gc-after-c.json")" >"$OUT/gc-after-c.tombstones"
-if grep -qF "$(cat "$OUT/c-input.key")" "$OUT/gc-after-c.tombstones"; then
-    fail "gc removed C's input"
-fi
+# Tombstones hold counts, never keys (R13), so ask the input's row and the
+# bucket directly (impl-review F167).
+probe live "$(cat "$OUT/c-input.key")" | log || fail "gc removed C's input"
 echo "gc kept C's input $(cat "$OUT/c-input.key")" | log
 
 say "5. backup, make reset, make up, restore"
