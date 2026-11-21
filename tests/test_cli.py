@@ -197,3 +197,29 @@ def test_join_refuses_an_unknown_request(monkeypatch: Any, capsys: Any) -> None:
     assert "request req-nope has no task to join" in capsys.readouterr().err
     args = cli.parser().parse_args(["task", "submit", "--instructions", "x", "--join", "req-1"])
     assert args.join == "req-1" and args.request is None
+
+
+def test_gc_dry_run_reaches_gc_and_prints_its_plan(monkeypatch: Any, capsys: Any) -> None:
+    """`agentctl gc --dry-run` (Phase 3A persistence plan phase 02 task 2.1)."""
+    from orchestrator.lifecycle import Totals
+
+    seen: dict[str, Any] = {}
+
+    async def gc(engine: Any, bucket: Any, status_of: Any, *, dry_run: bool) -> Totals:
+        seen["dry_run"] = dry_run
+        totals = Totals("gc:test")
+        totals.add(2, 3, 1, "checkpoints expired")
+        return totals
+
+    async def connect() -> object:
+        return object()
+
+    monkeypatch.setattr(cli, "PROVIDER", _Provider())
+    monkeypatch.setattr(cli, "make_engine", _Engine)
+    monkeypatch.setattr(S3BlobStore, "from_env", lambda: _S3())
+    monkeypatch.setattr(cli, "connect", connect)
+    monkeypatch.setattr(cli, "gc", gc)
+    assert cli.main(["gc", "--dry-run"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert seen == {"dry_run": True}
+    assert report["dry_run"] is True and report["by_reason"]["checkpoints expired"]["rows"] == 2

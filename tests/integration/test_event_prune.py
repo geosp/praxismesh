@@ -192,13 +192,13 @@ async def test_a_second_run_fails_at_once_while_the_first_holds_the_lock(
     real_run = RemovalEngine.run
     runs = 0
 
-    async def pausing_run(self: RemovalEngine, batch: Batch, *, dry_run: bool = False) -> Any:
+    async def pausing_run(self: RemovalEngine, batch: Batch) -> Any:
         nonlocal runs
         runs += 1
         if runs == 2:  # after the first batch committed
             between_batches.set()
             await resume.wait()
-        return await real_run(self, batch, dry_run=dry_run)
+        return await real_run(self, batch)
 
     monkeypatch.setattr(RemovalEngine, "run", pausing_run)
     first = asyncio.create_task(prune_events(engine, MemoryBlobStore(), wf, below=1201))

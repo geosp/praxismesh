@@ -96,12 +96,13 @@ async def test_a_dry_run_changes_nothing_and_reports_the_same_counts(engine: Asy
     store = RecordingBlobStore(inner, engine)
     a = await end_task(engine, store, await record_task(engine, store))
     op = operation_id("test")
-    removal = RemovalEngine(engine, inner, op)
     batch = await task_batch(engine, a, op)
-    dry = await removal.run(batch, dry_run=True)
+    dry_removal = RemovalEngine(engine, inner, op, dry_run=True)
+    async with dry_removal.session():
+        dry = await dry_removal.run(batch)
     assert dry.tombstone is None and await tombstones(engine, op) == []
-    assert await store.get(a.instructions)
-    real = await removal.run(batch)
+    assert await store.get(a.instructions) and a.instructions.key in inner.objects
+    real = await RemovalEngine(engine, inner, op).run(batch)
     assert (dry.rows, dry.references, dry.blobs) == (real.rows, real.references, real.blobs)
 
 

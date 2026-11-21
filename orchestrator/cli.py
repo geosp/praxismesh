@@ -10,6 +10,7 @@
 
     ./agentctl tail TASK_ID [--after N] [--no-follow]
     ./agentctl events prune --task TASK_ID (--below N | --older-than 7d) [--dry-run]
+    ./agentctl gc [--dry-run]
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ from common.persistence.repositories import (
     make_engine,
 )
 from common.schemas import TaskResult
-from orchestrator.lifecycle import prune_events
+from orchestrator.lifecycle import WorkflowStatus, gc, prune_events
 from orchestrator.submit import prepare_task, start_task
 from registry.loader import load_registry
 
@@ -256,14 +257,12 @@ async def tail(args: argparse.Namespace) -> int:
 
         async def closed() -> bool:
             try:
-                description = await client.get_workflow_handle(args.task_id).describe()
+                # Unknown or beyond retention counts as closed: nothing more arrives.
+                return await workflow_status(client, args.task_id) != "running"
             except RPCError as e:
-                if e.status == RPCStatusCode.NOT_FOUND:
-                    return True  # unknown or beyond retention: nothing more will arrive
                 log.warning("cannot read the Workflow status; still following",
                             extra={"fields": {"error": str(e)}})  # fmt: skip
                 return False
-            return description.status != WorkflowExecutionStatus.RUNNING
 
         # The workflow ID is the task ID (orchestrator/submit.py).
         await print_events(
@@ -276,6 +275,35 @@ async def tail(args: argparse.Namespace) -> int:
 
 async def _closed() -> bool:
     return True
+
+
+async def workflow_status(client: Client, workflow_id: str) -> WorkflowStatus:
+    """`running`, `closed` or `missing` (unknown, or beyond Temporal's retention);
+    other Temporal errors propagate."""
+    try:
+        description = await client.get_workflow_handle(workflow_id).describe()
+    except RPCError as e:
+        if e.status == RPCStatusCode.NOT_FOUND:
+            return "missing"
+        raise
+    return "running" if description.status == WorkflowExecutionStatus.RUNNING else "closed"
+
+
+async def gc_command(args: argparse.Namespace) -> int:
+    """`agentctl gc [--dry-run]` (Phase 3A persistence plan R6-R8, D4, D5)."""
+    engine = make_engine()
+    try:
+        client = await connect()
+        totals = await gc(
+            engine,
+            S3BlobStore.from_env(),
+            lambda task_id: workflow_status(client, task_id),
+            dry_run=args.dry_run,
+        )
+    finally:
+        await engine.dispose()
+    print(json.dumps({"dry_run": args.dry_run, **totals.report()}, indent=2))
+    return 0
 
 
 async def prune(args: argparse.Namespace) -> int:
@@ -341,19 +369,22 @@ def parser() -> argparse.ArgumentParser:
     which.add_argument("--below", type=int, help="delete offsets below this one")
     which.add_argument("--older-than", type=parse_duration, help="for example 7d, 12h, 30m")
     pr.add_argument("--dry-run", action="store_true", help="print what would go; change nothing")
+    g = commands.add_parser("gc", help="remove everything whose retention has expired")
+    g.add_argument("--dry-run", action="store_true", help="print the plan; change nothing")
     return p
 
 
 def main(argv: list[str]) -> int:
     args = parser().parse_args(argv)
     configure_logging(os.environ.get("LOG_LEVEL", "INFO"), stream=sys.stderr)
-    command = "tail" if args.group == "tail" else args.command
+    command = args.group if args.group in ("tail", "gc") else args.command
     handler = {
         "submit": submit,
         "status": status,
         "output": output,
         "tail": tail,
         "prune": prune,
+        "gc": gc_command,
     }[command]
     try:
         return asyncio.run(handler(args))

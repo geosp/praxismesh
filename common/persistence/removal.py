@@ -18,14 +18,14 @@ the inner store, holding the lock until the delete returns, and set
 without its bucket step (R15). It never calls `RecordingBlobStore.delete`,
 which would delete the `blob_objects` row.
 
-A dry run executes the same batch and rolls it back, so it reports exactly what
-the batch would change and changes nothing.
+A dry run executes the same batches in one transaction and rolls it back, so it
+reports exactly what the run would change and changes nothing.
 """
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -127,6 +127,9 @@ class Batch:
     task_locks: Sequence[str] = ()
     collect: Collect | None = None  # adds references, before the locks
     record_empty: bool = False  # commit a tombstone even if nothing changes
+    # Orphans to mark: bucket key -> the last upload time the caller saw. Each is
+    # marked only if it still has no live reference and no upload since then.
+    orphans: Mapping[str, datetime] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -149,37 +152,80 @@ class RemovalEngine:
         operation: str,
         *,
         actor: str | None = None,
+        dry_run: bool = False,
     ) -> None:
         self.engine = engine
         self.blobs = blobs
         self.operation = operation
         self.actor = actor
+        self.dry_run = dry_run
+        self._dry: AsyncConnection | None = None
 
-    async def run(self, batch: Batch, *, dry_run: bool = False) -> BatchResult:
-        """Commit one batch (steps 1-5), then its bucket step. A dry run rolls the
-        transaction back and skips the bucket."""
+    @asynccontextmanager
+    async def session(self) -> AsyncIterator[RemovalEngine]:
+        """The scope of a run. A dry run is one transaction for the whole run,
+        rolled back at the end: each batch sees the batches before it, so the
+        plan is exactly what the real run would do, and nothing changes."""
+        if not self.dry_run:
+            yield self
+            return
+        async with self.engine.connect() as conn:
+            transaction = await conn.begin()
+            self._dry = conn
+            try:
+                yield self
+            finally:
+                self._dry = None
+                await transaction.rollback()
+
+    @property
+    def dry_connection(self) -> AsyncConnection | None:
+        """The dry run's connection while its session is open: a dry run's
+        planning queries read through it, so they see its earlier batches."""
+        return self._dry
+
+    async def run(self, batch: Batch) -> BatchResult:
+        """Commit one batch (steps 1-5), then its bucket step. In a dry run the
+        batch joins the run's transaction and the bucket is never touched."""
+        if self.dry_run:
+            if self._dry is None:
+                raise RuntimeError("a dry run's batches run inside session()")
+            savepoint = await self._dry.begin_nested()
+            result = await self._batch(self._dry, batch, dry_run=True)
+            if (result.rows, result.references, result.blobs) == (0, 0, 0):
+                await savepoint.rollback()
+            else:
+                await savepoint.commit()
+            return result
         async with self.engine.connect() as conn:
             transaction = await conn.begin()
             try:
-                result = await self._batch(conn, batch, dry_run=dry_run)
+                result = await self._batch(conn, batch, dry_run=False)
             except BaseException:
                 await transaction.rollback()
                 raise
             empty = (result.rows, result.references, result.blobs) == (0, 0, 0)
-            if dry_run or (empty and not batch.record_empty):
+            if empty and not batch.record_empty:
                 # Nothing to commit: an empty batch leaves no tombstone.
                 await transaction.rollback()
-                return result if dry_run else BatchResult(0, 0, 0, (), None)
+                return BatchResult(0, 0, 0, (), None)
             await transaction.commit()
         await self.finish(result.marked)
         return result
+
+    async def finish_pending(self) -> int:
+        """Run the bucket step for every blob an earlier run left marked (R15).
+        Call it once at the start of a run, before new batches; a dry run skips it."""
+        if self.dry_run:
+            return 0
+        return await self.finish(await self.pending())
 
     async def _batch(self, conn: AsyncConnection, batch: Batch, *, dry_run: bool) -> BatchResult:
         for task_id in sorted(set(batch.task_locks)):
             await conn.execute(TASK_LOCK, {"t": task_id})
         collected = await batch.collect(conn) if batch.collect is not None else ()
         refs = list(dict.fromkeys([*batch.references, *collected]))
-        keys = sorted({r.blob_key for r in refs})
+        keys = sorted({r.blob_key for r in refs} | set(batch.orphans))
         if keys:
             await conn.execute(
                 text("SELECT key FROM blob_objects WHERE key = ANY(:k) ORDER BY key FOR UPDATE"),
@@ -187,7 +233,8 @@ class RemovalEngine:
             )
         rows = await batch.rows(conn) if batch.rows is not None else 0
         marked_refs = await self._mark_references(conn, refs)
-        marked = await self._mark_free_blobs(conn, keys)
+        marked = await self._mark_free_blobs(conn, sorted({r.blob_key for r in refs}))
+        marked = sorted([*marked, *await self._mark_orphans(conn, batch.orphans)])
         counts = {"rows": rows, "references": marked_refs, "blobs": len(marked)}
         tombstone = await AuditRepository.append(
             conn,
@@ -271,6 +318,34 @@ class RemovalEngine:
         )
         return sorted(row[0] for row in marked)
 
+    async def _mark_orphans(
+        self, conn: AsyncConnection, orphans: Mapping[str, datetime]
+    ) -> list[str]:
+        """Mark orphans that are still orphans: no live reference, and no upload
+        since the time the caller saw (a `put` after the bucket listing keeps
+        its blob). A key with no `blob_objects` row gets one, at that time."""
+        marked: list[str] = []
+        for key, seen in sorted(orphans.items()):
+            await conn.execute(
+                text(
+                    "INSERT INTO blob_objects (key, checksum, bytes, content_type, "
+                    "retention_class, last_put_at) VALUES (:k, 'sha256:' || substr(:k, 8), 0, "
+                    "'application/octet-stream', 'ephemeral', :seen) ON CONFLICT (key) DO NOTHING"
+                ),
+                {"k": key, "seen": seen},
+            )
+            found = await conn.execute(
+                text(
+                    "UPDATE blob_objects SET removed_at = now(), removed_by = :op "
+                    "WHERE key = :k AND removed_at IS NULL AND last_put_at <= :seen "
+                    "AND NOT EXISTS (SELECT 1 FROM blob_refs r WHERE r.blob_key = :k "
+                    "AND r.removed_at IS NULL) RETURNING key"
+                ),
+                {"k": key, "seen": seen, "op": self.operation},
+            )
+            marked += [row[0] for row in found]
+        return marked
+
     async def pending(self) -> list[str]:
         """Blobs marked by any earlier run whose bucket step never finished."""
         async with self.engine.connect() as conn:
@@ -281,11 +356,6 @@ class RemovalEngine:
                 )
             )
             return [row[0] for row in found]
-
-    async def finish_pending(self) -> int:
-        """Run the bucket step for every blob an earlier run left marked (R15).
-        Call it once at the start of a run, before new batches."""
-        return await self.finish(await self.pending())
 
     async def finish(self, keys: Iterable[str]) -> int:
         """The bucket step for each key; returns the objects deleted."""

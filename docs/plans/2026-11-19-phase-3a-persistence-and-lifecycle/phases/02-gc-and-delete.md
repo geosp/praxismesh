@@ -30,7 +30,7 @@ removed blob reads as expired, and a run stopped partway finishes when run again
 
 ### 2. GC
 
-- [ ] 2.1 `agentctl gc [--dry-run]`: expired references and rows by class (notes.md#d2, notes.md#d3), free blobs, orphans past the window; asks Temporal before expiring a row-less task's uploads; refuses while the unindexed check finds any (R6, R7, R8, D4, D5). Verify: integration tests with times set in the rows: ended 8 and 6 days ago, a stale upload after the end, running, `audit` of any age, an undelivered wake row, orphans 25 hours and 1 hour old, a row-less upload whose Workflow is closed and one whose Workflow is queued, and `event_batches` rows of an ended task.
+- [x] 2.1 `agentctl gc [--dry-run]`: expired references and rows by class (notes.md#d2, notes.md#d3), free blobs, orphans past the window; asks Temporal before expiring a row-less task's uploads; refuses while the unindexed check finds any (R6, R7, R8, D4, D5). Verify: integration tests with times set in the rows: ended 8 and 6 days ago, a stale upload after the end, running, `audit` of any age, an undelivered wake row, orphans 25 hours and 1 hour old, a row-less upload whose Workflow is closed and one whose Workflow is queued, and `event_batches` rows of an ended task.
 
 ### 3. Delete-by-request
 

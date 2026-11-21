@@ -1,7 +1,8 @@
 #!/bin/sh
 # The PraxisMesh CLI with infra/.env loaded (Phase 2 events plan D5):
 #   ./agentctl tail TASK_ID [--after N] [--no-follow]
-#   ./agentctl events prune --task TASK_ID (--below N | --older-than 7d)
+#   ./agentctl events prune --task TASK_ID (--below N | --older-than 7d) [--dry-run]
+#   ./agentctl gc [--dry-run]
 #   ./agentctl task submit|status|output ...
 # ENV_FILE selects another env file (default: infra/.env next to this script).
 ROOT=$(cd "$(dirname "$0")" && pwd) || exit 1
