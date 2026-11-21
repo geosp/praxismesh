@@ -57,6 +57,16 @@ class BlobUnavailable(BlobError):
     """The backend cannot be reached; retrying may succeed."""
 
 
+class BlobExpired(BlobError):
+    """The blob was removed by GC or a delete; its removal is recorded (Phase 3A
+    persistence plan R9, D6). Raised before the bucket is asked."""
+
+    def __init__(self, key: str, removed_at: datetime) -> None:
+        super().__init__(f"blob {key} expired: removed on {removed_at:%Y-%m-%d %H:%M} UTC")
+        self.key = key
+        self.removed_at = removed_at
+
+
 def current_class(c: RetentionClass) -> RetentionClass:
     """The class to write for `c`: `task` is read as `transcript`."""
     return "transcript" if c == "task" else c

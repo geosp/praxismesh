@@ -119,18 +119,19 @@ async def output(args: argparse.Namespace) -> int:
     engine = make_engine()
     try:
         row = await TaskRepository(engine).get(args.task_id)
+        if row is None or not row.get("result"):
+            raise InvalidTaskInput(f"task {args.task_id} has no result yet")
+        result = TaskResult.model_validate(row["result"])
+        artifact = next((a for a in result.artifacts if a.path == args.path), None)
+        if artifact is None:
+            names = ", ".join(a.path for a in result.artifacts) or "none"
+            raise InvalidTaskInput(
+                f"task {args.task_id} has no output {args.path!r} (outputs: {names})"
+            )
+        # Through the recording store, so a removed blob reads as expired (R9).
+        data = await RecordingBlobStore(S3BlobStore.from_env(), engine).get(artifact.ref)
     finally:
         await engine.dispose()
-    if row is None or not row.get("result"):
-        raise InvalidTaskInput(f"task {args.task_id} has no result yet")
-    result = TaskResult.model_validate(row["result"])
-    artifact = next((a for a in result.artifacts if a.path == args.path), None)
-    if artifact is None:
-        names = ", ".join(a.path for a in result.artifacts) or "none"
-        raise InvalidTaskInput(
-            f"task {args.task_id} has no output {args.path!r} (outputs: {names})"
-        )
-    data = await S3BlobStore.from_env().get(artifact.ref)
     if args.to:
         Path(args.to).write_bytes(data)
     else:

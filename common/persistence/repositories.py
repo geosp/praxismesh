@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
-from common.blob_store import BlobStore
+from common.blob_store import BlobExpired, BlobStore
 from common.blob_store.base import collect, content_key, current_class, make_ref
 from common.errors import TaskAlreadyExists
 from common.persistence.fence import NO_NEWER_ATTEMPT as _NO_NEWER_ATTEMPT
@@ -731,13 +731,28 @@ class RecordingBlobStore:
             return make_ref(key, checksum, content_type, len(body), retention, datetime.now(UTC))
         return await self.inner.put(body, content_type=content_type, retention=retention)
 
+    async def check_live(self, key: str) -> None:
+        """Raise `BlobExpired` if the blob's removal is recorded (R9, D6). A removed
+        blob reads as expired, not as missing, even before the bucket step."""
+        async with self.engine.connect() as conn:
+            found = await conn.execute(
+                text("SELECT removed_at FROM blob_objects WHERE key = :k"), {"k": key}
+            )
+            removed_at = found.scalar_one_or_none()
+        if removed_at is not None:
+            raise BlobExpired(key, removed_at)
+
     async def get(self, ref: BlobRef) -> bytes:
+        await self.check_live(ref.key)
         return await self.inner.get(ref)
 
-    def stream(self, ref: BlobRef) -> AsyncIterator[bytes]:
-        return self.inner.stream(ref)
+    async def stream(self, ref: BlobRef) -> AsyncIterator[bytes]:
+        await self.check_live(ref.key)
+        async for chunk in self.inner.stream(ref):
+            yield chunk
 
     async def stat(self, ref: BlobRef) -> BlobRef:
+        await self.check_live(ref.key)
         return await self.inner.stat(ref)
 
     async def delete(self, ref: BlobRef) -> None:
