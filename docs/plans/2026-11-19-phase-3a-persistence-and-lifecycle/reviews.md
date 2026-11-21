@@ -241,3 +241,39 @@ code_sha 4dde76d, docs_sha 0d9db27 (both on origin/feat/92-phase-3a-gc-and-delet
 
 ## 2026-11-21 · done · phase 02
 Tests, acceptance and verification passed (verification-persistence-02.md); impl review round 2 passed with nothing open.
+
+## 2026-11-21 · impl-review · phase 03 · round 1 · changes-requested
+Diff base 9920f36..d4e32c4 (frozen review commit d4e32c4). Reviewers: contract ✅ · failure and retry ✅ · scope and composition ✅ (raw: docs/reviews/phase-3a/raw/persistence-impl-review-phase-03-round-1-*.md). Structure check: 0 errors, 1 warning (430 body lines, budget 250); all 7 tasks ticked. Before the round: a workflow_dispatch CI run on the branch passed every job, `make drill` included (run 44931363435).
+
+| ID | Sev | Lens | Req | Finding | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| F165 | Major | contract, failure, scope | R16, D8 | `_copy_bucket` treats any `ClientError` from `head_bucket` (403, 5xx) as "no bucket" and writes a complete-looking manifest with no objects | open |
+| F166 | Major | failure, scope | D8, task 2.1 | `compose stop` runs before the `try`, so a stop that fails partway leaves the stopped workers down | open |
+| F167 | Major | scope | R22, task 3.2 | Demo step 4 greps tombstones for C's input key, which tombstones never hold, so it passes even if gc removed the input | open |
+| F168 | Major | contract, failure, scope | R23, task 2.2 | "A Workflow and no task row" is tested only with a literal `workflows=1`; restore's real count wiring is never exercised for that case | open |
+| F169 | Nit | contract, failure, scope | R23 | `check-empty` and the worker stop are not atomic; a submit in between is dropped | open |
+| F170 | Nit | contract, scope | R23 | `test_a_task_row_is_refused` asserts `stored.task_id` (a tautology), not that nothing changed | open |
+| F171 | Nit | contract, failure, scope | R23 | `check_empty` counts only `tasks` rows; uploads, events, messages or audit rows alone are dropped | open |
+| F172 | Nit | contract, failure | R17, task 1.1 | Reconcile also lists tasks whose Workflow is missing (an in-flight submit included); the task says "closed" | open |
+| F173 | Nit | contract, failure, scope | R17, D4 | A plain reconcile takes no lock; a gc batch between its snapshot and its listing gives a false dangling reference and exit 1 | open |
+| F174 | Nit | contract | task 2.3 | The drill asserts two dangling references (two holders of one blob); the task says one | open |
+| F175 | Nit | contract, scope | R16 | The drill's comms check logs in as `praxis_comms`, not through `comms_mcp` | open |
+| F176 | Nit | contract, failure, scope | D4, D8 | The backup directory is made before the lock: a refused backup leaves an empty directory, and a reused `--to` raises an uncaught `FileExistsError` | open |
+| F177 | Nit | contract, failure, scope | D8 | Only the workers stop: the Temporal server and host CLI submits keep running during the dumps; the stop itself is only faked in tests | open |
+| F178 | Nit | contract | D8 | `databases.sh --no-extensions` on restore departs from D8's "init.sh's database statements" (documented in the overview) | open |
+| F179 | Nit | contract, failure, scope | R16, D8 | Restore checks neither the manifest's format and migration head nor dump sizes before it drops the databases | open |
+| F180 | Nit | failure | D8 | The manifest is written non-atomically, and `compose config --images` runs after the lock, before the manifest | open |
+| F181 | Nit | contract | reuse | Worker, database and `compose()` lists are repeated in backup.py, restore.sh, drill.sh, databases.sh and the demo | open |
+| F182 | Nit | contract | reuse | The S3 bucket fixtures in test_backup.py and test_restore_refusals.py repeat test_blob_store_s3.py's and test_removal_kills.py's | open |
+| F183 | Nit | contract | task 2.1 | No unit test covers `backup_command`'s wiring (`--to`, JSON output) | open |
+| F184 | Nit | failure | D8 | A backup killed during the dumps leaves the workers stopped with no record; the runbook doesn't say to restart them | open |
+| F185 | Nit | failure | D8 | Backup files get the default umask (world-readable clear text), and partial backups are never cleaned up | open |
+| F186 | Nit | failure | R17, D8 | `get_object` `ClientError` and non-NOT_FOUND `RPCError` give tracebacks; restore.sh reports a crashed reconcile as findings | open |
+| F187 | Nit | failure | D4 | A lock connection dropped mid-backup releases the advisory lock silently | open |
+| F188 | Nit | failure | R23 | Two concurrent restores both pass the mark check | open |
+| F189 | Nit | failure | D8 | The drill never restores with workers running, so restart-the-running-workers isn't exercised | open |
+| F190 | Nit | scope | D8 | Bucket keys `a` and `a/b` would clash as file and directory | open |
+| F191 | Nit | scope | R23 | `count_workflows` reads the lagging visibility store | open |
+| F192 | Nit | scope | task 2.2 | The drill's SIGKILL kills the `compose exec` client; `pg_restore` in the container may run on | open |
+| F193 | Nit | scope | R17 | Reconcile never lists "returned" objects, and orphan ages restart at the restore time | open |
+| F194 | Nit | scope | docs | The verification table's R13 row cites a SIGKILL test that kills a delete, not a gc | open |
