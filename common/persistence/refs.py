@@ -29,6 +29,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from common.blob_store.base import RETENTION_ORDER, BucketObject, current_class
+from common.persistence.fence import DELETED
 from common.persistence.retention import DEFAULT_LIFETIME, REFERENCE_CLASS, SAFETY_WINDOW
 from common.schemas import BlobRef, RetentionClass
 
@@ -135,10 +136,7 @@ async def delete_mark(conn: AsyncConnection, task_id: str) -> str | None:
     mark = found.scalar_one_or_none()
     if mark is not None:
         return str(mark)
-    fenced = await conn.execute(
-        text("SELECT 1 FROM task_attempts WHERE task_id = :t AND outcome = 'deleted' LIMIT 1"),
-        {"t": task_id},
-    )
+    fenced = await conn.execute(text(f"SELECT 1 WHERE {DELETED}"), {"t": task_id})
     return f"{DELETE_OPERATION}{task_id}" if fenced.first() is not None else None
 
 

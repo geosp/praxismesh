@@ -27,6 +27,8 @@ from mcp.server.mcpserver import MCPServer
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from common.persistence.fence import refuse_if_deleted
+
 PRICES = {"SKU-1": 12.50, "SKU-2": 7.25, "SKU-3": 31.00, "SKU-4": 4.10, "SKU-5": 22.40}
 STOCK = {"SKU-1": 3, "SKU-2": 40, "SKU-3": 0, "SKU-4": 18, "SKU-5": 2}
 DISCOUNTS = {"SPRING": 15, "VIP": 25}
@@ -95,6 +97,8 @@ async def record_order(sku: str, qty: int) -> dict[str, Any]:
         raise RuntimeError("PRAXIS_TASK_ID is not set")
     key = idempotency_key(task_id, "record_order", {"sku": sku, "qty": qty})
     async with engine().begin() as conn:
+        # A deleted task's attempt writes nothing (Phase 3A persistence plan R25).
+        await refuse_if_deleted(conn, task_id)
         claimed = await conn.execute(
             text(
                 "INSERT INTO idempotency_keys (key, task_id, tool, result) "

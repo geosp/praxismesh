@@ -526,3 +526,33 @@ async def test_a_deleted_task_with_no_upload_left_still_revives_nothing(
         )
         == 0
     )
+
+
+async def test_a_deleted_tasks_conversation_and_tool_writes_are_refused(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F117 (R25, R11): the openai session store and the sample MCP server write
+    nothing for a task once its request is deleted."""
+    from harness_activity.session_store import SQLAlchemySessionStore
+    from sample_mcp import server
+
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    task = await record_task(engine, store, request_id=request)
+    session = SQLAlchemySessionStore(task.task_id, engine).session
+    await session.add_items([{"role": "user", "content": "before the delete"}])
+    await delete_request(engine, inner, temporal({task.task_id: "closed"}), request, force=True)
+
+    with pytest.raises(FenceRejected):
+        await session.add_items([{"role": "user", "content": "late secret"}])
+    monkeypatch.setenv("PRAXIS_TASK_ID", task.task_id)
+    monkeypatch.setattr(server, "_engine", engine)
+    with pytest.raises(FenceRejected):
+        await server.record_order("SKU-1", 3)
+    for table, column in (("agent_messages", "session_id"), ("sample_orders", "task_id"),
+                          ("idempotency_keys", "task_id")):  # fmt: skip
+        rows = await one(
+            engine, f"SELECT count(*) FROM {table} WHERE {column} = :t", t=task.task_id
+        )
+        assert rows == (1 if table == "agent_messages" else 0), table

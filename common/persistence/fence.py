@@ -10,6 +10,7 @@ takes the task lock while holding another row lock, so lock order cannot invert.
 from __future__ import annotations
 
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 
 class FenceRejected(RuntimeError):
@@ -33,3 +34,17 @@ NO_NEWER_ATTEMPT = (
     "NOT EXISTS (SELECT 1 FROM task_attempts n WHERE n.task_id = :t "
     "AND (n.turn > :turn OR (n.turn = :turn AND n.attempt > :a) OR n.outcome = 'deleted'))"
 )
+
+
+# A SQL condition; bind `:t`: the task's request was deleted (its fencing row).
+DELETED = "EXISTS (SELECT 1 FROM task_attempts d WHERE d.task_id = :t AND d.outcome = 'deleted')"
+
+
+async def refuse_if_deleted(conn: AsyncConnection, task_id: str) -> None:
+    """For a write that has no attempt identity (an SDK session item, a tool's
+    row): take the task lock, then refuse if the task was deleted (Phase 3A
+    persistence plan R25, review F117). The write must follow in `conn`'s
+    transaction, so a delete either commits first or waits for it."""
+    await conn.execute(TASK_LOCK, {"t": task_id})
+    if (await conn.execute(text(f"SELECT 1 WHERE {DELETED}"), {"t": task_id})).first():
+        raise FenceRejected(f"task {task_id} was deleted")
