@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import signal
 import sys
 import uuid
@@ -22,7 +21,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from common.blob_store import MemoryBlobStore
-from common.blob_store.s3 import S3BlobStore
 from common.persistence import refs
 from common.persistence.removal import Batch, BatchResult, RemovalEngine, run_lock
 from common.persistence.repositories import (
@@ -34,6 +32,7 @@ from common.persistence.repositories import (
 from orchestrator.lifecycle import delete_request, gc
 from tests.support.lifecycle import FakeTemporal, StoredTask, end_task, new_task_id, record_task
 from tests.support.scratch_db import scratch_database
+from tests.support.stack import scratch_bucket
 
 pytestmark = pytest.mark.integration
 
@@ -218,41 +217,32 @@ async def test_a_delete_whose_process_is_killed_finishes_when_run_again() -> Non
     (impl-review F131, F164): the dead connection releases D4's run lock and the
     request lock, the batch's tombstone is there, and a rerun deletes the
     remaining objects from the bucket."""
-    os.environ.setdefault("S3_BUCKET", "praxismesh")
-    s3 = S3BlobStore.from_env()
-    s3.bucket = f"kill-{uuid.uuid4().hex[:10]}"
-    await s3.ensure_bucket()
     request = f"req-kill-{uuid.uuid4().hex[:8]}"
-    try:
-        async with scratch_database("head") as (name, engine):
-            store = RecordingBlobStore(s3, engine)
-            for _ in range(2):
-                await stored_task(engine, store, request, 0)
-            child = await asyncio.create_subprocess_exec(
-                sys.executable, "-m", "tests.support.removal_child", name, s3.bucket, request, "1"
-            )
-            assert await child.wait() == -signal.SIGKILL
+    async with scratch_bucket("kill") as s3, scratch_database("head") as (name, engine):
+        store = RecordingBlobStore(s3, engine)
+        for _ in range(2):
+            await stored_task(engine, store, request, 0)
+        child = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "tests.support.removal_child", name, s3.bucket, request, "1"
+        )
+        assert await child.wait() == -signal.SIGKILL
 
-            killed_ops = await operations(engine, "request.delete")
-            assert (await tombstone_counts(engine, killed_ops))["tombstones"] >= 1  # R13
-            assert (await marked_by(engine, killed_ops))["unfinished"] > 0
-            async with run_lock(engine):
-                pass  # released by the dead session
-            rerun = await delete_request(engine, s3, FakeTemporal(), request)  # R15
-            assert rerun.finished > 0
-            ops = await operations(engine, "request.delete")
-            marks = await marked_by(engine, ops)
-            assert (await tombstone_counts(engine, ops))["blobs"] == marks["blobs"] > 0
-            assert marks["unfinished"] == 0
-            listing = await s3.list_objects()
-            async with engine.connect() as conn:
-                assert await refs.dangling(conn, listing) == []
-                removed = await conn.execute(
-                    text("SELECT key FROM blob_objects WHERE removed_at IS NOT NULL")
-                )
-                assert not {r[0] for r in removed} & set(listing)
-            assert listing == {}  # every object belonged to the request
-    finally:
-        for obj in s3.client.list_objects_v2(Bucket=s3.bucket).get("Contents", []):
-            s3.client.delete_object(Bucket=s3.bucket, Key=obj["Key"])
-        s3.client.delete_bucket(Bucket=s3.bucket)
+        killed_ops = await operations(engine, "request.delete")
+        assert (await tombstone_counts(engine, killed_ops))["tombstones"] >= 1  # R13
+        assert (await marked_by(engine, killed_ops))["unfinished"] > 0
+        async with run_lock(engine):
+            pass  # released by the dead session
+        rerun = await delete_request(engine, s3, FakeTemporal(), request)  # R15
+        assert rerun.finished > 0
+        ops = await operations(engine, "request.delete")
+        marks = await marked_by(engine, ops)
+        assert (await tombstone_counts(engine, ops))["blobs"] == marks["blobs"] > 0
+        assert marks["unfinished"] == 0
+        listing = await s3.list_objects()
+        async with engine.connect() as conn:
+            assert await refs.dangling(conn, listing) == []
+            removed = await conn.execute(
+                text("SELECT key FROM blob_objects WHERE removed_at IS NOT NULL")
+            )
+            assert not {r[0] for r in removed} & set(listing)
+        assert listing == {}  # every object belonged to the request

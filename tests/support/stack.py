@@ -6,6 +6,8 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -14,6 +16,7 @@ from botocore.config import Config
 from temporalio.client import Client
 from temporalio.worker import Worker
 
+from common.blob_store.s3 import S3BlobStore
 from tests.support.hello import HelloWorkflow, say_hello
 
 if TYPE_CHECKING:
@@ -32,6 +35,25 @@ def env(name: str, default: str | None = None) -> str:
 
 def run_id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+@asynccontextmanager
+async def scratch_bucket(prefix: str, *, create: bool = True) -> AsyncIterator[S3BlobStore]:
+    """An S3 store on a bucket of the test's own (`<prefix>-<run id>`) on the
+    stack's SeaweedFS, emptied and deleted afterwards. With `create=False` the
+    bucket is left to its first put, as the stack's own bucket is."""
+    os.environ.setdefault("S3_BUCKET", "praxismesh")
+    s3 = S3BlobStore.from_env()
+    s3.bucket = f"{prefix}-{run_id()}"
+    if create:
+        await s3.ensure_bucket()
+    try:
+        yield s3
+    finally:
+        for key in await s3.list_objects():
+            s3.client.delete_object(Bucket=s3.bucket, Key=key)
+        with suppress(s3.client.exceptions.NoSuchBucket):
+            s3.client.delete_bucket(Bucket=s3.bucket)
 
 
 async def temporal_client() -> Client:

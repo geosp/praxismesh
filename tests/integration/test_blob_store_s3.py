@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import AsyncIterator
 
 import pytest
@@ -10,21 +9,15 @@ import pytest
 from common.blob_store.s3 import S3BlobStore
 from common.schemas import BlobRef
 from tests.support.blob_contract import BlobStoreContract, Corrupt
-from tests.support.stack import run_id
+from tests.support.stack import scratch_bucket
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
 async def store() -> AsyncIterator[S3BlobStore]:
-    os.environ.setdefault("S3_BUCKET", "praxismesh")
-    s3 = S3BlobStore.from_env()
-    s3.bucket = f"contract-{run_id()}"
-    await s3.ensure_bucket()
-    yield s3
-    for obj in s3.client.list_objects_v2(Bucket=s3.bucket).get("Contents", []):
-        s3.client.delete_object(Bucket=s3.bucket, Key=obj["Key"])
-    s3.client.delete_bucket(Bucket=s3.bucket)
+    async with scratch_bucket("contract") as s3:
+        yield s3
 
 
 @pytest.fixture
@@ -49,7 +42,5 @@ async def test_list_objects_names_every_object(store: S3BlobStore) -> None:
 async def test_a_bucket_not_yet_created_lists_nothing() -> None:
     """The bucket is created on first use; until then reconcile and gc see an
     empty one (Phase 3A persistence plan phase 03)."""
-    os.environ.setdefault("S3_BUCKET", "praxismesh")
-    s3 = S3BlobStore.from_env()
-    s3.bucket = f"absent-{run_id()}"
-    assert await s3.list_objects() == {}
+    async with scratch_bucket("absent", create=False) as s3:
+        assert await s3.list_objects() == {}

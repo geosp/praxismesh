@@ -13,7 +13,6 @@ workers. The drill (`make drill`) stops and starts real ones.
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 from typing import IO
@@ -27,7 +26,7 @@ from common.persistence.repositories import RecordingBlobStore, make_engine
 from orchestrator.backup import MANIFEST, BackupFailed, DockerCompose, backup
 from orchestrator.lifecycle import gc
 from tests.support.lifecycle import FakeTemporal, end_task, record_task
-from tests.support.stack import run_id
+from tests.support.stack import scratch_bucket
 
 pytestmark = pytest.mark.integration
 
@@ -63,14 +62,8 @@ async def engine() -> AsyncIterator[AsyncEngine]:
 
 @pytest.fixture
 async def bucket() -> AsyncIterator[S3BlobStore]:
-    os.environ.setdefault("S3_BUCKET", "praxismesh")
-    s3 = S3BlobStore.from_env()
-    s3.bucket = f"backup-{run_id()}"
-    await s3.ensure_bucket()
-    yield s3
-    for obj in s3.client.list_objects_v2(Bucket=s3.bucket).get("Contents", []):
-        s3.client.delete_object(Bucket=s3.bucket, Key=obj["Key"])
-    s3.client.delete_bucket(Bucket=s3.bucket)
+    async with scratch_bucket("backup") as s3:
+        yield s3
 
 
 async def test_a_backup_has_three_dumps_every_object_and_a_manifest(

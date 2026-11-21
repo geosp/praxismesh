@@ -6,7 +6,6 @@ The drill (`make drill`) runs the whole script on a stack."""
 
 from __future__ import annotations
 
-import os
 from collections.abc import AsyncIterator
 
 import pytest
@@ -17,7 +16,7 @@ from common.persistence.repositories import RecordingBlobStore
 from orchestrator.backup import RestoreRefused, check_empty, workflow_count
 from tests.support.lifecycle import record_task
 from tests.support.scratch_db import scratch_database
-from tests.support.stack import run_id, temporal_client
+from tests.support.stack import run_id, scratch_bucket, temporal_client
 
 pytestmark = pytest.mark.integration
 
@@ -30,16 +29,8 @@ async def engine() -> AsyncIterator[AsyncEngine]:
 
 @pytest.fixture
 async def bucket() -> AsyncIterator[S3BlobStore]:
-    os.environ.setdefault("S3_BUCKET", "praxismesh")
-    s3 = S3BlobStore.from_env()
-    s3.bucket = f"restore-{run_id()}"  # created by the first put, if any
-    yield s3
-    try:
-        for obj in s3.client.list_objects_v2(Bucket=s3.bucket).get("Contents", []):
-            s3.client.delete_object(Bucket=s3.bucket, Key=obj["Key"])
-        s3.client.delete_bucket(Bucket=s3.bucket)
-    except s3.client.exceptions.NoSuchBucket:
-        pass
+    async with scratch_bucket("restore", create=False) as s3:  # created by the first put
+        yield s3
 
 
 async def test_an_empty_stack_is_accepted(engine: AsyncEngine, bucket: S3BlobStore) -> None:
