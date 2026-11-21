@@ -174,9 +174,10 @@ The markers keep `TaskResult` valid, so `agentctl task output` still reads the r
   and writes the list into its first tombstone. Every batch selects by that list, never by
   `request_id`, so a joining task's upload references, written before its `tasks` row, are untouched.
 - **Task locks.** The first batch takes `TASK_LOCK` for each task in its list, in task-ID order,
-  before it locks any `blob_objects` row, and marks the tasks' upload references with the delete's
-  operation, so a concurrent `put` for that task either commits first or sees the delete's mark
-  (revive step 2). It takes them without waiting (`pg_try_advisory_xact_lock`): an attempt's
+  and inserts the fencing rows under them, so a concurrent `put` for that task either commits first
+  or sees the delete's mark (revive step 2): the `deleted` row is that mark (impl-review F125).
+  The tasks' upload references are marked later, with their other references, in batches of at
+  most 500 (impl-review F146). It takes them without waiting (`pg_try_advisory_xact_lock`): an attempt's
   message write holds its task lock and then waits for the request lock the delete holds
   (`MessageRepository._enter`), a wait PostgreSQL cannot detect, because the delete's request
   lock sits on an idle connection. When a task lock is held, the first batch commits nothing; the

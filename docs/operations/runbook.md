@@ -272,8 +272,10 @@ and in backups taken before; that is not rewritten (threat model).
 **The lock.** `gc`, `request delete` and `events prune` hold one lock for their whole
 run. A second one started meanwhile fails at once with "another gc, request delete, events
 prune or backup is running"; run it again later. If an agent is writing a message for a
-task of the request, the delete waits briefly and retries; if it keeps writing, the delete
-stops having changed nothing and says to try again.
+task of the request, or uploading one of its files, the delete waits briefly and retries; if
+the task stays busy (about 10 seconds), the delete stops without changing the request and says
+to try again. A delete also refuses while a stored reference of its tasks is not in the index,
+naming the repair, as `gc` does.
 
 **What an expired read means.** A blob that was removed reads as expired, with the date:
 `agentctl task output` prints `error: blob sha256/... expired: removed on <date> UTC`
