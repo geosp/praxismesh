@@ -329,8 +329,8 @@ As built by the [Phase 3A persistence plan](../plans/2026-11-19-phase-3a-persist
 
 ### Tests
 
-- Integration, each on a scratch database with an in-memory bucket: `test_removal_engine.py`, `test_revive.py`, `test_event_prune.py`, `test_gc.py`, `test_request_delete.py`, `test_removal_kills.py`, `test_blob_expired.py`, `test_reconcile.py`, `test_restore_refusals.py`. Session IDs on both runners: `test_task_e2e.py`, `test_dsh_outcomes.py`.
-- Against the stack: `test_backup.py` (real dumps and bucket copy; the worker stop and start simulated), `test_workflow_status.py` (real Temporal), the SIGKILL test in `test_removal_kills.py` (SeaweedFS), `test_blob_store_s3.py`.
+- Integration, each on a scratch database with an in-memory bucket: `test_removal_engine.py`, `test_revive.py`, `test_event_prune.py`, `test_gc.py`, `test_request_delete.py`, `test_removal_kills.py`, `test_blob_expired.py`, `test_reconcile.py`. Session IDs on both runners: `test_task_e2e.py`, `test_dsh_outcomes.py`.
+- Against the stack: `test_backup.py` (real dumps and bucket copy; the worker stop and start simulated), `test_restore_refusals.py` (a scratch database, a SeaweedFS bucket of its own and the real Temporal), `test_workflow_status.py` (real Temporal), the SIGKILL test in `test_removal_kills.py` (SeaweedFS), `test_blob_store_s3.py`.
 - `make drill` (opt-in, CI); the demo script `infra/demo/phase-3a-lifecycle.sh`.
 - Unit: `tests/test_cli.py` (`gc`, `request delete`, `reconcile`).
 

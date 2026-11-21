@@ -323,13 +323,15 @@ make restore BACKUP=backups/<UTC time>        # into an empty stack only
 make drill                                    # backup, reset, restore, check: DELETES DATA
 ```
 
-**Backup** holds the removal lock for its whole run, so no `gc`, `request delete` or
+**Backup** holds the removal lock from its first step to the end of the bucket copy (the
+manifest is written after it releases the lock), so no `gc`, `request delete` or
 `events prune` runs meanwhile (each fails at once with "another gc, request delete,
 events prune or backup is running"). It stops every worker service while it dumps
 `praxismesh`, `temporal` and `temporal_visibility`, so no Workflow gets ahead of its rows,
 and starts again those that were running or restarting, even when a dump or the stop fails,
 or the backup gets SIGTERM or SIGHUP; an Activity that was
-running is retried by Temporal. It then copies every bucket object and writes `manifest.json`
+running is retried by Temporal on a worker that runs again, as `make recovery-check` shows for
+a worker killed mid-Activity. It then copies every bucket object and writes `manifest.json`
 last, whole or not at all; a directory without it is incomplete. A bucket it cannot list or
 read fails the backup, and so does a bucket with no objects while rows name live blobs (check
 `S3_BUCKET`). The backup directory is new (an existing one is refused) and readable by
@@ -342,8 +344,10 @@ outputs and conversations in clear text** (threat model): keep them where only o
 can read them, and delete them when no longer needed. A backup taken before a `request
 delete` still holds that request's data.
 
-**Restore** loads a backup into a stack that holds no data. Use the same images as the
-backup (`images` in `manifest.json`) and this checkout's migrations. To restore into an
+**Restore** loads a backup into a stack that holds no data. Use the same pinned images as the
+backup (`images` in `manifest.json` lists the default services' images; the worker images are
+built from the checkout, so restore with a checkout at the backup's commit or migration head)
+and this checkout's migrations. To restore into an
 existing stack, empty it first:
 
 ```bash
