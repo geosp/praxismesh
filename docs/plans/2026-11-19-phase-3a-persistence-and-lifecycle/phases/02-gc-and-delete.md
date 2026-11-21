@@ -40,4 +40,4 @@ removed blob reads as expired, and a run stopped partway finishes when run again
 
 ### 4. Documentation
 
-- [ ] 4.1 Runbook ("Removing data": gc, delete, `--force`, dry runs, the lock, what an expired read means) and the as-built overview's draft section. Verify: the link check passes.
+- [x] 4.1 Runbook ("Removing data": gc, delete, `--force`, dry runs, the lock, what an expired read means) and the as-built overview's draft section. Verify: the link check passes.
