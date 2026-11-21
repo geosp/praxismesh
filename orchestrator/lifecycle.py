@@ -36,7 +36,7 @@ from common.persistence.removal import (
     operation_id,
     run_lock,
 )
-from common.persistence.retention import DEFAULT_LIFETIME, SAFETY_WINDOW
+from common.persistence.retention import DEFAULT_LIFETIME, SAFETY_WINDOW, TABLE_CLASS
 from common.schemas import RetentionClass
 
 
@@ -227,37 +227,43 @@ class GcRefused(PraxisError):
 @dataclass(frozen=True)
 class RowRule:
     """Rows of one table that expire with their task (notes.md#d3): `column`
-    names the task, and the row expires `retention`'s lifetime after the task's
+    names the task, and the row expires its table's lifetime after the task's
     `ended_at`. `extra` adds a condition on the row (alias `x`)."""
 
     table: str
     column: str
-    retention: RetentionClass
     extra: str = ""
+
+    @property
+    def retention(self) -> RetentionClass:
+        """The table's class, from `TABLE_CLASS`, the one source (D3, F121)."""
+        cls = TABLE_CLASS[self.table]
+        if cls is None:
+            raise ValueError(f"{self.table} has no class of its own")
+        return cls
 
 
 ROW_RULES: tuple[RowRule, ...] = (
-    RowRule("checkpoints", "task_id", "checkpoint"),
-    RowRule("agent_messages", "session_id", "transcript"),
-    RowRule("agent_sessions", "session_id", "transcript"),
+    RowRule("checkpoints", "task_id"),
+    RowRule("agent_messages", "session_id"),
+    RowRule("agent_sessions", "session_id"),
     # A message expires from the later end of its sender and recipient.
     RowRule(
         "task_messages",
         "sender_task",
-        "transcript",
         "AND EXISTS (SELECT 1 FROM tasks r WHERE r.task_id = x.recipient_task "
         "AND r.ended_at IS NOT NULL AND r.ended_at + make_interval(secs => :life) < :now)",
     ),
-    RowRule("task_inbox", "task_id", "transcript"),
-    RowRule("idempotency_keys", "task_id", "transcript"),
-    RowRule("sample_orders", "task_id", "artifact"),
+    RowRule("task_inbox", "task_id"),
+    RowRule("idempotency_keys", "task_id"),
+    RowRule("sample_orders", "task_id"),
     # Kept until its recipient ends (ADR-0010), then a day.
-    RowRule("message_wakes", "recipient_workflow", "ephemeral"),
-    RowRule("event_batches", "workflow_id", "ephemeral"),
+    RowRule("message_wakes", "recipient_workflow"),
+    RowRule("event_batches", "workflow_id"),
 )
 # Holders whose references leave with their rows (the rules above, and events).
 ROW_HOLDERS = ("checkpoints", "agent_events")
-EVENT_RETENTION: RetentionClass = "transcript"  # event_logs, agent_events (d3)
+EVENT_RETENTION: RetentionClass = TABLE_CLASS["agent_events"] or "transcript"  # d3
 END_OF_LOG = 2**62  # prune "below" this: the whole log
 
 
@@ -562,11 +568,11 @@ async def unfinished_delete(conn: AsyncConnection, subject: str) -> list[str] | 
 
 # Waits between tries when an attempt holds a task's lock (TaskBusy).
 DELETE_RETRY_S = (0.1, 0.2, 0.5, 1.0, 2.0, 2.0, 2.0, 2.0)
-DELETE_ROWS = (
-    RowRule("checkpoints", "task_id", "checkpoint"),
-    RowRule("sample_orders", "task_id", "artifact"),
-    RowRule("task_inbox", "task_id", "transcript"),
-    RowRule("message_wakes", "recipient_workflow", "ephemeral"),
+# The rows a delete removes outright (notes.md#redact), by gc's own rules.
+DELETE_ROWS = tuple(
+    r
+    for r in ROW_RULES
+    if r.table in ("checkpoints", "sample_orders", "task_inbox", "message_wakes")
 )
 
 
