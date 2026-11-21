@@ -5,6 +5,8 @@ its tombstone, and prints its plan with `--dry-run`."""
 
 from __future__ import annotations
 
+import asyncio
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -18,12 +20,17 @@ from common.blob_store.base import BlobStore, BucketObject
 from common.errors import PraxisError
 from common.events import TableTransport
 from common.persistence import refs
+from common.persistence.fence import REQUEST_LOCK_KEY
 from common.persistence.refs import Reference, event_holder
 from common.persistence.removal import (
     BATCH_LIMIT,
     Batch,
     RefKey,
+    RemovalBusy,
     RemovalEngine,
+    RowChange,
+    TaskBusy,
+    live_references,
     operation_id,
     run_lock,
 )
@@ -263,7 +270,14 @@ async def _expired_tasks(
 
 
 def row_batch(
-    rule: RowRule, task_id: str, now: datetime, life: int, *, action: str = "gc"
+    rule: RowRule,
+    task_id: str,
+    now: datetime,
+    life: int,
+    *,
+    action: str = "gc",
+    subject: str | None = None,
+    reason: str | None = None,
 ) -> Batch:
     """Delete up to 500 of the task's expired rows of `rule`'s table; for
     checkpoints, with the references they hold."""
@@ -309,10 +323,14 @@ def row_batch(
 
     return Batch(
         action,
-        f"task:{task_id}",
+        subject or f"task:{task_id}",
         rows=rows,
         collect=collect,
-        details={"reason": f"{rule.table} expired", "class": rule.retention},
+        details={
+            "reason": reason or f"{rule.table} expired",
+            "class": rule.retention,
+            "task_id": task_id,
+        },
     )
 
 
@@ -481,3 +499,276 @@ async def _read(engine: AsyncEngine, removal: RemovalEngine) -> AsyncIterator[As
         return
     async with engine.connect() as conn:
         yield conn
+
+
+# ---- request delete (R10, R11, R12, R21, R24, R25; D12; notes.md#redact) ----
+
+
+class DeleteRefused(PraxisError):
+    """`request delete` changed nothing: a task has not ended (R12, R21)."""
+
+
+def marker(now: datetime) -> str:
+    """What redacted content reads as (notes.md#redact)."""
+    return f"[deleted {now:%Y-%m-%d}]"
+
+
+_MARKED = "[deleted %"  # LIKE pattern of a marker: rerunning redacts nothing again
+DELETE_WORKER = "cli:request-delete"
+# Waits between tries when an attempt holds a task's lock (TaskBusy).
+DELETE_RETRY_S = (0.1, 0.2, 0.5, 1.0, 2.0, 2.0, 2.0, 2.0)
+DELETE_ROWS = (
+    RowRule("checkpoints", "task_id", "checkpoint"),
+    RowRule("sample_orders", "task_id", "artifact"),
+    RowRule("task_inbox", "task_id", "transcript"),
+    RowRule("message_wakes", "recipient_workflow", "ephemeral"),
+)
+
+
+@asynccontextmanager
+async def request_lock(engine: AsyncEngine, request_id: str) -> AsyncIterator[None]:
+    """The session form of the request lock, held for the whole delete (D12):
+    `end_task`, messaging and a joining `record_task` wait until it ends."""
+    async with engine.connect() as conn:
+        conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+        params = {"c": REQUEST_LOCK_KEY, "r": request_id}
+        await conn.execute(text("SELECT pg_advisory_lock(:c, hashtext(:r))"), params)
+        try:
+            yield
+        finally:
+            await conn.execute(text("SELECT pg_advisory_unlock(:c, hashtext(:r))"), params)
+
+
+async def delete_request(
+    engine: AsyncEngine,
+    bucket: BlobStore,
+    status_of: StatusOf,
+    request_id: str,
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+    now: datetime | None = None,
+) -> Totals:
+    """`agentctl request delete REQ`: remove every blob the request's tasks hold
+    and no other holder does (R10), redact their content (R11) and fence their
+    attempts (R25). Refuses while a task has not ended, unless `force` and
+    Temporal reports its Workflow closed (R12, R21). Changes only the tasks the
+    request had when it began (R24)."""
+    operation = operation_id("delete")
+    async with run_lock(engine):
+        for wait in DELETE_RETRY_S:
+            try:
+                async with request_lock(engine, request_id):
+                    removal = RemovalEngine(engine, bucket, operation, dry_run=dry_run)
+                    async with removal.session():
+                        return await _delete(
+                            engine, removal, status_of, request_id, force, now or datetime.now(UTC)
+                        )
+            except TaskBusy:
+                # The first batch committed nothing. Release the request lock so
+                # the attempt's write can finish, then start again.
+                await asyncio.sleep(wait)
+        raise RemovalBusy(f"a task of request {request_id} kept writing; try request delete again")
+
+
+async def _delete(
+    engine: AsyncEngine,
+    removal: RemovalEngine,
+    status_of: StatusOf,
+    request_id: str,
+    force: bool,
+    now: datetime,
+) -> Totals:
+    totals = Totals(removal.operation)
+    subject = f"request:{request_id}"
+    async with _read(engine, removal) as conn:
+        found = await conn.execute(
+            text(
+                "SELECT task_id, ended_at IS NOT NULL FROM tasks WHERE request_id = :r "
+                "ORDER BY task_id"
+            ),
+            {"r": request_id},
+        )
+        rows = found.all()
+    if not rows:
+        raise DeleteRefused(f"request {request_id} has no tasks")
+    tasks = [r[0] for r in rows]  # the fixed task list (R24)
+    unended = [r[0] for r in rows if not r[1]]
+    if unended and not force:
+        raise DeleteRefused(
+            f"request {request_id} has tasks that have not ended: {', '.join(unended)}. "
+            "Wait for them, or, if their Workflows are closed, use --force"
+        )
+    running = [t for t in unended if await status_of(t) == "running"]
+    if running:
+        raise DeleteRefused(
+            f"request {request_id} has tasks whose Workflow is still running: "
+            f"{', '.join(running)}. --force applies only to closed Workflows"
+        )
+    await removal.finish_pending()
+
+    async def drain(make: Callable[[], Batch], reason: str) -> None:
+        while True:
+            result = await removal.run(make())
+            if (result.rows, result.references, result.blobs) == (0, 0, 0):
+                return
+            totals.add(result.rows, result.references, result.blobs, reason)
+
+    # 1. Fix the task list, fence every attempt, end forced tasks, and mark the
+    # uploads with the delete's operation, under each task's lock (review F81):
+    # from here a late `put` revives nothing and a fenced write is refused (R25).
+    async def fence(conn: AsyncConnection) -> int:
+        await conn.execute(
+            text(
+                "INSERT INTO task_attempts (task_id, turn, attempt, worker_identity, outcome, "
+                "retention_class, ended_at) SELECT t, coalesce((SELECT max(turn) FROM "
+                "task_attempts WHERE task_id = t), 0) + 1, 1, :w, 'deleted', 'audit', now() "
+                "FROM unnest(CAST(:ts AS text[])) AS t WHERE NOT EXISTS (SELECT 1 FROM "
+                "task_attempts d WHERE d.task_id = t AND d.outcome = 'deleted')"
+            ),
+            {"ts": tasks, "w": DELETE_WORKER},
+        )
+        if unended:
+            await conn.execute(
+                text(
+                    "UPDATE tasks SET status = 'failed', ended_at = now(), "
+                    "updated_at = CURRENT_TIMESTAMP WHERE task_id = ANY(:ts) AND ended_at IS NULL"
+                ),
+                {"ts": unended},
+            )
+        return 0  # inserted and ended rows are recorded in the details, not as removed
+
+    async def uploads(conn: AsyncConnection) -> Sequence[RefKey]:
+        return await live_references(conn, tasks, holder_table=refs.UPLOAD)
+
+    first = await removal.run(
+        Batch(
+            "request.delete",
+            subject,
+            rows=fence,
+            collect=uploads,
+            task_locks=tasks,
+            record_empty=True,
+            details={"reason": "request delete", "tasks": tasks, "forced": unended},
+        )
+    )
+    totals.add(first.rows, first.references, first.blobs, "uploads")
+
+    transport = TableTransport(engine)
+    redacted = marker(now)
+    for task_id in tasks:
+        # 2. Rows deleted, with the references they hold.
+        for rule in DELETE_ROWS:
+            await drain(
+                lambda r=rule, t=task_id: row_batch(  # type: ignore[misc]
+                    r, t, now, 0, action="request.delete", subject=subject, reason="deleted"
+                ),
+                f"{rule.table} deleted",
+            )
+        # 3. Events, pruned to the end of the log (D11).
+        await drain(
+            lambda t=task_id: event_batch(  # type: ignore[misc]
+                transport,
+                t,
+                below=END_OF_LOG,
+                older_than=None,
+                limit=BATCH_LIMIT,
+                operation=removal.operation,
+                action="request.delete",
+                subject=subject,
+                details={"reason": "events deleted", "task_id": t},
+            )[0],
+            "events deleted",
+        )
+        # 4. Content redacted; IDs, statuses and usage kept (R11).
+        for name, change in _redactions(task_id, redacted):
+            await drain(
+                lambda c=change, n=name, t=task_id: Batch(  # type: ignore[misc]
+                    "request.delete",
+                    subject,
+                    rows=c,
+                    details={"reason": f"{n} redacted", "task_id": t},
+                ),
+                f"{name} redacted",
+            )
+        # 5. Every reference the task still holds (instructions, inputs, results).
+        async with _read(engine, removal) as conn:
+            held = await live_references(conn, [task_id])
+        for chunk in _chunks(held):
+            result = await removal.run(
+                Batch(
+                    "request.delete",
+                    subject,
+                    chunk,
+                    details={"reason": "references deleted", "task_id": task_id},
+                )
+            )
+            totals.add(result.rows, result.references, result.blobs, "references deleted")
+    return totals
+
+
+def _redactions(task_id: str, redacted: str) -> list[tuple[str, RowChange]]:
+    """Each content redaction of notes.md#redact, as row changes of at most 500
+    rows that skip rows already redacted."""
+    as_json = json.dumps(redacted)
+
+    def update(sql: str) -> RowChange:
+        async def change(conn: AsyncConnection) -> int:
+            done = await conn.execute(
+                text(sql),
+                {"t": task_id, "m": redacted, "j": as_json, "p": _MARKED, "n": BATCH_LIMIT},
+            )
+            return done.rowcount
+
+        return change
+
+    async def result(conn: AsyncConnection) -> int:
+        row = (
+            await conn.execute(
+                text("SELECT result FROM tasks WHERE task_id = :t FOR UPDATE"), {"t": task_id}
+            )
+        ).first()
+        value = row[0] if row is not None else None
+        if isinstance(value, str):
+            value = json.loads(value)
+        if not isinstance(value, dict) or str(value.get("summary", "")).startswith("[deleted "):
+            return 0
+        value["summary"] = redacted
+        if value.get("questions"):
+            value["questions"] = [redacted]
+        if value.get("failure_reason"):
+            value["failure_reason"] = redacted
+        value["artifacts"] = []
+        await conn.execute(
+            text("UPDATE tasks SET result = CAST(:r AS json) WHERE task_id = :t"),
+            {"r": json.dumps(value), "t": task_id},
+        )
+        return 1
+
+    return [
+        ("results", result),
+        (
+            "agent_messages",
+            update(
+                "UPDATE agent_messages SET message_data = :j WHERE id = ANY(ARRAY("
+                "SELECT id FROM agent_messages WHERE session_id = :t "
+                "AND message_data NOT LIKE '\"' || :p LIMIT :n))"
+            ),
+        ),
+        (
+            "task_messages",
+            update(
+                "UPDATE task_messages SET body = :m WHERE message_id = ANY(ARRAY("
+                "SELECT message_id FROM task_messages WHERE (sender_task = :t "
+                "OR recipient_task = :t) AND body NOT LIKE :p LIMIT :n))"
+            ),
+        ),
+        (
+            "idempotency_keys",
+            update(
+                "UPDATE idempotency_keys SET result = CAST(:j AS json) WHERE key = ANY(ARRAY("
+                "SELECT key FROM idempotency_keys WHERE task_id = :t "
+                "AND CAST(result AS text) NOT LIKE '\"' || :p LIMIT :n))"
+            ),
+        ),
+    ]

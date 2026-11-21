@@ -16,6 +16,7 @@ from common.blob_store import BlobExpired, BlobStore
 from common.blob_store.base import collect, content_key, current_class, make_ref
 from common.errors import TaskAlreadyExists
 from common.persistence.fence import NO_NEWER_ATTEMPT as _NO_NEWER_ATTEMPT
+from common.persistence.fence import REQUEST_LOCK as _REQUEST_LOCK
 from common.persistence.fence import TASK_LOCK as _TASK_LOCK
 from common.persistence.fence import FenceRejected
 from common.persistence.refs import (
@@ -56,6 +57,9 @@ class TaskRepository:
         reused: refuse, so the new run never reaches the old run's idempotency
         keys. A retry from the same run finds its own row and succeeds."""
         async with self.engine.begin() as conn:
+            # The request lock: a task joining a request that `request delete` is
+            # deleting waits until the delete ends (Phase 3A persistence plan R24).
+            await conn.execute(_REQUEST_LOCK, {"r": start.request_id})
             inserted = await conn.execute(
                 text(
                     """

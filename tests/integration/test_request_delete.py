@@ -1,0 +1,464 @@
+"""`agentctl request delete`: a fixed task list, redaction, fencing and the blobs
+no other holder keeps (Phase 3A persistence plan phase 02 task 3.2; R3, R10, R11,
+R12, R13, R21, R24, R25, D12; notes.md#redact).
+
+Each test runs on a scratch database migrated to head, with an in-memory bucket.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import uuid
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from typing import Any
+
+import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from common.blob_store import BlobExpired, MemoryBlobStore
+from common.blob_store.s3 import S3BlobStore
+from common.errors import InvalidTaskInput
+from common.events import TableTransport, Writer
+from common.persistence.fence import REQUEST_LOCK, TASK_LOCK, FenceRejected
+from common.persistence.removal import Batch, RemovalEngine
+from common.persistence.repositories import (
+    AttemptRepository,
+    Checkpoint,
+    CheckpointRepository,
+    RecordingBlobStore,
+)
+from common.schemas import BlobRef
+from common.schemas.events import AgentEvent
+from orchestrator import cli
+from orchestrator.lifecycle import DeleteRefused, WorkflowStatus, delete_request, marker
+from tests.support.lifecycle import StoredTask, end_task, new_task_id, record_task
+from tests.support.scratch_db import scratch_database
+
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture
+async def engine() -> AsyncIterator[AsyncEngine]:
+    async with scratch_database("head") as (_, eng):
+        yield eng
+
+
+def temporal(status: dict[str, WorkflowStatus] | None = None) -> Any:
+    async def status_of(task_id: str) -> WorkflowStatus:
+        return (status or {}).get(task_id, "missing")
+
+    return status_of
+
+
+async def finished(
+    engine: AsyncEngine, store: RecordingBlobStore, request: str, *, shared: bytes = b""
+) -> StoredTask:
+    """A task of `request` with an input, a checkpoint, an artifact, events, and
+    content rows in every table notes.md#redact lists."""
+    task = new_task_id("task-del")
+    inputs = {"in.txt": shared or f"input {task}".encode()}
+    stored = await record_task(engine, store, task_id=task, request_id=request, inputs=inputs)
+    await AttemptRepository(engine).start(task, 1, 1, "worker-a")
+    ws = await store.put(f"workspace {task}".encode(), retention="checkpoint", task_id=task)
+    await CheckpointRepository(engine).insert_fenced(
+        Checkpoint(f"{task}:1:1:0", task, 1, 1, 0, task, 0, ws, None)
+    )
+    await publish(engine, task, 1, 3)
+    async with engine.begin() as conn:
+        await conn.execute(text("INSERT INTO agent_sessions (session_id) VALUES (:t)"), {"t": task})
+        await conn.execute(
+            text("INSERT INTO agent_messages (session_id, message_data) VALUES (:t, :m)"),
+            {"t": task, "m": json.dumps({"role": "user", "content": "secret plan"})},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO idempotency_keys (key, task_id, tool, result) "
+                "VALUES (:k, :t, 'order', CAST(:r AS json))"
+            ),
+            {"k": f"{task}:k", "t": task, "r": json.dumps({"order": "secret order"})},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO task_messages (message_id, request_id, sender_task, recipient_task, "
+                "kind, status, body, idempotency_key) VALUES (:m, :r, :t, :t, 'send', "
+                "'read', 'secret note', :m)"
+            ),
+            {"m": f"{task}:msg", "r": request, "t": task},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO sample_orders (task_id, sku, qty, idempotency_key) "
+                "VALUES (:t, 'SKU-1', 3, :k)"
+            ),
+            {"t": task, "k": f"{task}:order"},
+        )
+    return await end_task(
+        engine,
+        store,
+        stored,
+        artifacts={"report.md": f"report {task}".encode()},
+        questions=["What next?"],
+    )
+
+
+async def publish(engine: AsyncEngine, task: str, turn: int, n: int) -> None:
+    events = [
+        AgentEvent(
+            seq=i,
+            timestamp=datetime.now(UTC),
+            workflow_id=task,
+            task_id=task,
+            attempt_id=f"{task}:{turn}:1",
+            type="token",
+            payload={"i": i},
+        )
+        for i in range(n)
+    ]
+    await TableTransport(engine).publish(
+        task, Writer(task, turn, 1), f"{task}:{turn}:1:{uuid.uuid4().hex[:6]}", events
+    )
+
+
+async def one(engine: AsyncEngine, sql: str, **params: object) -> Any:
+    async with engine.connect() as conn:
+        return (await conn.execute(text(sql), params)).scalar_one_or_none()
+
+
+async def expired(store: RecordingBlobStore, ref: BlobRef) -> bool:
+    try:
+        await store.get(ref)
+    except BlobExpired:
+        return True
+    return False
+
+
+async def tombstones(engine: AsyncEngine, op: str) -> list[tuple[str, str, dict[str, Any]]]:
+    async with engine.connect() as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT action, subject, details FROM audit_log WHERE operation_id = :o ORDER BY id"
+            ),
+            {"o": op},
+        )
+        return [(r[0], r[1], r[2] if isinstance(r[2], dict) else json.loads(r[2])) for r in rows]
+
+
+async def test_a_finished_request_is_removed_redacted_and_recorded(engine: AsyncEngine) -> None:
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    a = await finished(engine, store, request)
+    b = await finished(engine, store, request)
+    totals = await delete_request(engine, inner, temporal(), request)
+
+    for t in (a, b):  # R10: nothing of theirs can be read
+        for ref in (t.instructions, *t.inputs.values(), *t.artifacts.values()):
+            assert await expired(store, ref)
+        assert (
+            await one(engine, "SELECT count(*) FROM checkpoints WHERE task_id = :t", t=t.task_id)
+            == 0
+        )
+        assert (
+            await one(engine, "SELECT count(*) FROM agent_events WHERE task_id = :t", t=t.task_id)
+            == 0
+        )
+        for table in ("sample_orders", "task_inbox"):
+            assert (
+                await one(engine, f"SELECT count(*) FROM {table} WHERE task_id = :t", t=t.task_id)
+                == 0
+            )
+        # R11: content holds the marker; IDs, statuses and usage remain.
+        mark = marker(datetime.now(UTC))
+        raw = await one(engine, "SELECT result FROM tasks WHERE task_id = :t", t=t.task_id)
+        result = raw if isinstance(raw, dict) else json.loads(raw)
+        assert result["summary"] == mark and result["questions"] == [mark]
+        assert result["artifacts"] == [] and result["task_id"] == t.task_id
+        assert result["status"] == "succeeded" and result["tokens_in"] == 10
+        assert (
+            await one(engine, "SELECT status FROM tasks WHERE task_id = :t", t=t.task_id)
+            == "succeeded"
+        )
+        assert (
+            await one(engine, "SELECT body FROM task_messages WHERE sender_task = :t", t=t.task_id)
+            == mark
+        )
+        assert (
+            json.loads(
+                await one(
+                    engine,
+                    "SELECT message_data FROM agent_messages WHERE session_id = :t",
+                    t=t.task_id,
+                )
+            )
+            == mark
+        )
+        assert await one(
+            engine,
+            "SELECT CAST(result AS text) FROM idempotency_keys WHERE task_id = :t",
+            t=t.task_id,
+        ) == json.dumps(mark)
+        assert (
+            await one(
+                engine, "SELECT retained_base FROM event_logs WHERE workflow_id = :t", t=t.task_id
+            )
+            == 4
+        )  # pruned to the end: tail reports expired
+        assert (
+            await one(
+                engine,
+                "SELECT outcome FROM task_attempts WHERE task_id = :t AND turn = 2",
+                t=t.task_id,
+            )
+            == "deleted"
+        )
+    # R13: tombstones name the request; counts sum to what was removed; no content.
+    stones = await tombstones(engine, totals.operation)
+    assert {s[0] for s in stones} == {"request.delete"} and {s[1] for s in stones} == {
+        f"request:{request}"
+    }
+    assert stones[0][2]["tasks"] == sorted([a.task_id, b.task_id])
+    for key in ("rows", "references", "blobs"):
+        assert sum(s[2][key] for s in stones) == getattr(totals, key)
+    assert "secret" not in json.dumps([s[2] for s in stones])
+
+
+async def test_task_output_of_a_redacted_task_reports_no_output(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    a = await finished(engine, store, request)
+    await delete_request(engine, inner, temporal(), request)
+    monkeypatch.setattr(cli, "make_engine", lambda: _Borrowed(engine))
+    monkeypatch.setattr(S3BlobStore, "from_env", lambda: inner)
+    with pytest.raises(InvalidTaskInput, match=r"has no output 'report.md' \(outputs: none\)"):
+        await cli.output(argparse.Namespace(task_id=a.task_id, path="report.md", to=None))
+
+
+class _Borrowed:
+    """The test's engine, which the CLI must not dispose."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._engine, name)
+
+    async def dispose(self) -> None:
+        return None
+
+
+async def test_a_request_with_a_running_task_is_refused(engine: AsyncEngine) -> None:
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    done = await finished(engine, store, request)
+    running = await record_task(engine, store, request_id=request)
+    with pytest.raises(DeleteRefused, match=running.task_id):  # R12
+        await delete_request(engine, inner, temporal(), request)
+    assert not await expired(store, done.artifacts["report.md"])
+    assert (
+        await one(
+            engine, "SELECT count(*) FROM audit_log WHERE subject = :s", s=f"request:{request}"
+        )
+        == 0
+    )
+
+
+async def test_force_deletes_only_a_closed_workflow(engine: AsyncEngine) -> None:
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    left = await record_task(engine, store, request_id=request)  # terminated, never ended
+    with pytest.raises(DeleteRefused, match="--force"):
+        await delete_request(engine, inner, temporal({left.task_id: "closed"}), request)
+    with pytest.raises(DeleteRefused, match="still running"):  # R21
+        await delete_request(
+            engine, inner, temporal({left.task_id: "running"}), request, force=True
+        )
+    assert not await expired(store, left.instructions)
+    await delete_request(engine, inner, temporal({left.task_id: "closed"}), request, force=True)
+    assert await expired(store, left.instructions)
+    assert (
+        await one(engine, "SELECT status FROM tasks WHERE task_id = :t", t=left.task_id) == "failed"
+    )
+    assert await one(
+        engine, "SELECT ended_at IS NOT NULL FROM tasks WHERE task_id = :t", t=left.task_id
+    )
+
+
+async def test_a_blob_shared_with_another_request_survives(engine: AsyncEngine) -> None:
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    shared = f"shared orders {uuid.uuid4()}".encode()
+    gone = await finished(engine, store, f"req-del-{uuid.uuid4().hex[:8]}", shared=shared)
+    other = await finished(engine, store, f"req-keep-{uuid.uuid4().hex[:8]}", shared=shared)
+    await delete_request(engine, inner, temporal(), gone.request_id)
+    assert await store.get(other.inputs["in.txt"]) == shared  # R3
+    assert not await expired(store, other.artifacts["report.md"])
+
+
+async def test_a_late_attempt_of_a_deleted_task_writes_nothing(engine: AsyncEngine) -> None:
+    """R25: a --force delete while the Activity still runs."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    task = await record_task(engine, store, request_id=request)
+    await AttemptRepository(engine).start(task.task_id, 1, 1, "worker-a")
+    await delete_request(engine, inner, temporal({task.task_id: "closed"}), request, force=True)
+
+    late_ws = f"late workspace {task.task_id}".encode()
+    ref = await store.put(late_ws, retention="checkpoint", task_id=task.task_id)
+    with pytest.raises(FenceRejected):
+        await CheckpointRepository(engine).insert_fenced(
+            Checkpoint(f"{task.task_id}:1:1:9", task.task_id, 1, 1, 9, task.task_id, 0, ref, None)
+        )
+    with pytest.raises(FenceRejected):
+        await publish(engine, task.task_id, 1, 1)
+    assert ref.key not in inner.objects  # bytes with no live holder were not uploaded
+    assert (
+        await one(
+            engine,
+            "SELECT count(*) FROM blob_refs WHERE task_id = :t AND removed_at IS NULL",
+            t=task.task_id,
+        )
+        == 0
+    )
+    assert (
+        await one(engine, "SELECT count(*) FROM checkpoints WHERE task_id = :t", t=task.task_id)
+        == 0
+    )
+
+
+async def test_a_task_joining_mid_delete_is_untouched(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R24: the delete changes only the tasks the request had when it began."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    first = await finished(engine, store, request)
+    paused, resume = asyncio.Event(), asyncio.Event()
+    real_run = RemovalEngine.run
+    runs = 0
+
+    async def pausing_run(self: RemovalEngine, batch: Batch) -> Any:
+        nonlocal runs
+        runs += 1
+        if runs == 2:  # after the first batch fixed the task list
+            paused.set()
+            await resume.wait()
+        return await real_run(self, batch)
+
+    monkeypatch.setattr(RemovalEngine, "run", pausing_run)
+    deleting = asyncio.create_task(delete_request(engine, inner, temporal(), request))
+    await asyncio.wait_for(paused.wait(), 30)
+    joiner = new_task_id("task-join")
+    joining = asyncio.create_task(  # uploads now; its row waits for the request lock
+        record_task(
+            engine,
+            store,
+            task_id=joiner,
+            request_id=request,
+            inputs={"j": b"join " + joiner.encode()},
+        )
+    )
+    await asyncio.sleep(0.5)
+    assert not joining.done()  # record_task waits for the delete
+    resume.set()
+    await deleting
+    joined = await joining
+    assert await expired(store, first.artifacts["report.md"])
+    assert await store.get(joined.inputs["j"]) == b"join " + joiner.encode()
+    assert await one(engine, "SELECT status FROM tasks WHERE task_id = :t", t=joiner) == "running"
+    assert (
+        await one(
+            engine,
+            "SELECT count(*) FROM blob_refs WHERE task_id = :t AND removed_at IS NOT NULL",
+            t=joiner,
+        )
+        == 0
+    )
+
+
+async def test_a_dry_run_reports_the_plan_and_changes_nothing(engine: AsyncEngine) -> None:
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    a = await finished(engine, store, request)
+    dry = await delete_request(engine, inner, temporal(), request, dry_run=True)
+    assert not await expired(store, a.artifacts["report.md"])
+    assert await tombstones(engine, dry.operation) == []
+    real = await delete_request(engine, inner, temporal(), request)
+    assert (dry.rows, dry.references, dry.blobs, dry.by_reason) == (
+        real.rows,
+        real.references,
+        real.blobs,
+        real.by_reason,
+    )
+
+
+async def test_a_delete_waits_out_an_attempt_holding_its_task_lock(engine: AsyncEngine) -> None:
+    """An attempt's message write takes its task lock, then the request lock
+    (messages._enter): the delete releases the request lock and tries again."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    a = await finished(engine, store, request)
+    held, write_done = asyncio.Event(), asyncio.Event()
+
+    async def message_write() -> None:
+        async with engine.begin() as conn:
+            await conn.execute(TASK_LOCK, {"t": a.task_id})
+            held.set()
+            await asyncio.sleep(0.3)  # the delete starts and takes the request lock
+            await conn.execute(REQUEST_LOCK, {"r": request})
+        write_done.set()
+
+    writer = asyncio.create_task(message_write())
+    await held.wait()
+    totals = await asyncio.wait_for(delete_request(engine, inner, temporal(), request), 60)
+    await writer
+    assert write_done.is_set() and totals.blobs >= 1
+    assert await expired(store, a.artifacts["report.md"])
+
+
+async def test_a_put_during_the_delete_already_revives_nothing(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first batch marks the uploads under each task's lock (review F81), so
+    an upload racing the rest of the delete finds the mark (R25)."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    a = await finished(engine, store, request)
+    paused, resume = asyncio.Event(), asyncio.Event()
+    real_run = RemovalEngine.run
+    runs = 0
+
+    async def pausing_run(self: RemovalEngine, batch: Batch) -> Any:
+        nonlocal runs
+        runs += 1
+        if runs == 2:
+            paused.set()
+            await resume.wait()
+        return await real_run(self, batch)
+
+    monkeypatch.setattr(RemovalEngine, "run", pausing_run)
+    deleting = asyncio.create_task(delete_request(engine, inner, temporal(), request))
+    await asyncio.wait_for(paused.wait(), 30)
+    late = await store.put(b"late " + a.task_id.encode(), retention="checkpoint", task_id=a.task_id)
+    live = await one(
+        engine,
+        "SELECT count(*) FROM blob_refs WHERE task_id = :t AND holder_table = 'upload' "
+        "AND removed_at IS NULL",
+        t=a.task_id,
+    )
+    resume.set()
+    await deleting
+    assert live == 0 and late.key not in inner.objects

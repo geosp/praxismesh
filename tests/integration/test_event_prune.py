@@ -24,11 +24,12 @@ from common.persistence.removal import (
     RemovalEngine,
     operation_id,
 )
-from common.persistence.repositories import RecordingBlobStore, make_engine
+from common.persistence.repositories import RecordingBlobStore
 from common.schemas import BlobRef
 from common.schemas.events import AgentEvent
 from orchestrator import cli
 from orchestrator.lifecycle import event_batch, prune_events
+from tests.support.scratch_db import scratch_database
 
 pytestmark = pytest.mark.integration
 
@@ -39,9 +40,9 @@ class Crash(Exception):
 
 @pytest.fixture
 async def engine() -> AsyncIterator[AsyncEngine]:
-    eng = make_engine()
-    yield eng
-    await eng.dispose()
+    # A scratch database: a removal run finishes every marked blob it finds.
+    async with scratch_database("head") as (_, eng):
+        yield eng
 
 
 def new_workflow() -> str:

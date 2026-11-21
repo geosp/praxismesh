@@ -37,7 +37,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from common.blob_store.base import BlobStore
 from common.errors import PraxisError
 from common.persistence.audit import AuditRepository
-from common.persistence.fence import TASK_LOCK
 from common.schemas import BlobRef
 
 BATCH_LIMIT = 500  # rows per batch at most (D4)
@@ -49,6 +48,18 @@ RUN_LOCK = (3, 0)
 
 class RemovalBusy(PraxisError):
     """Another `gc`, `request delete`, `events prune` or backup is running."""
+
+
+class TaskBusy(RemovalBusy):
+    """A batch could not take a task's lock at once: an attempt is writing."""
+
+    def __init__(self, task_id: str) -> None:
+        super().__init__(f"task {task_id} is busy writing; try again")
+        self.task_id = task_id
+
+
+# The transaction form of fence.TASK_LOCK, without waiting.
+TRY_TASK_LOCK = text("SELECT pg_try_advisory_xact_lock(hashtext(:t))")
 
 
 @asynccontextmanager
@@ -222,7 +233,12 @@ class RemovalEngine:
 
     async def _batch(self, conn: AsyncConnection, batch: Batch, *, dry_run: bool) -> BatchResult:
         for task_id in sorted(set(batch.task_locks)):
-            await conn.execute(TASK_LOCK, {"t": task_id})
+            # Without waiting: an attempt's message write holds its task lock and
+            # then waits for the request lock a delete holds (messages._enter), so
+            # waiting here could never end. The caller releases and retries.
+            got = await conn.scalar(TRY_TASK_LOCK, {"t": task_id})
+            if not got:
+                raise TaskBusy(task_id)
         collected = await batch.collect(conn) if batch.collect is not None else ()
         refs = list(dict.fromkeys([*batch.references, *collected]))
         keys = sorted({r.blob_key for r in refs} | set(batch.orphans))

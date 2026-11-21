@@ -11,6 +11,7 @@
     ./agentctl tail TASK_ID [--after N] [--no-follow]
     ./agentctl events prune --task TASK_ID (--below N | --older-than 7d) [--dry-run]
     ./agentctl gc [--dry-run]
+    ./agentctl request delete REQ [--dry-run] [--force]
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ from common.persistence.repositories import (
     make_engine,
 )
 from common.schemas import TaskResult
-from orchestrator.lifecycle import WorkflowStatus, gc, prune_events
+from orchestrator.lifecycle import WorkflowStatus, delete_request, gc, prune_events
 from orchestrator.submit import prepare_task, start_task
 from registry.loader import load_registry
 
@@ -337,6 +338,27 @@ async def prune(args: argparse.Namespace) -> int:
     return 0
 
 
+async def request_delete(args: argparse.Namespace) -> int:
+    """`agentctl request delete REQ [--dry-run] [--force]` (Phase 3A persistence
+    plan R10-R12, R21, R24, R25, D12)."""
+    engine = make_engine()
+    try:
+        client = await connect()
+        totals = await delete_request(
+            engine,
+            S3BlobStore.from_env(),
+            lambda task_id: workflow_status(client, task_id),
+            args.request_id,
+            force=args.force,
+            dry_run=args.dry_run,
+        )
+    finally:
+        await engine.dispose()
+    report = {"request_id": args.request_id, "dry_run": args.dry_run, **totals.report()}
+    print(json.dumps(report, indent=2))
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="praxis")
     commands = p.add_subparsers(dest="group", required=True)
@@ -371,6 +393,15 @@ def parser() -> argparse.ArgumentParser:
     pr.add_argument("--dry-run", action="store_true", help="print what would go; change nothing")
     g = commands.add_parser("gc", help="remove everything whose retention has expired")
     g.add_argument("--dry-run", action="store_true", help="print the plan; change nothing")
+    req = commands.add_parser("request").add_subparsers(dest="command", required=True)
+    d = req.add_parser("delete", help="delete a request's data: blobs, content, events")
+    d.add_argument("request_id")
+    d.add_argument("--dry-run", action="store_true", help="print the plan; change nothing")
+    d.add_argument(
+        "--force",
+        action="store_true",
+        help="treat a task that never ended as ended if Temporal reports its Workflow closed",
+    )
     return p
 
 
@@ -385,6 +416,7 @@ def main(argv: list[str]) -> int:
         "tail": tail,
         "prune": prune,
         "gc": gc_command,
+        "delete": request_delete,
     }[command]
     try:
         return asyncio.run(handler(args))

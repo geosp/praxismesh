@@ -15,17 +15,18 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from common.blob_store import MemoryBlobStore
 from common.persistence import refs
 from common.persistence.removal import Batch, RemovalEngine, live_references, operation_id
-from common.persistence.repositories import RecordingBlobStore, make_engine
+from common.persistence.repositories import RecordingBlobStore
 from tests.support.lifecycle import StoredTask, end_task, record_task
+from tests.support.scratch_db import scratch_database
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
 async def engine() -> AsyncIterator[AsyncEngine]:
-    eng = make_engine()
-    yield eng
-    await eng.dispose()
+    # A scratch database: a removal run finishes every marked blob it finds.
+    async with scratch_database("head") as (_, eng):
+        yield eng
 
 
 async def remove_task(
