@@ -172,7 +172,8 @@ async def test_a_killed_delete_finishes_when_run_again(
     assert ((await marked_by(engine, killed_ops))["unfinished"] > 0) == (where == "after")
 
     monkeypatch.undo()
-    await delete_request(engine, inner, missing, request)  # R15: runs again, completes
+    rerun = await delete_request(engine, inner, missing, request)  # R15: runs again, completes
+    assert (rerun.finished > 0) == (where == "after")  # F135: reported
     await check_consistent(engine, inner, "request.delete")
     async with engine.connect() as conn:
         live = await conn.scalar(
@@ -198,7 +199,8 @@ async def test_a_killed_gc_finishes_when_run_again(
     assert ((await marked_by(engine, killed_ops))["unfinished"] > 0) == (where == "after")
 
     monkeypatch.undo()
-    await gc(engine, inner, missing)
+    rerun = await gc(engine, inner, missing)
+    assert (rerun.finished > 0) == (where == "after")  # F135: reported
     await check_consistent(engine, inner, "gc")
     again = await gc(engine, inner, missing)  # nothing left: nothing counted twice
     assert (again.rows, again.references, again.blobs) == (0, 0, 0)

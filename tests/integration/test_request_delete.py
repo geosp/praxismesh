@@ -220,6 +220,7 @@ async def test_a_finished_request_is_removed_redacted_and_recorded(engine: Async
     assert {s[0] for s in stones} == {"request.delete"} and {s[1] for s in stones} == {
         f"request:{request}"
     }
+    assert len(stones) == totals.batches  # F135: only committed batches count
     assert stones[0][2]["tasks"] == sorted([a.task_id, b.task_id])
     for key in ("rows", "references", "blobs"):
         assert sum(s[2][key] for s in stones) == getattr(totals, key)

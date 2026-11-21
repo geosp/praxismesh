@@ -26,6 +26,7 @@ from common.persistence.refs import Reference, event_holder
 from common.persistence.removal import (
     BATCH_LIMIT,
     Batch,
+    BatchResult,
     RefKey,
     RemovalBusy,
     RemovalEngine,
@@ -53,16 +54,22 @@ class Totals:
     # Bucket objects that are not content keys: reported, never removed (F119).
     unrecognised: list[str] = field(default_factory=list)
 
-    def add(self, rows: int, references: int, blobs: int, reason: str = "") -> None:
+    # Objects deleted for blobs an earlier run left marked (finish_pending).
+    finished: int = 0
+
+    def add(self, result: BatchResult, reason: str = "") -> None:
+        """Count a batch, if it committed (review F135)."""
+        if not result.committed:
+            return
         self.batches += 1
-        self.rows += rows
-        self.references += references
-        self.blobs += blobs
+        self.rows += result.rows
+        self.references += result.references
+        self.blobs += result.blobs
         if reason:
             counts = self.by_reason.setdefault(reason, {"rows": 0, "references": 0, "blobs": 0})
-            counts["rows"] += rows
-            counts["references"] += references
-            counts["blobs"] += blobs
+            counts["rows"] += result.rows
+            counts["references"] += result.references
+            counts["blobs"] += result.blobs
 
     def report(self) -> dict[str, object]:
         return {
@@ -73,6 +80,7 @@ class Totals:
             "blobs": self.blobs,
             "by_reason": self.by_reason,
             "unrecognised": self.unrecognised,
+            "finished_from_earlier_runs": self.finished,
         }
 
 
@@ -182,7 +190,7 @@ async def _prune_events(
     transport = TableTransport(engine)
     totals = Totals(operation)
     async with removal.session():
-        await removal.finish_pending()
+        totals.finished = await removal.finish_pending()
         while True:
             batch, _ = event_batch(
                 transport,
@@ -195,7 +203,7 @@ async def _prune_events(
             result = await removal.run(batch)
             if result.rows == 0:
                 break  # the prefix is gone; an empty batch commits nothing
-            totals.add(result.rows, result.references, result.blobs)
+            totals.add(result)
     return totals
 
 
@@ -390,14 +398,14 @@ async def _gc(
             f"{len(missing)} stored reference(s) are not indexed; run "
             "'agentctl reconcile --reindex' first, then gc again"
         )
-    await removal.finish_pending()
+    totals.finished = await removal.finish_pending()
 
     async def drain(make: Callable[[], Batch], reason: str) -> None:
         while True:
             result = await removal.run(make())
             if (result.rows, result.references, result.blobs) == (0, 0, 0):
                 return
-            totals.add(result.rows, result.references, result.blobs, reason)
+            totals.add(result, reason)
 
     # 1. Rows that expired with their task, with the references they hold.
     for rule in ROW_RULES:
@@ -457,7 +465,7 @@ async def _gc(
                     details={"reason": "references expired"},
                 )
             )
-            totals.add(result.rows, result.references, result.blobs, "references expired")
+            totals.add(result, "references expired")
 
     # 4. Uploads of a task with no row, once Temporal has no live Workflow (D5).
     async with _read(engine, removal) as conn:
@@ -474,7 +482,7 @@ async def _gc(
                     details={"reason": "uploads of a task that never started"},
                 )
             )
-            totals.add(result.rows, result.references, result.blobs, "row-less uploads")
+            totals.add(result, "row-less uploads")
 
     # 5. Orphans: bucket objects with no live reference, past the window (R8).
     listing = await bucket.list_objects()
@@ -492,7 +500,7 @@ async def _gc(
                 orphans={o.key: o.last_put_at for o in some},
             )
         )
-        totals.add(result.rows, result.references, result.blobs, "orphans")
+        totals.add(result, "orphans")
     return totals
 
 
@@ -646,14 +654,14 @@ async def _delete(
             f"request {request_id} has tasks whose Workflow is still running: "
             f"{', '.join(running)}. --force applies only to closed Workflows"
         )
-    await removal.finish_pending()
+    totals.finished = await removal.finish_pending()
 
     async def drain(make: Callable[[], Batch], reason: str) -> None:
         while True:
             result = await removal.run(make())
             if (result.rows, result.references, result.blobs) == (0, 0, 0):
                 return
-            totals.add(result.rows, result.references, result.blobs, reason)
+            totals.add(result, reason)
 
     # 1. Fix the task list, fence every attempt, end forced tasks, and mark the
     # uploads with the delete's operation, under each task's lock (review F81):
@@ -698,7 +706,7 @@ async def _delete(
             },
         )
     )
-    totals.add(first.rows, first.references, first.blobs, "uploads")
+    totals.add(first, "uploads")
 
     transport = TableTransport(engine)
     redacted = marker(now)
@@ -749,7 +757,7 @@ async def _delete(
                     details={"reason": "references deleted", "task_id": task_id},
                 )
             )
-            totals.add(result.rows, result.references, result.blobs, "references deleted")
+            totals.add(result, "references deleted")
     # The delete is complete: a later run starts afresh from the request's tasks.
     done = await removal.run(
         Batch(
@@ -759,7 +767,7 @@ async def _delete(
             details={"reason": DELETE_COMPLETE, "tasks": tasks},
         )
     )
-    totals.add(done.rows, done.references, done.blobs, "complete")
+    totals.add(done, "complete")
     return totals
 
 

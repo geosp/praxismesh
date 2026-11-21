@@ -12,6 +12,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import text
@@ -305,4 +306,33 @@ async def test_an_object_that_is_not_a_content_key_is_reported_not_removed(
     assert first.unrecognised == ["notes/readme.txt"] == second.unrecognised
     assert (
         await count(engine, "SELECT count(*) FROM blob_objects WHERE key = 'notes/readme.txt'") == 0
+    )
+
+
+async def test_an_orphan_uploaded_after_the_listing_is_kept_and_not_counted(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R8, review F135: the orphan batch marks nothing, commits nothing, and the
+    report counts no batch for it."""
+    from common.persistence import refs
+
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    ref = await store.put(f"orphan {uuid.uuid4()}".encode(), retention="ephemeral")
+    real_orphaned = refs.orphaned
+
+    async def stale_listing(conn: Any, bucket: Any) -> list[refs.Orphan]:
+        # As if the listing ran 30 hours ago, before this object's last upload.
+        found = await real_orphaned(conn, bucket)
+        return [replace(o, last_put_at=NOW - timedelta(hours=30)) for o in found]
+
+    monkeypatch.setattr(refs, "orphaned", stale_listing)
+    totals = await gc(engine, inner, Temporal())
+    assert ref.key in inner.objects
+    assert "orphans" not in totals.by_reason and totals.batches == 0
+    assert (
+        await count(
+            engine, "SELECT count(*) FROM audit_log WHERE operation_id = :o", o=totals.operation
+        )
+        == 0
     )

@@ -27,7 +27,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -151,6 +151,9 @@ class BatchResult:
     blobs: int
     marked: tuple[str, ...]  # keys marked by this batch, for its bucket step
     tombstone: int | None  # audit_log ID; None for a dry run
+    # Whether the batch counts: committed (or, dry, kept in the run's
+    # transaction). An empty batch is rolled back and does not (review F135).
+    committed: bool = True
 
 
 class RemovalEngine:
@@ -204,10 +207,11 @@ class RemovalEngine:
                 raise RuntimeError("a dry run's batches run inside session()")
             savepoint = await self._dry.begin_nested()
             result = await self._batch(self._dry, batch, dry_run=True)
-            if (result.rows, result.references, result.blobs) == (0, 0, 0):
+            empty = (result.rows, result.references, result.blobs) == (0, 0, 0)
+            if empty and not batch.record_empty:  # as the real run (review F140)
                 await savepoint.rollback()
-            else:
-                await savepoint.commit()
+                return replace(result, committed=False)
+            await savepoint.commit()
             return result
         async with self.engine.connect() as conn:
             transaction = await conn.begin()
@@ -220,7 +224,7 @@ class RemovalEngine:
             if empty and not batch.record_empty:
                 # Nothing to commit: an empty batch leaves no tombstone.
                 await transaction.rollback()
-                return BatchResult(0, 0, 0, (), None)
+                return BatchResult(0, 0, 0, (), None, committed=False)
             await transaction.commit()
         await self.finish(result.marked)
         return result

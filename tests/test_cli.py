@@ -201,6 +201,7 @@ def test_join_refuses_an_unknown_request(monkeypatch: Any, capsys: Any) -> None:
 
 def test_gc_dry_run_reaches_gc_and_prints_its_plan(monkeypatch: Any, capsys: Any) -> None:
     """`agentctl gc --dry-run` (Phase 3A persistence plan phase 02 task 2.1)."""
+    from common.persistence.removal import BatchResult
     from orchestrator.lifecycle import Totals
 
     seen: dict[str, Any] = {}
@@ -208,7 +209,7 @@ def test_gc_dry_run_reaches_gc_and_prints_its_plan(monkeypatch: Any, capsys: Any
     async def gc(engine: Any, bucket: Any, status_of: Any, *, dry_run: bool) -> Totals:
         seen["dry_run"] = dry_run
         totals = Totals("gc:test")
-        totals.add(2, 3, 1, "checkpoints expired")
+        totals.add(BatchResult(2, 3, 1, (), 1), "checkpoints expired")
         return totals
 
     async def connect() -> object:
