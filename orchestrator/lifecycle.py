@@ -653,6 +653,15 @@ async def _delete(
     if not rows:
         raise DeleteRefused(f"request {request_id} has no tasks")
     tasks = [r[0] for r in rows]  # the fixed task list (R24)
+    async with _read(engine, removal) as conn:
+        # An unindexed reference has nothing to mark, so its blob would stay
+        # readable (R10, D4; review F144). Only this delete's tasks count.
+        missing = [r for r in await refs.unindexed(conn) if r.task_id in set(tasks)]
+    if missing:
+        raise DeleteRefused(
+            f"{len(missing)} stored reference(s) of request {request_id} are not indexed; "
+            "run 'agentctl reconcile --reindex' first, then delete again"
+        )
     unended = [r[0] for r in rows if not r[1]]
     if unended and not force:
         raise DeleteRefused(

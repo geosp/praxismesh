@@ -440,7 +440,10 @@ async def test_a_deleted_task_with_no_upload_left_still_revives_nothing(
     request = f"req-del-{uuid.uuid4().hex[:8]}"
     task = await record_task(engine, store, request_id=request)
     async with engine.begin() as conn:  # as if a pre-0007 task: no upload references
-        await conn.execute(text("DELETE FROM blob_refs WHERE task_id = :t"), {"t": task.task_id})
+        await conn.execute(
+            text("DELETE FROM blob_refs WHERE task_id = :t AND holder_table = 'upload'"),
+            {"t": task.task_id},
+        )
     await delete_request(engine, inner, FakeTemporal({task.task_id: "closed"}), request, force=True)
     late = await store.put(
         b"late " + task.task_id.encode(), retention="checkpoint", task_id=task.task_id
@@ -630,3 +633,31 @@ async def test_force_says_why_each_task_counted_as_ended(engine: AsyncEngine) ->
     totals = await delete_request(engine, inner, temporal, request, force=True)
     assert totals.forced == expected
     assert (await tombstones(engine, totals.operation))[0].details["forced"] == expected
+
+
+async def test_a_delete_refuses_while_a_reference_of_its_tasks_is_unindexed(
+    engine: AsyncEngine,
+) -> None:
+    """F144 (R10, D4): an unindexed reference would leave its blob readable, so
+    the delete refuses, naming the repair, and changes nothing."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    a = await finished(engine, store, request)
+    other = await finished(engine, store, f"req-other-{uuid.uuid4().hex[:8]}")
+    async with engine.begin() as conn:  # a reference written before the index
+        await conn.execute(
+            text("DELETE FROM blob_refs WHERE task_id = :t AND holder_table = 'tasks'"),
+            {"t": a.task_id},
+        )
+    with pytest.raises(DeleteRefused, match="reconcile --reindex"):
+        await delete_request(engine, inner, FakeTemporal(), request)
+    assert not await expired(store, a.inputs["in.txt"])
+    assert (
+        await one(
+            engine, "SELECT count(*) FROM audit_log WHERE subject = :s", s=f"request:{request}"
+        )
+        == 0
+    )
+    # Another request's unindexed reference does not block this one.
+    await delete_request(engine, inner, FakeTemporal(), other.request_id)
