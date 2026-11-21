@@ -311,24 +311,14 @@ def test_backup_prints_where_it_wrote(monkeypatch: Any, capsys: Any) -> None:
 def test_reconcile_reports_temporal_errors_as_errors(monkeypatch: Any, capsys: Any) -> None:
     """A Temporal error other than NOT_FOUND exits 2 with an `error:` line, not
     a traceback and not 1, which means findings (impl-review F186)."""
-    from temporalio.service import RPCError, RPCStatusCode
-
     from orchestrator.reconcile import Report
 
     async def reconcile(engine: Any, bucket: Any, status_of: Any, *, reindex: bool) -> Report:
         await status_of("task-1")
         return Report()
 
-    class Unavailable:
-        def get_workflow_handle(self, workflow_id: str) -> Any:
-            class Handle:
-                async def describe(self) -> Any:
-                    raise RPCError("connection refused", RPCStatusCode.UNAVAILABLE, b"")
-
-            return Handle()
-
     async def connect() -> object:
-        return Unavailable()
+        return _UnavailableTemporal()
 
     monkeypatch.setattr(cli, "PROVIDER", _Provider())
     monkeypatch.setattr(cli, "make_engine", _Engine)
@@ -337,3 +327,89 @@ def test_reconcile_reports_temporal_errors_as_errors(monkeypatch: Any, capsys: A
     monkeypatch.setattr(cli, "reconcile", reconcile)
     assert cli.main(["reconcile"]) == 2
     assert "error: Temporal" in capsys.readouterr().err
+
+
+class _UnavailableTemporal:
+    """A Temporal client whose `describe` answers UNAVAILABLE."""
+
+    def get_workflow_handle(self, workflow_id: str) -> Any:
+        from temporalio.service import RPCError, RPCStatusCode
+
+        class Handle:
+            async def describe(self) -> Any:
+                raise RPCError("connection refused", RPCStatusCode.UNAVAILABLE, b"")
+
+        return Handle()
+
+
+def test_tail_keeps_following_when_temporal_cannot_say(monkeypatch: Any) -> None:
+    """`tail` treats a Temporal error as "still running" (impl-review F219: a
+    regression of F186's WorkflowStatusUnavailable)."""
+    seen: list[bool] = []
+
+    async def print_events(transport: Any, task_id: str, after: int, **kw: Any) -> int:
+        seen.append(await kw["closed"]())
+        return after
+
+    async def connect() -> object:
+        return _UnavailableTemporal()
+
+    monkeypatch.setattr(cli, "PROVIDER", _Provider())
+    monkeypatch.setattr(cli, "make_engine", _Engine)
+    monkeypatch.setattr(cli, "connect", connect)
+    monkeypatch.setattr(cli, "print_events", print_events)
+    assert cli.main(["tail", "task-1"]) == 0
+    assert seen == [False]
+
+
+@pytest.mark.parametrize("down", ["temporal", "database"])
+def test_reconcile_exits_2_when_it_cannot_reach_a_service(
+    monkeypatch: Any, capsys: Any, down: str
+) -> None:
+    """Temporal or the database unreachable is exit 2 with an `error:` line, never
+    1, which means findings (impl-review F197)."""
+    from sqlalchemy.exc import OperationalError
+
+    from orchestrator.reconcile import Report
+
+    async def reconcile(engine: Any, bucket: Any, status_of: Any, *, reindex: bool) -> Report:
+        raise OperationalError("SELECT 1", {}, ConnectionRefusedError("refused"))
+
+    async def connect() -> object:
+        if down == "temporal":
+            raise RuntimeError("Failed client connect: connection refused")
+        return object()
+
+    monkeypatch.setattr(cli, "PROVIDER", _Provider())
+    monkeypatch.setattr(cli, "make_engine", _Engine)
+    monkeypatch.setattr(S3BlobStore, "from_env", lambda: _S3())
+    monkeypatch.setattr(cli, "connect", connect)
+    monkeypatch.setattr(cli, "reconcile", reconcile)
+    assert cli.main(["reconcile"]) == 2
+    assert f"error: cannot reach {'Temporal' if down == 'temporal' else 'the database'}" in (
+        capsys.readouterr().err
+    )
+
+
+@pytest.mark.parametrize("command", [["gc"], ["request", "delete", "req-1"]])
+def test_gc_and_delete_report_temporal_errors_as_errors(
+    monkeypatch: Any, capsys: Any, command: list[str]
+) -> None:
+    """The removal commands ask Temporal through the same `status_of`: a
+    Temporal error is exit 2 with an `error:` line (impl-review F202)."""
+
+    async def removal(engine: Any, bucket: Any, status_of: Any, *a: Any, **kw: Any) -> Any:
+        await status_of("task-1")
+        raise AssertionError("not reached")
+
+    async def connect() -> object:
+        return _UnavailableTemporal()
+
+    monkeypatch.setattr(cli, "PROVIDER", _Provider())
+    monkeypatch.setattr(cli, "make_engine", _Engine)
+    monkeypatch.setattr(S3BlobStore, "from_env", lambda: _S3())
+    monkeypatch.setattr(cli, "connect", connect)
+    monkeypatch.setattr(cli, "gc", removal)
+    monkeypatch.setattr(cli, "delete_request", removal)
+    assert cli.main(command) == 2
+    assert "error: Temporal could not report Workflow task-1" in capsys.readouterr().err

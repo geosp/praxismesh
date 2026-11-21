@@ -31,9 +31,9 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
-from temporalio.service import RPCError
 
 from common.blob_store.s3 import S3BlobStore
 from common.errors import InvalidTaskInput, PraxisError
@@ -56,7 +56,7 @@ from orchestrator.backup import DockerCompose, backup
 from orchestrator.lifecycle import delete_request, gc, prune_events
 from orchestrator.reconcile import reconcile
 from orchestrator.submit import prepare_task, start_task
-from orchestrator.workflow_status import status_of, workflow_status
+from orchestrator.workflow_status import WorkflowStatusUnavailable, status_of, workflow_status
 from registry.loader import load_registry
 
 PROVIDER = configure_tracing("praxis-cli")
@@ -265,7 +265,7 @@ async def tail(args: argparse.Namespace) -> int:
             try:
                 # Unknown or beyond retention counts as closed: nothing more arrives.
                 return await workflow_status(client, args.task_id) != "running"
-            except RPCError as e:
+            except WorkflowStatusUnavailable as e:
                 log.warning("cannot read the Workflow status; still following",
                             extra={"fields": {"error": str(e)}})  # fmt: skip
                 return False
@@ -352,15 +352,25 @@ async def request_delete(args: argparse.Namespace) -> int:
     return 0
 
 
+class ServiceUnavailable(PraxisError):
+    """Temporal or the database could not be reached: exit 2, not a traceback."""
+
+
 async def reconcile_command(args: argparse.Namespace) -> int:
     """`agentctl reconcile [--reindex]` (Phase 3A persistence plan R17): exit 1
-    when anything is listed."""
+    when anything is listed, 2 when it cannot finish (impl-review F197)."""
     engine = make_engine()
     try:
-        client = await connect()
-        report = await reconcile(
-            engine, S3BlobStore.from_env(), status_of(client), reindex=args.reindex
-        )
+        try:
+            client = await connect()
+        except RuntimeError as e:  # temporalio's "Failed client connect"
+            raise ServiceUnavailable(f"cannot reach Temporal: {e}") from e
+        try:
+            report = await reconcile(
+                engine, S3BlobStore.from_env(), status_of(client), reindex=args.reindex
+            )
+        except (SQLAlchemyError, OSError) as e:
+            raise ServiceUnavailable(f"cannot reach the database: {e}") from e
     finally:
         await engine.dispose()
     print(json.dumps(report.as_json(), indent=2))
