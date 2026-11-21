@@ -682,9 +682,10 @@ async def _delete(
     totals.forced = dict(sorted(statuses.items()))  # shown before anything changes
     totals.finished = await removal.finish_pending()
 
-    # 1. Fix the task list, fence every attempt, end forced tasks, and mark the
-    # uploads with the delete's operation, under each task's lock (review F81):
-    # from here a late `put` revives nothing and a fenced write is refused (R25).
+    # 1. Fix the task list, fence every attempt and end forced tasks, under each
+    # task's lock (review F81). The fencing row is the delete's mark: from here
+    # every fenced write is refused and a late `put` revives nothing (R25, F125).
+    # The uploads are marked with the other references, in capped batches (F146).
     async def fence(conn: AsyncConnection) -> int:
         await conn.execute(
             text(
@@ -706,15 +707,11 @@ async def _delete(
             )
         return 0  # inserted and ended rows are recorded in the details, not as removed
 
-    async def uploads(conn: AsyncConnection) -> Sequence[RefKey]:
-        return await live_references(conn, tasks, holder_table=refs.UPLOAD)
-
     first = await removal.run(
         Batch(
             "request.delete",
             subject,
             rows=fence,
-            collect=uploads,
             task_locks=tasks,
             record_empty=True,
             details={
@@ -725,7 +722,7 @@ async def _delete(
             },
         )
     )
-    totals.add(first, "uploads")
+    totals.add(first, "fenced")
 
     transport = TableTransport(engine)
     redacted = marker(now)

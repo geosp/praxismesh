@@ -381,11 +381,12 @@ async def test_a_put_during_the_delete_already_revives_nothing(
     deleting = asyncio.create_task(delete_request(engine, inner, FakeTemporal(), request))
     await asyncio.wait_for(paused.wait(), 30)
     late = await store.put(b"late " + a.task_id.encode(), retention="checkpoint", task_id=a.task_id)
-    live = await one(
+    live = await one(  # the late upload's own reference is written already marked
         engine,
-        "SELECT count(*) FROM blob_refs WHERE task_id = :t AND holder_table = 'upload' "
+        "SELECT count(*) FROM blob_refs WHERE task_id = :t AND blob_key = :k "
         "AND removed_at IS NULL",
         t=a.task_id,
+        k=late.key,
     )
     resume.set()
     await deleting
@@ -661,3 +662,28 @@ async def test_a_delete_refuses_while_a_reference_of_its_tasks_is_unindexed(
     )
     # Another request's unindexed reference does not block this one.
     await delete_request(engine, inner, FakeTemporal(), other.request_id)
+
+
+async def test_a_large_request_is_deleted_in_batches_of_at_most_500(engine: AsyncEngine) -> None:
+    """F146 (D4, R13): no delete batch marks more than 500 references, the first
+    included; the fencing row alone is the delete's mark (F125)."""
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    task = await record_task(engine, store, request_id=request)
+    for i in range(600):  # one upload reference each
+        await store.put(f"snapshot {i} {task.task_id}".encode(), retention="checkpoint",
+                        task_id=task.task_id)  # fmt: skip
+    await end_task(engine, store, task)
+    totals = await delete_request(engine, inner, FakeTemporal(), request)
+    stones = await tombstones(engine, totals.operation)
+    assert max(s.details["references"] for s in stones) <= 500
+    assert sum(s.details["references"] for s in stones) == totals.references >= 601
+    assert (
+        await one(
+            engine,
+            "SELECT count(*) FROM blob_refs WHERE task_id = :t AND removed_at IS NULL",
+            t=task.task_id,
+        )
+        == 0
+    )

@@ -159,7 +159,7 @@ async def test_a_killed_delete_finishes_when_run_again(
     request = f"req-kill-{uuid.uuid4().hex[:8]}"
     for _ in range(2):
         await stored_task(engine, store, request, 0)
-    kill_at(monkeypatch, where, 3)
+    kill_at(monkeypatch, where, 2)  # two tasks: two batches mark blobs
     with pytest.raises(Killed):
         await delete_request(engine, inner, FakeTemporal(), request)
     killed_ops = await operations(engine, "request.delete")
