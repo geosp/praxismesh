@@ -281,3 +281,31 @@ Diff base 9920f36..d4e32c4 (frozen review commit d4e32c4). Reviewers: contract �
 | F196 | Nit | coordinator | task 3.2 | One demo run exited 134 (SIGABRT) with no message in step 4, after `gc`; the `agentctl task status` there runs with `2>/dev/null` | accepted: not reproduced in 60 runs of that command or 25 of the probe; outside this round's diff; the rerun passed |
 
 After the fixes (2026-11-21, last fix commit 64091b2): every Major fixed test first. Each new test failed before its fix, or (F168, F183) passes and fails with the code it covers reverted; every fix's test fails again with the fix reverted. AGENTS.md checks: 388 unit tests passed. Integration suite on the pm3adev stack at d98b76a, workers stopped: 358 passed, 4 skipped (no `VLLM_BASE_URL` in that env file). `make drill` and the demo pass at 64091b2 (docs/demos/phase-3a-lifecycle.md, "Rerun after impl review round 1"). Nothing is left open.
+
+## 2026-11-21 · impl-review · phase 03 · round 2 · changes-requested
+Diff base 9920f36..72bf8d6 (frozen review commit 72bf8d6, local). Reviewers: contract ✅ · failure and retry ✅ · scope and composition ✅ (raw: docs/reviews/phase-3a/raw/persistence-impl-review-phase-03-round-2-*.md). Closed findings raised again stay closed: F169, F173 (the race itself), F175, F177, F181, F188, F190, F191, F192. F186 comes back (F197: its fix covered only `describe()`), and F184 in part (F199: a SIGTERM can be handled).
+
+| ID | Sev | Lens | Req | Finding | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| F197 | Major | contract | R17 | `reconcile` exits 1 (a traceback) when Temporal's `connect` or the database fails; the runbook and overview say 2 (F186 reopened) | open |
+| F198 | Major | contract, failure, scope | R16, D8 | A backup whose bucket does not exist (wrong `S3_BUCKET`, lost volume) succeeds with 0 objects while rows name live blobs | open |
+| F199 | Major | failure | D8, task 2.1 | A SIGTERM or SIGHUP during the dumps skips the `finally`: the workers stay stopped, and nothing records which | open |
+| F200 | Major | failure, scope | D8 | Backup and restore stop only `running` workers; a restarting one comes up and runs Activities between the dumps | open |
+| F201 | Major | scope, failure | R17 | A task that ends while reconcile asks Temporal is listed as never ended (likely right after restore restarts the workers) | open |
+| F202 | Nit | contract | R17 | `WorkflowStatusUnavailable` now reaches gc and request delete too; only reconcile's path is tested | open |
+| F203 | Nit | contract, failure | R16 | A manifest without `databases` or `objects` raises `KeyError`, a traceback, not `RestoreRefused` | open |
+| F204 | Nit | contract | R16 | restore.sh loads fixed dump names; `check_backup` checks the manifest's `file` | open |
+| F205 | Nit | contract, failure | D8 | A `compose start` that fails in the `finally` replaces the dump error that caused it | open |
+| F206 | Nit | contract | task 2.1 | The test hook `after_dumps` is in production `backup()`'s signature | open |
+| F207 | Nit | contract | D8 | The runbook's `make workers-up` after a killed backup starts every worker, not the ones it stopped | open |
+| F208 | Nit | failure | D8 | The mark is cleared only after Temporal and the workers start; a start timeout after a full load asks for `make reset` | open |
+| F209 | Nit | failure | D8 | `make up` or `workers-up` run against a half-loaded database with no warning | open |
+| F210 | Nit | failure | R16 | `check-backup` compares sizes only; content keys could be hash-checked | open |
+| F211 | Nit | failure | D8 | Restore never compares the manifest's images with the checkout's | open |
+| F212 | Nit | failure | D8 | The manifest's row counts come from another connection than `pg_dump`'s snapshot | open |
+| F213 | Nit | contract | D4 | `reconcile --reindex` has no `--dry-run` | open |
+| F214 | Nit | scope | R17 | Reconcile's comment says a reference is listed "unless it really is missing", which a concurrent removal disproves | open |
+| F215 | Nit | scope | D5 | gc's orphan pass also reads a missing bucket as empty (the shared `list_objects` rule) | open |
+| F216 | Nit | scope | R23 | A refused `make restore` leaving the Workflow and the bucket unchanged is shown only by drill step 3 (one task's output) | open |
+| F217 | Nit | scope | D8, task 2.3 | The drill never stops or restarts the DSH worker pair | open |
+| F218 | Nit | contract | reuse | `json`/`field` shell one-liners, `_rows` and `check_empty` counting `APP_TABLES` twice, `_safe_path` vs `_relative_path`, the Makefile's worker lists | open |
