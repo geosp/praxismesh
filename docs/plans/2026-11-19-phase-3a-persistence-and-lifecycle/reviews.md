@@ -206,3 +206,30 @@ Diff base 9a81933..8012f6b (frozen review commit 8012f6b). Reviewers: contract �
 | F143 | Nit | engineer | R21 | (Engineer decision, 2026-11-20) Show why a forced task counted as ended (`closed` or `missing`) in the output, the dry run and the first tombstone | fixed: Totals.forced, the report and the first tombstone; test_force_says_why_each_task_counted_as_ended |
 
 After the fixes (2026-11-20): every Major fixed test first; each new test failed before its fix and again with the fix reverted, except F126 and F140 (noted). Round 2 (fresh contract, failure and scope lenses) offered.
+
+## 2026-11-21 · impl-review · phase 02 · round 2 · changes-requested
+Diff base 9a81933..dd999f3 (frozen review commit dd999f3). Reviewers: contract ✅ · failure and retry ✅ (resumed after a usage limit) · scope and composition ✅ (raw: docs/reviews/phase-3a/raw/persistence-impl-review-phase-02-round-2-*.md). Full integration suite at dd999f3 from a clean worktree, workers stopped: 332 passed, 1 failed (F149). Closed findings raised again stay closed: F130 (contract M2, Temporal mapping untested), F127 (dry-run locks), F128, F136, F137, F139. F129 comes back with new evidence (F146). No fixed finding came back.
+
+| ID | Sev | Lens | Req | Finding | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| F144 | Major | contract | R10, D4 | `request delete` never checks for unindexed references, so an unindexed input or checkpoint blob of a deleted request stays readable | open |
+| F145 | Major | failure, scope | R6, R15, D6 | A re-upload whose `put` transaction never commits (killed CLI, dropped connection) puts bytes back under a row still marked with `bucket_deleted_at` set; neither `pending` nor `orphaned` ever sees it | open |
+| F146 | Major | scope, contract, failure | D4, R13 | The delete's first batch marks every upload reference of the request in one transaction with no 500 cap; since F125 the fencing row is already the delete mark, so the uploads can move to the capped later batches (F129 reopened on new evidence) | open |
+| F147 | Nit | contract | R11 | The `failure_reason` redaction has no test | open |
+| F148 | Nit | contract | reuse | `refs.reindex` still matches `_CONTENT_KEY` directly; `DELETED` repeats the clause inside `NO_NEWER_ATTEMPT`; the `Collect` comment says "before any lock" though task locks come first | open |
+| F149 | Nit | coordinator | tests | `test_a_final_flush_that_times_out_raises_events_unavailable` (0.3 s flush budget) failed once in the full run at dd999f3 and passed 5/5 alone and in both earlier full runs; its code is not in this diff | open |
+| F150 | Nit | contract | docs | The overview says `test_blob_expired.py` runs on the stack database (now a scratch one); the runbook says a busy delete "changed nothing", but each try first finishes earlier runs' bucket deletes | open |
+| F151 | Nit | contract, failure, scope | R24, D12 | During a TaskBusy retry the request lock is released and the list re-read by `request_id`; a running joiner makes the delete refuse (no task is changed) | open |
+| F152 | Nit | contract | R24 | A resumed delete's message redaction (`sender_task` or `recipient_task` in the list) rewrites a later joiner's messages to or from the deleted tasks | open |
+| F153 | Nit | contract | R25 | After a delete, an attempt can still settle its `usage_ledger` row and finish its `task_attempts` row (audit rows, no content) | open |
+| F154 | Nit | failure, scope | D12 | `put` holds the task lock for its whole upload, so a forced delete during an upload longer than the ~10 s retry budget ends busy; the pooled connection held by `add_items` adds pool pressure | open |
+| F155 | Nit | failure, scope | D4 | A checkpoint batch caps rows at 500 but can mark up to 1,000 references; whether D4's rows include marks is unstated | open |
+| F156 | Nit | failure | D4 | A cancelled unlock on a healthy connection returns it to the pool still holding the session lock (only matters to a long-lived caller; the CLI disposes its engine) | open |
+| F157 | Nit | scope | R13 | A deleted task's late upload writes marks (the delete's operation or `delete:<task>`) that no tombstone counts | open |
+| F158 | Nit | scope | task 1.4 | "A GC killed after a prune batch" is tested through a hand-built event batch, not a killed `gc` run | open |
+| F159 | Nit | scope | D12 | `pg_advisory_lock` for the request lock has no timeout; a stuck holder makes `request delete` hang | open |
+| F160 | Nit | contract | reuse | More duplicates: `_ref` vs `make_ref`, `_ensure_rows` vs `reindex`'s insert, `event_batch.collect` vs `_prune`'s range, the empty-batch test, `workflow_status` placement, near-identical task builders, `set_last_put`, `pausing_run` | open |
+| F161 | Nit | contract | R8, D5 | The window compares the database's `last_put_at` with the CLI host's clock | open |
+| F162 | Nit | contract | R10 | A reference to a non-content key is never marked (follows from F119) | open |
+| F163 | Nit | contract | task 3.1 | `session_ids` finds sessions only through checkpoints | open |
+| F164 | Nit | contract, failure | R13, R15 | Kill tests raise in-process; a real process death (the session lock's release) is not observed | open |
