@@ -244,6 +244,11 @@ class RemovalEngine:
         refs = list(dict.fromkeys([*batch.references, *collected]))
         keys = sorted({r.blob_key for r in refs} | set(batch.orphans))
         if keys:
+            # Every key gets a row before the lock, so no key goes unlocked: a
+            # `put` racing this batch waits for it (review F126). An orphan's row
+            # keeps the upload time the caller saw, so `_mark_orphans` can tell a
+            # new upload; a referenced key's row is only a placeholder.
+            await _ensure_rows(conn, {k: batch.orphans.get(k) for k in keys})
             await conn.execute(
                 text("SELECT key FROM blob_objects WHERE key = ANY(:k) ORDER BY key FOR UPDATE"),
                 {"k": keys},
@@ -302,36 +307,18 @@ class RemovalEngine:
         return marked
 
     async def _mark_free_blobs(self, conn: AsyncConnection, keys: list[str]) -> list[str]:
-        """Mark each of `keys` with no live reference left; already-marked blobs
-        are not counted again. A key with no `blob_objects` row gets a marked row,
-        so the bucket step still removes its object."""
+        """Mark each of `keys` with no live reference left, in one statement under
+        the batch's row locks; already-marked blobs are not counted again."""
         if not keys:
             return []
-        free = await conn.execute(
-            text(
-                "SELECT k FROM unnest(CAST(:k AS text[])) AS k WHERE NOT EXISTS "
-                "(SELECT 1 FROM blob_refs r WHERE r.blob_key = k AND r.removed_at IS NULL) "
-                "ORDER BY k"
-            ),
-            {"k": keys},
-        )
-        free_keys = [row[0] for row in free]
-        if not free_keys:
-            return []
-        await conn.execute(
-            text(
-                "INSERT INTO blob_objects (key, checksum, bytes, content_type, retention_class) "
-                "SELECT k, 'sha256:' || substr(k, 8), 0, 'application/octet-stream', "
-                "'ephemeral' FROM unnest(CAST(:k AS text[])) AS k ON CONFLICT (key) DO NOTHING"
-            ),
-            {"k": free_keys},
-        )
         marked = await conn.execute(
             text(
-                "UPDATE blob_objects SET removed_at = now(), removed_by = :op "
-                "WHERE key = ANY(:k) AND removed_at IS NULL RETURNING key"
+                "UPDATE blob_objects b SET removed_at = now(), removed_by = :op "
+                "WHERE b.key = ANY(:k) AND b.removed_at IS NULL AND NOT EXISTS "
+                "(SELECT 1 FROM blob_refs r WHERE r.blob_key = b.key AND r.removed_at IS NULL) "
+                "RETURNING b.key"
             ),
-            {"k": free_keys, "op": self.operation},
+            {"k": keys, "op": self.operation},
         )
         return sorted(row[0] for row in marked)
 
@@ -340,19 +327,11 @@ class RemovalEngine:
     ) -> list[str]:
         """Mark orphans that are still orphans: no live reference, and no upload
         since the time the caller saw (a `put` after the bucket listing keeps
-        its blob). A key with no `blob_objects` row gets one, at that time."""
+        its blob). `_ensure_rows` gave a key with no row one, at that time."""
         marked: list[str] = []
         for key, seen in sorted(orphans.items()):
             if not is_content_key(key):
                 continue  # never recorded: its row could not be addressed (F119)
-            await conn.execute(
-                text(
-                    "INSERT INTO blob_objects (key, checksum, bytes, content_type, "
-                    "retention_class, last_put_at) VALUES (:k, 'sha256:' || substr(:k, 8), 0, "
-                    "'application/octet-stream', 'ephemeral', :seen) ON CONFLICT (key) DO NOTHING"
-                ),
-                {"k": key, "seen": seen},
-            )
             found = await conn.execute(
                 text(
                     "UPDATE blob_objects SET removed_at = now(), removed_by = :op "
@@ -408,6 +387,23 @@ class RemovalEngine:
         """Test hook: called after the object is deleted, before the row records
         it, inside the row's lock. A crash here leaves `bucket_deleted_at` null,
         and the next run deletes the (already missing) object again."""
+
+
+async def _ensure_rows(conn: AsyncConnection, keys: Mapping[str, datetime | None]) -> None:
+    """Insert a placeholder `blob_objects` row for each content key that has none:
+    the batch can then lock it, and the bucket step can remove its object. Its
+    `last_put_at` is the time given (an orphan's last upload seen), else now."""
+    rows = [{"k": key, "seen": seen} for key, seen in sorted(keys.items()) if is_content_key(key)]
+    if rows:
+        await conn.execute(
+            text(
+                "INSERT INTO blob_objects (key, checksum, bytes, content_type, retention_class, "
+                "last_put_at) VALUES (:k, 'sha256:' || substr(:k, 8), 0, "
+                "'application/octet-stream', 'ephemeral', coalesce(CAST(:seen AS timestamptz), "
+                "now())) ON CONFLICT (key) DO NOTHING"
+            ),
+            rows,
+        )
 
 
 def _ref(row: Any) -> BlobRef:
