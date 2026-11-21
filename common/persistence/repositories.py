@@ -673,7 +673,8 @@ class RecordingBlobStore:
         2. in one transaction, `blob_objects` row first (locked by the upsert,
            the order every removal uses), clear any removal mark, set
            `last_put_at`, and write the task's upload reference;
-        3. upload through the inner store, which skips bytes it already holds.
+        3. upload through the inner store, which skips bytes it already holds,
+           still inside that transaction, holding the row lock (review F124).
 
         A task whose references a delete marked revives nothing (R25; review
         F80, F81): its upload reference is written with the delete's mark, the
@@ -731,9 +732,14 @@ class RecordingBlobStore:
                     retention=retention,
                     removed_by=deleted,
                 )
-        if deleted is not None and not live:
-            return make_ref(key, checksum, content_type, len(body), retention, datetime.now(UTC))
-        return await self.inner.put(body, content_type=content_type, retention=retention)
+            if deleted is not None and not live:
+                return make_ref(
+                    key, checksum, content_type, len(body), retention, datetime.now(UTC)
+                )
+            # Upload while this transaction holds the row lock: a removal marks
+            # the blob only after the bytes are in, so its bucket step deletes
+            # them, never before they land (review F124).
+            return await self.inner.put(body, content_type=content_type, retention=retention)
 
     async def check_live(self, key: str) -> None:
         """Raise `BlobExpired` if the blob's removal is recorded (R9, D6). A removed

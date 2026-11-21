@@ -556,3 +556,42 @@ async def test_a_deleted_tasks_conversation_and_tool_writes_are_refused(
             engine, f"SELECT count(*) FROM {table} WHERE {column} = :t", t=task.task_id
         )
         assert rows == (1 if table == "agent_messages" else 0), table
+
+
+class _SlowBucket(MemoryBlobStore):
+    """An inner store whose uploads wait until released."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.uploading, self.release = asyncio.Event(), asyncio.Event()
+        self.hold = False
+
+    async def put(self, data: Any, **kwargs: Any) -> BlobRef:
+        if self.hold:
+            self.uploading.set()
+            await self.release.wait()
+        return await super().put(data, **kwargs)
+
+
+async def test_an_upload_in_flight_during_a_delete_leaves_no_object_behind(
+    engine: AsyncEngine,
+) -> None:
+    """F124 (R10, D10): the upload happens under the blob's row lock, so a removal
+    that marks the blob deletes the object after it lands, never before."""
+    inner = _SlowBucket()
+    store = RecordingBlobStore(inner, engine)
+    request = f"req-del-{uuid.uuid4().hex[:8]}"
+    task = await record_task(engine, store, request_id=request)
+    inner.hold = True
+    data = b"workspace in flight " + task.task_id.encode()
+    uploading = asyncio.create_task(store.put(data, retention="checkpoint", task_id=task.task_id))
+    await asyncio.wait_for(inner.uploading.wait(), 10)
+    deleting = asyncio.create_task(
+        delete_request(engine, inner, temporal({task.task_id: "closed"}), request, force=True)
+    )
+    await asyncio.sleep(0.5)
+    inner.release.set()
+    ref = await uploading
+    await asyncio.wait_for(deleting, 60)
+    assert ref.key not in inner.objects  # removed with the rest of the task
+    assert await expired(store, ref)
