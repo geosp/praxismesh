@@ -8,6 +8,14 @@ delivers: [R1, R2, R4, R5, R14, R18, R19, R20]
 design_review: { status: passed, rounds: 3, last: 2026-11-20 }
 impl_review: { status: passed, rounds: 3, last: 2026-11-20 }
 approved: 2026-11-20
+verification: { status: passed, last: 2026-11-20 }
+demo: { status: passed, last: 2026-11-20 }
+evidence:
+  code_sha: 56c0170872fd14efa3f7902779284b9a32d382ba
+  docs_sha: 56c0170872fd14efa3f7902779284b9a32d382ba
+  review: docs/plans/2026-11-19-phase-3a-persistence-and-lifecycle/reviews.md
+  verification: docs/reviews/phase-3a/verification-persistence-01.md
+  demo: docs/demos/phase-3a-persistence-01.md
 ---
 
 # Phase 01 · Reference index, classes, audit log and the payload guard

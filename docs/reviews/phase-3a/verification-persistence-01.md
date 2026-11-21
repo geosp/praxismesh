@@ -28,7 +28,8 @@ own ports, `VLLM_BASE_URL=http://spark-01:8000`); the owner's `praxismesh` stack
 The plan, the phase file and the notes it links, README, AGENTS.md, the Makefile, the runbook,
 `schemas.md`, the threat model, the decision log and the overview. Raw reports:
 [raw/persistence-verification-phase-01-*.md](raw/). This phase has no demo checklist: the plan's
-demo is phase 03's (task 3.2), so there is no demo record for it.
+demo is phase 03's (task 3.2). The observed behaviour is collected in the acceptance walkthrough
+[docs/demos/phase-3a-persistence-01.md](../../demos/phase-3a-persistence-01.md).
 
 ## History
 
