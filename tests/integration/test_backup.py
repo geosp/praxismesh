@@ -12,8 +12,11 @@ workers. The drill (`make drill`) stops and starts real ones.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import signal
 import stat
+import sys
 from collections.abc import AsyncIterator, Iterator, Sequence
 from pathlib import Path
 from typing import IO, Any
@@ -25,33 +28,41 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from common.blob_store.s3 import S3BlobStore
 from common.persistence.removal import RemovalBusy, run_lock
 from common.persistence.repositories import RecordingBlobStore, make_engine
-from orchestrator.backup import MANIFEST, BackupFailed, DockerCompose, backup
+from orchestrator.backup import MANIFEST, WORKERS, BackupFailed, DockerCompose, backup
 from orchestrator.lifecycle import gc
 from tests.support.lifecycle import FakeTemporal, end_task, record_task
 from tests.support.stack import scratch_bucket
 
 pytestmark = pytest.mark.integration
 
+# Every worker is stopped; those running or restarting are started again (F200).
+STOP = "stop " + " ".join(WORKERS)
+START = "start worker-a worker-dsh-a"
+
 
 class RecordingCompose:
     """The real Compose, except that `worker-a` is reported running and its
-    `stop` and `start` are recorded, not run. `fail` makes that dump, or the
-    `stop`, fail."""
+    `stop` and `start` are recorded, not run; `worker-dsh-a` is reported
+    restarting. `fail` makes that dump, or the `stop`, fail."""
 
-    def __init__(self, fail: str | None = None) -> None:
+    def __init__(self, fail: str | None = None, *, fail_start: bool = False) -> None:
         self.real = DockerCompose.from_env()
         self.calls: list[str] = []
         self.fail = fail
+        self.fail_start = fail_start
 
     def run(self, args: Sequence[str], *, stdout: IO[bytes] | None = None) -> str:
         if args[0] == "ps":
-            return "db\ntemporal\nworker-a\n"
+            # worker-dsh-a is between restarts (F200): not `running`.
+            return "worker-dsh-a\n" if "restarting" in args else "db\ntemporal\nworker-a\n"
         if args[0] == "config":
             self.calls.append("config")
         if args[0] in ("stop", "start"):
             self.calls.append(" ".join(args))
             if args[0] == self.fail:
                 raise BackupFailed("stop failed partway (test)")
+            if args[0] == "start" and self.fail_start:
+                raise BackupFailed("start failed (test)")
             return ""
         if args[0] == "exec":
             self.calls.append(f"dump {args[-1]}")
@@ -94,11 +105,11 @@ async def test_a_backup_has_three_dumps_every_object_and_a_manifest(
 
     assert compose.calls == [
         "config",  # before anything stops: a failure here changes nothing
-        "stop worker-a",
+        STOP,
         "dump praxismesh",
         "dump temporal",
         "dump temporal_visibility",
-        "start worker-a",
+        START,
     ]
     assert refused and "another gc" in refused[0]
     for db in ("praxismesh", "temporal", "temporal_visibility"):
@@ -113,7 +124,8 @@ async def test_a_backup_has_three_dumps_every_object_and_a_manifest(
         )["Body"].read()
         assert obj["metadata"].get("retention") in {"transcript", "artifact"}
     assert manifest["migration"] and manifest["rows"]["tasks"] >= 1
-    assert manifest["workers_stopped"] == ["worker-a"]
+    assert manifest["workers_stopped"] == ["worker-a", "worker-dsh-a"]
+    assert (target / "workers-stopped").read_text().split() == ["worker-a", "worker-dsh-a"]
     assert any(i.startswith("paradedb/paradedb:") for i in manifest["images"])
     assert stat.S_IMODE(target.stat().st_mode) == 0o700  # clear-text data (F185)
 
@@ -124,8 +136,8 @@ async def test_the_workers_start_again_when_a_dump_fails(
     compose = RecordingCompose(fail="temporal")
     with pytest.raises(BackupFailed):
         await backup(engine, bucket, compose, to=tmp_path / "b")
-    assert compose.calls[:2] == ["config", "stop worker-a"]
-    assert compose.calls[-1] == "start worker-a"
+    assert compose.calls[:2] == ["config", STOP]
+    assert compose.calls[-1] == START
     assert not (tmp_path / "b" / MANIFEST).exists()  # incomplete: restore refuses it
     async with run_lock(engine):
         pass  # released: a removal can run now
@@ -181,7 +193,7 @@ async def test_the_workers_start_again_when_the_stop_fails(
     compose = RecordingCompose(fail="stop")
     with pytest.raises(BackupFailed, match="stop failed"):
         await backup(engine, bucket, compose, to=tmp_path / "b")
-    assert compose.calls[-1] == "start worker-a"
+    assert compose.calls[-1] == START
 
 
 async def test_a_backup_refused_on_the_lock_creates_nothing(
@@ -211,7 +223,67 @@ async def test_a_manifest_write_that_fails_leaves_no_manifest(
     def killed(*_: object) -> None:
         raise OSError("killed (test)")
 
+    await bucket.put(b"held by a task", retention="transcript")
     monkeypatch.setattr("orchestrator.backup.os.replace", killed)
     with pytest.raises(OSError, match="killed"):
         await backup(engine, bucket, RecordingCompose(), to=tmp_path / "b")
     assert not (tmp_path / "b" / MANIFEST).exists()
+
+
+async def test_a_bucket_that_does_not_exist_fails_a_backup_with_live_blobs(
+    engine: AsyncEngine, tmp_path: Path
+) -> None:
+    """A missing bucket while rows name live blobs (a wrong S3_BUCKET, a lost
+    volume) is not an empty stack (impl-review F198)."""
+    async with scratch_bucket("backup-live") as live:
+        await record_task(engine, RecordingBlobStore(live, engine))
+    async with scratch_bucket("backup-absent", create=False) as absent:
+        with pytest.raises(BackupFailed, match=r"no objects.*live"):
+            await backup(engine, absent, RecordingCompose(), to=tmp_path / "b")
+    assert not (tmp_path / "b" / MANIFEST).exists()
+
+
+async def test_a_failed_restart_keeps_the_error_that_caused_it(
+    engine: AsyncEngine, bucket: S3BlobStore, tmp_path: Path
+) -> None:
+    """The dump error is not replaced by the restart's (impl-review F205)."""
+    compose = RecordingCompose(fail="temporal", fail_start=True)
+    with pytest.raises(BackupFailed, match=r"dump of temporal failed.*start failed"):
+        await backup(engine, bucket, compose, to=tmp_path / "b")
+
+
+@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGHUP])
+async def test_a_signal_during_the_dumps_starts_the_workers_again(
+    bucket: S3BlobStore, tmp_path: Path, signum: int
+) -> None:
+    """A SIGTERM (a timeout, cron, a CI limit) or SIGHUP during the dumps runs
+    the restart, and the stopped workers were recorded first (impl-review F199)."""
+    calls = tmp_path / "calls"
+    target = tmp_path / "b"
+    child = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "tests.support.backup_child",
+        bucket.bucket,
+        str(target),
+        str(calls),
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        for _ in range(300):
+            if calls.exists() and "dump temporal" in calls.read_text():
+                break
+            await asyncio.sleep(0.1)
+        else:
+            pytest.fail("the backup never reached the temporal dump")
+        assert (target / "workers-stopped").read_text().split() == ["worker-a"]
+        child.send_signal(signum)
+        _, err = await asyncio.wait_for(child.communicate(), 30)
+        assert child.returncode == 2, err
+        assert b"signal" in err
+        assert calls.read_text().splitlines()[-1] == "start worker-a"
+        assert not (target / MANIFEST).exists()
+    finally:
+        if child.returncode is None:  # never leave it holding the run lock
+            child.kill()
+            await child.wait()

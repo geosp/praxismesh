@@ -26,9 +26,12 @@ import argparse
 import asyncio
 import json
 import os
+import signal
 import subprocess
 import sys
-from collections.abc import Awaitable, Callable, Sequence
+import threading
+from collections.abc import Awaitable, Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -39,7 +42,7 @@ from alembic.script import ScriptDirectory
 from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from common.blob_store.base import BlobError
 from common.blob_store.s3 import S3BlobStore
@@ -114,8 +117,40 @@ class DockerCompose:
 
 
 def running_workers(compose: Compose) -> list[str]:
-    up = set(compose.run(["ps", "--services", "--status", "running"]).split())
+    """The workers to start again: those running, and those between restarts
+    (`restart: unless-stopped`), which come back by themselves (F200)."""
+    up = set()
+    for state in ("running", "restarting"):
+        up |= set(compose.run(["ps", "--services", "--status", state]).split())
     return [w for w in WORKERS if w in up]
+
+
+@contextmanager
+def _signals_fail_the_backup() -> Iterator[None]:
+    """SIGTERM and SIGHUP raise `BackupFailed` where the backup is, even inside
+    a dump's `subprocess.run`, so its `finally` starts the workers again
+    (impl-review F199). Only in the main thread, where Python delivers signals."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    def interrupted(signum: int, _: object) -> None:
+        raise BackupFailed(f"interrupted by signal {signal.Signals(signum).name}")
+
+    previous = {s: signal.signal(s, interrupted) for s in (signal.SIGTERM, signal.SIGHUP)}
+    try:
+        yield
+    finally:
+        for s, handler in previous.items():
+            signal.signal(s, handler)
+
+
+async def _live_blobs(engine: AsyncEngine) -> int:
+    async with engine.connect() as conn:
+        found = await conn.scalar(
+            text("SELECT count(*) FROM blob_objects WHERE removed_at IS NULL")
+        )
+    return int(found or 0)
 
 
 def _safe_path(root: Path, key: str) -> Path:
@@ -169,11 +204,18 @@ def _write_atomic(path: Path, content: str) -> None:
         raise
 
 
+async def _table_rows(conn: AsyncConnection) -> dict[str, int]:
+    """Rows in each application table; a table not created yet is left out."""
+    counts: dict[str, int] = {}
+    for table in APP_TABLES:
+        if await conn.scalar(text(f"SELECT to_regclass('public.{table}') IS NOT NULL")):
+            counts[table] = int(await conn.scalar(text(f"SELECT count(*) FROM {table}")) or 0)
+    return counts
+
+
 async def _rows(engine: AsyncEngine) -> tuple[dict[str, int], str | None]:
     async with engine.connect() as conn:
-        counts = {
-            t: int(await conn.scalar(text(f"SELECT count(*) FROM {t}")) or 0) for t in APP_TABLES
-        }
+        counts = await _table_rows(conn)
         head = await conn.scalar(text("SELECT version_num FROM alembic_version"))
         return counts, head
 
@@ -200,28 +242,49 @@ async def backup(
         # Before anything stops: a failure here changes nothing.
         images = compose.run(["config", "--images"]).split()
         stopped = running_workers(compose)
-        try:
-            if stopped:
-                # Inside the `try`: a stop that fails partway may have stopped some.
-                compose.run(["stop", *stopped])
-            rows, head = await _rows(engine)
-            dumps: dict[str, int] = {}
-            # The application database first: no restored row names a blob newer
-            # than the bucket copy (notes.md#d8).
-            for db in DATABASES:
-                path = target / f"{db}.dump"
-                with path.open("wb") as out:
-                    compose.run(
-                        ["exec", "-T", "-u", "postgres", "db", "pg_dump", "-Fc", "-d", db],
-                        stdout=out,
-                    )
-                dumps[db] = path.stat().st_size
-        finally:
+        # Recorded first: after a SIGKILL, these are the workers to start again.
+        (target / "workers-stopped").write_text("".join(f"{w}\n" for w in stopped))
+
+        def start_again() -> None:
             if stopped:
                 compose.run(["start", *stopped])
+
+        with _signals_fail_the_backup():
+            try:
+                # Every worker, not only the running ones: one between restarts
+                # would come back during the dumps (F200). Inside the `try`: a
+                # stop that fails partway may have stopped some.
+                compose.run(["stop", *WORKERS])
+                rows, head = await _rows(engine)
+                dumps: dict[str, int] = {}
+                # The application database first: no restored row names a blob
+                # newer than the bucket copy (notes.md#d8).
+                for db in DATABASES:
+                    path = target / f"{db}.dump"
+                    with path.open("wb") as out:
+                        compose.run(
+                            ["exec", "-T", "-u", "postgres", "db", "pg_dump", "-Fc", "-d", db],
+                            stdout=out,
+                        )
+                    dumps[db] = path.stat().st_size
+            except BaseException as failure:
+                try:
+                    start_again()
+                except BackupFailed as e:  # keep the failure that caused it (F205)
+                    raise BackupFailed(
+                        f"{failure}; starting the workers again also failed: {e}"
+                    ) from failure
+                raise
+            start_again()
         if after_dumps is not None:
             await after_dumps()
         keys = await _list_bucket(store)
+        if not keys and (live := await _live_blobs(engine)):
+            # A missing or emptied bucket is not an empty stack (F198).
+            raise BackupFailed(
+                f"bucket {store.bucket} holds no objects, but {live} blob(s) are recorded "
+                "live: check S3_BUCKET and the s3 volume"
+            )
         objects = await asyncio.to_thread(_copy_bucket, store, keys, target / "blobs")
     manifest = {
         "format": FORMAT,
@@ -290,13 +353,7 @@ async def check_empty(engine: AsyncEngine, store: S3BlobStore, workflows: int) -
     problems: list[str] = []
     try:
         async with engine.connect() as conn:
-            held = []
-            for table in APP_TABLES:
-                exists = text(f"SELECT to_regclass('public.{table}') IS NOT NULL")
-                if not await conn.scalar(exists):
-                    continue  # a database restore has not migrated yet
-                if n := int(await conn.scalar(text(f"SELECT count(*) FROM {table}")) or 0):
-                    held.append(f"{table} {n}")
+            held = [f"{t} {n}" for t, n in (await _table_rows(conn)).items() if n]
             if held:
                 problems.append(f"the application database has rows: {', '.join(held)}")
     except DBAPIError as e:
