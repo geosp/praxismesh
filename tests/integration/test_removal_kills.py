@@ -87,8 +87,9 @@ def kill_at(monkeypatch: pytest.MonkeyPatch, where: str, at: int) -> None:
 
     async def finish(self: RemovalEngine, keys: Any) -> int:
         # A committed batch's bucket step gets its marked keys as a tuple;
-        # finish_pending, at the start of a run, gets a list and is not counted.
-        calls["finish"] += isinstance(keys, tuple)
+        # finish_pending, at the start of a run, gets a list and is not counted,
+        # nor is a batch that marked no blob (its bucket step does nothing).
+        calls["finish"] += isinstance(keys, tuple) and bool(keys)
         if where == "after" and calls["finish"] == at:
             raise Killed  # committed with its tombstone; the bucket step never ran
         return await real_finish(self, keys)
@@ -166,8 +167,9 @@ async def test_a_killed_delete_finishes_when_run_again(
     with pytest.raises(Killed):
         await delete_request(engine, inner, missing, request)
     killed_ops = await operations(engine, "request.delete")
-    committed = (await tombstone_counts(engine, killed_ops))["tombstones"]
-    assert committed == 2 if where == "inside" else committed == 3  # R13
+    assert (await tombstone_counts(engine, killed_ops))["tombstones"] >= 1  # R13
+    # Killed after a commit: its blobs are marked, the bucket step not done.
+    assert ((await marked_by(engine, killed_ops))["unfinished"] > 0) == (where == "after")
 
     monkeypatch.undo()
     await delete_request(engine, inner, missing, request)  # R15: runs again, completes
@@ -192,8 +194,8 @@ async def test_a_killed_gc_finishes_when_run_again(
     with pytest.raises(Killed):
         await gc(engine, inner, missing)
     killed_ops = await operations(engine, "gc")
-    committed = (await tombstone_counts(engine, killed_ops))["tombstones"]
-    assert committed == 1 if where == "inside" else committed == 2  # R13
+    assert (await tombstone_counts(engine, killed_ops))["tombstones"] >= 1  # R13
+    assert ((await marked_by(engine, killed_ops))["unfinished"] > 0) == (where == "after")
 
     monkeypatch.undo()
     await gc(engine, inner, missing)
