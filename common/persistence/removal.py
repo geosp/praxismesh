@@ -76,6 +76,9 @@ async def live_references(
 
 # The batch's own row changes, run inside its transaction; returns rows changed.
 RowChange = Callable[[AsyncConnection], Awaitable[int]]
+# Computes the batch's references inside its transaction, before any lock: for
+# a removal that learns its range only from the rows (an events prune).
+Collect = Callable[[AsyncConnection], Awaitable[Sequence["RefKey"]]]
 
 
 @dataclass
@@ -89,6 +92,8 @@ class Batch:
     rows: RowChange | None = None
     details: dict[str, Any] = field(default_factory=dict)
     task_locks: Sequence[str] = ()
+    collect: Collect | None = None  # adds references, before the locks
+    record_empty: bool = False  # commit a tombstone even if nothing changes
 
 
 @dataclass(frozen=True)
@@ -127,9 +132,11 @@ class RemovalEngine:
             except BaseException:
                 await transaction.rollback()
                 raise
-            if dry_run:
+            empty = (result.rows, result.references, result.blobs) == (0, 0, 0)
+            if dry_run or (empty and not batch.record_empty):
+                # Nothing to commit: an empty batch leaves no tombstone.
                 await transaction.rollback()
-                return result
+                return result if dry_run else BatchResult(0, 0, 0, (), None)
             await transaction.commit()
         await self.finish(result.marked)
         return result
@@ -137,7 +144,8 @@ class RemovalEngine:
     async def _batch(self, conn: AsyncConnection, batch: Batch, *, dry_run: bool) -> BatchResult:
         for task_id in sorted(set(batch.task_locks)):
             await conn.execute(TASK_LOCK, {"t": task_id})
-        refs = list(dict.fromkeys(batch.references))
+        collected = await batch.collect(conn) if batch.collect is not None else ()
+        refs = list(dict.fromkeys([*batch.references, *collected]))
         keys = sorted({r.blob_key for r in refs})
         if keys:
             await conn.execute(
@@ -160,7 +168,12 @@ class RemovalEngine:
             rows, marked_refs, len(marked), tuple(marked), None if dry_run else tombstone
         )
 
-    async def _mark_references(self, conn: AsyncConnection, refs: Iterable[RefKey]) -> int:
+    async def _mark_references(self, conn: AsyncConnection, refs: Sequence[RefKey]) -> int:
+        """Mark the references and count those this transaction marked, including
+        any the row changes marked themselves (a prune marks its events'):
+        `now()` is the transaction's start time, the same for every mark in it."""
+        if not refs:
+            return 0
         params = [
             {
                 "ht": r.holder_table,
@@ -171,20 +184,25 @@ class RemovalEngine:
             }
             for r in refs
         ]
-        if not params:
-            return 0
-        changed = 0
+        where = "holder_table = :ht AND holder_key = :hk AND holder_column = :hc AND blob_key = :b"
+        await conn.execute(
+            text(
+                f"UPDATE blob_refs SET removed_at = now(), removed_by = :op "
+                f"WHERE {where} AND removed_at IS NULL"
+            ),
+            params,
+        )
+        marked = 0
         for p in params:
-            result = await conn.execute(
+            found = await conn.execute(
                 text(
-                    "UPDATE blob_refs SET removed_at = now(), removed_by = :op "
-                    "WHERE holder_table = :ht AND holder_key = :hk AND holder_column = :hc "
-                    "AND blob_key = :b AND removed_at IS NULL"
+                    f"SELECT count(*) FROM blob_refs WHERE {where} "
+                    "AND removed_by = :op AND removed_at = now()"
                 ),
                 p,
             )
-            changed += result.rowcount
-        return changed
+            marked += int(found.scalar_one())
+        return marked
 
     async def _mark_free_blobs(self, conn: AsyncConnection, keys: list[str]) -> list[str]:
         """Mark each of `keys` with no live reference left; already-marked blobs

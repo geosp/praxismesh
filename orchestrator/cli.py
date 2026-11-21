@@ -9,7 +9,7 @@
 `./agentctl` runs this module with `infra/.env` (Phase 2 events plan D5):
 
     ./agentctl tail TASK_ID [--after N] [--no-follow]
-    ./agentctl events prune --task TASK_ID (--below N | --older-than 7d)
+    ./agentctl events prune --task TASK_ID (--below N | --older-than 7d) [--dry-run]
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ from common.persistence.repositories import (
     make_engine,
 )
 from common.schemas import TaskResult
+from orchestrator.lifecycle import prune_events
 from orchestrator.submit import prepare_task, start_task
 from registry.loader import load_registry
 
@@ -278,14 +279,33 @@ async def _closed() -> bool:
 
 
 async def prune(args: argparse.Namespace) -> int:
+    """`events prune` through the removal engine: batches with tombstones, the
+    events' references marked, and `--dry-run` (Phase 3A persistence plan D11)."""
     engine = make_engine()
     try:
-        base = await TableTransport(engine).prune(
-            args.task, below=args.below, older_than=args.older_than
+        totals, base = await prune_events(
+            engine,
+            S3BlobStore.from_env(),
+            args.task,
+            below=args.below,
+            older_than=args.older_than,
+            dry_run=args.dry_run,
         )
     finally:
         await engine.dispose()
-    print(json.dumps({"task_id": args.task, "retained_base": base}))
+    print(
+        json.dumps(
+            {
+                "task_id": args.task,
+                "retained_base": base,
+                "dry_run": args.dry_run,
+                "operation": totals.operation,
+                "events": totals.rows,
+                "references": totals.references,
+                "blobs": totals.blobs,
+            }
+        )
+    )
     return 0
 
 
@@ -320,6 +340,7 @@ def parser() -> argparse.ArgumentParser:
     which = pr.add_mutually_exclusive_group(required=True)
     which.add_argument("--below", type=int, help="delete offsets below this one")
     which.add_argument("--older-than", type=parse_duration, help="for example 7d, 12h, 30m")
+    pr.add_argument("--dry-run", action="store_true", help="print what would go; change nothing")
     return p
 
 
