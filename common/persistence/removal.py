@@ -25,7 +25,8 @@ the batch would change and changes nothing.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -34,11 +35,43 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from common.blob_store.base import BlobStore
+from common.errors import PraxisError
 from common.persistence.audit import AuditRepository
 from common.persistence.fence import TASK_LOCK
 from common.schemas import BlobRef
 
 BATCH_LIMIT = 500  # rows per batch at most (D4)
+
+# The session-level advisory lock every removal command and `agentctl backup`
+# hold for their whole run (D4): class 3, key 0.
+RUN_LOCK = (3, 0)
+
+
+class RemovalBusy(PraxisError):
+    """Another `gc`, `request delete`, `events prune` or backup is running."""
+
+
+@asynccontextmanager
+async def run_lock(engine: AsyncEngine) -> AsyncIterator[None]:
+    """Hold D4's run lock on a dedicated connection for the body; fail at once,
+    without waiting, if another run holds it. The lock is the session's, so it
+    lasts across the run's batch transactions and ends with the connection."""
+    async with engine.connect() as conn:
+        conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+        got = await conn.scalar(
+            text("SELECT pg_try_advisory_lock(:c, :k)"), {"c": RUN_LOCK[0], "k": RUN_LOCK[1]}
+        )
+        if not got:
+            raise RemovalBusy(
+                "another gc, request delete, events prune or backup is running; "
+                "try again when it ends"
+            )
+        try:
+            yield
+        finally:
+            await conn.execute(
+                text("SELECT pg_advisory_unlock(:c, :k)"), {"c": RUN_LOCK[0], "k": RUN_LOCK[1]}
+            )
 
 
 def operation_id(kind: str) -> str:

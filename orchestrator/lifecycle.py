@@ -21,6 +21,7 @@ from common.persistence.removal import (
     RefKey,
     RemovalEngine,
     operation_id,
+    run_lock,
 )
 
 
@@ -121,6 +122,28 @@ async def prune_events(
     if (below is None) == (older_than is None):
         raise ValueError("give exactly one of below and older_than")
     operation = operation_id("prune")
+    async with run_lock(engine):  # D4: one removal run at a time
+        totals = await _prune_events(
+            engine, blobs, workflow_id, operation, below, older_than, dry_run
+        )
+    async with engine.connect() as conn:
+        found = await conn.execute(
+            text("SELECT retained_base FROM event_logs WHERE workflow_id = :w"),
+            {"w": workflow_id},
+        )
+        base = found.scalar_one_or_none()
+    return totals, None if base is None else int(base)
+
+
+async def _prune_events(
+    engine: AsyncEngine,
+    blobs: BlobStore,
+    workflow_id: str,
+    operation: str,
+    below: int | None,
+    older_than: timedelta | None,
+    dry_run: bool,
+) -> Totals:
     removal = RemovalEngine(engine, blobs, operation)
     transport = TableTransport(engine)
     totals = Totals(operation)
@@ -141,10 +164,4 @@ async def prune_events(
         totals.add(result.rows, result.references, result.blobs)
         if dry_run:
             break  # one unlimited, rolled-back batch is the whole plan
-    async with engine.connect() as conn:
-        found = await conn.execute(
-            text("SELECT retained_base FROM event_logs WHERE workflow_id = :w"),
-            {"w": workflow_id},
-        )
-        base = found.scalar_one_or_none()
-    return totals, None if base is None else int(base)
+    return totals

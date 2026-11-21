@@ -4,10 +4,12 @@ their tombstones and references marked (Phase 3A persistence plan phase 02 task
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from sqlalchemy import text
@@ -15,7 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from common.blob_store import MemoryBlobStore
 from common.events import Expired, TableTransport, Writer
-from common.persistence.removal import BATCH_LIMIT, RemovalEngine, operation_id
+from common.persistence.removal import (
+    BATCH_LIMIT,
+    Batch,
+    RemovalBusy,
+    RemovalEngine,
+    operation_id,
+)
 from common.persistence.repositories import RecordingBlobStore, make_engine
 from common.schemas import BlobRef
 from common.schemas.events import AgentEvent
@@ -170,3 +178,38 @@ async def test_prune_marks_the_pruned_events_references(engine: AsyncEngine) -> 
         assert base == 2 and [m[0] for m in marks] == ["prune:direct"]
     async with engine.begin() as conn:  # the limit caps the events deleted
         assert await TableTransport(engine).prune(wf, below=3, conn=conn, limit=0) == 2
+
+
+async def test_a_second_run_fails_at_once_while_the_first_holds_the_lock(
+    engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D4: one removal run at a time, across all of its batches."""
+    wf, other = new_workflow(), new_workflow()
+    await publish(engine, wf, 1200)  # three batches
+    await publish(engine, other, 5)
+    between_batches = asyncio.Event()
+    resume = asyncio.Event()
+    real_run = RemovalEngine.run
+    runs = 0
+
+    async def pausing_run(self: RemovalEngine, batch: Batch, *, dry_run: bool = False) -> Any:
+        nonlocal runs
+        runs += 1
+        if runs == 2:  # after the first batch committed
+            between_batches.set()
+            await resume.wait()
+        return await real_run(self, batch, dry_run=dry_run)
+
+    monkeypatch.setattr(RemovalEngine, "run", pausing_run)
+    first = asyncio.create_task(prune_events(engine, MemoryBlobStore(), wf, below=1201))
+    await asyncio.wait_for(between_batches.wait(), 30)
+    with pytest.raises(RemovalBusy):  # at once, not after the first run
+        await asyncio.wait_for(
+            prune_events(engine, MemoryBlobStore(), other, below=6, dry_run=True), 5
+        )
+    resume.set()
+    totals, base = await first
+    assert (totals.batches, totals.rows, base) == (3, 1200, 1201)
+    monkeypatch.undo()
+    totals, base = await prune_events(engine, MemoryBlobStore(), other, below=6)  # free again
+    assert (totals.rows, base) == (5, 6)
