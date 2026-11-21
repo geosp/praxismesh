@@ -171,3 +171,36 @@ code_sha = docs_sha = 56c0170 (on origin/docs/92-phase-3a-01-verification). Reco
 
 ## 2026-11-20 · done · phase 01
 Tests, acceptance and verification passed at 56c0170 (verification-persistence-01.md); impl review round 3 passed; F114-F116 deferred to phase 02.
+
+## 2026-11-20 · impl-review · phase 02 · round 1 · changes-requested
+Diff base 9a81933..8012f6b (frozen review commit 8012f6b). Reviewers: contract ✅ · failure and retry ✅ · scope and composition ✅ (raw: docs/reviews/phase-3a/raw/persistence-impl-review-phase-02-round-1-*.md; the contract report was re-typed from the agent's hand-back after save-report refused my snippets). Before the round: the full integration suite from a clean worktree with `infra/.env` from the example, workers stopped: 320 passed.
+
+| ID | Sev | Lens | Req | Finding | Resolution |
+| --- | --- | --- | --- | --- | --- |
+| F117 | Major | contract | R25, R11 | The openai `SQLAlchemySession` (`agent_messages`) and `sample_mcp.record_order` (`idempotency_keys`, `sample_orders`) never check the fence, so a forced-deleted attempt still writes content rows | open |
+| F118 | Major | contract, scope | R25, D12 | The fencing row is `(max turn + 1, 1)`; `AttemptRepository.start` at that turn passes the fence and upserts over it | open |
+| F119 | Major | contract, failure, scope | R8, R15 | An orphan with a non-content key gets a row whose checksum fails `BlobRef` validation in the bucket step, so every later removal fails in `finish_pending` | open |
+| F120 | Major | contract | R6 | gc's rules for sessions, messages, inbox, idempotency keys, sample orders and the 30-day event prune have no gc test | open |
+| F121 | Major | contract | D3 | `ROW_RULES`, `DELETE_ROWS` and `EVENT_RETENTION` restate `TABLE_CLASS`; a changed or new class drifts silently | open |
+| F122 | Major | failure, scope | R24, R15 | A rerun of a killed delete rebuilds the task list from `request_id`, so a task that joined in between is deleted, or blocks the rerun if running | open |
+| F123 | Major | failure, scope, contract | R11 | Redaction skips any value that starts with `[deleted `, so model output can keep content (and the result's artifacts) unredacted | open |
+| F124 | Major | scope, failure | R6, R10, D10 | `put` uploads after its commit, outside the row lock; a removal that marks and bucket-deletes in between leaves an object no later run removes | open |
+| F125 | Nit | contract, failure, scope | R25, D10 | `delete_mark` recognises a deleted task only by a `delete:` reference mark; a task whose first batch marked no upload can revive a blob | open |
+| F126 | Nit | failure, scope | R3 | `_mark_free_blobs` checks freedom and marks in separate statements; a key with no `blob_objects` row is not locked, so a racing `put` can be marked | open |
+| F127 | Nit | contract, failure, scope | D4 | A dry run holds its row, blob and task locks until the end of the run | open |
+| F128 | Nit | contract, failure | D4 | A dry run skips `finish_pending`, so its plan omits earlier runs' bucket deletes | open |
+| F129 | Nit | contract, scope | D4 | The delete's first batch has no 500 cap (it must take every task lock at once) | open |
+| F130 | Nit | contract | R7, R21, D5 | `workflow_status` is tested only through fakes; a wrong namespace reads as `missing` | open |
+| F131 | Nit | contract | R9, R10 | Removal tests use `MemoryBlobStore`; S3 delete, listing pagination and `LastModified` are not observed | open |
+| F132 | Nit | contract, scope | R6, R7, R10, R22 | Gaps in assertions: gc keeps the next resubmit, kept tasks' workspaces readable, references marked, workspace blobs unreadable after a delete, upload refs in the kill test, `audit_log` kept, gc to `task output` | open |
+| F133 | Nit | contract | tests | `test_blob_expired.py` marks blobs on the stack database and leaves them for the next stack `gc` | open |
+| F134 | Nit | contract | reuse | Duplicates: the checkpoint holder key SQL, the event-refs query, two session-lock helpers and the lock SQL, `RefKey` vs `refs.Holder`, the placeholder `blob_objects` insert, two `drain` closures, test helpers (`tombstones`, `one`/`count`, event builders, fake Temporal) | open |
+| F135 | Nit | scope | R13 | gc's steps 3-5 count batches that committed nothing; `finish_pending` deletes are not reported | open |
+| F136 | Nit | failure | D6 | Placeholder rows keep 0 bytes and `application/octet-stream` after a revive | open |
+| F137 | Nit | failure | R9 | `check_live` then `inner.get` can give `BlobNotFound` if a bucket step lands between them | open |
+| F138 | Nit | failure | D4 | An unlock in `finally` on a broken connection hides the original error | open |
+| F139 | Nit | failure | R12, R21 | A forced end skips `end_task`'s message closing; open questions of a forced task stay open | open |
+| F140 | Nit | failure | R13 | A dry run rolls back a zero-count first batch even with `record_empty` | open |
+| F141 | Nit | failure, scope | task 1.5, 3.3 | Concurrency is tested only for prune; kill tests have no forced delete or join between runs | open |
+| F142 | Nit | contract | docs | The Phases table shows phase 02 as approved 0/10; the runbook says "no other request holds" (the rule is "no other live holder") and "checkpoint, event or message" | open |
+| F143 | Nit | engineer | R21 | (Engineer decision, 2026-11-20) Show why a forced task counted as ended (`closed` or `missing`) in the output, the dry run and the first tombstone | open |

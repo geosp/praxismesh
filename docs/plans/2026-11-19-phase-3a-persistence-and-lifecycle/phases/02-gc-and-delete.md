@@ -6,7 +6,7 @@ branch: feat/92-phase-3a-gc-and-delete
 base: 9a81933360104aa0d9abf9ed89db7c357fb17b8b
 delivers: [R3, R6, R7, R8, R9, R10, R11, R12, R13, R15, R21, R22, R24, R25]
 design_review: { status: passed, rounds: 3, last: 2026-11-20 }
-impl_review: { status: none, rounds: 0, last: null }
+impl_review: { status: changes-requested, rounds: 1, last: 2026-11-20 }
 approved: 2026-11-20
 ---
 
