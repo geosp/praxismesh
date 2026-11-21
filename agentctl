@@ -5,8 +5,11 @@
 #   ./agentctl gc [--dry-run]
 #   ./agentctl request delete REQ [--dry-run] [--force]
 #   ./agentctl reconcile [--reindex]
+#   ./agentctl backup [--to DIR]
 #   ./agentctl task submit|status|output ...
 # ENV_FILE selects another env file (default: infra/.env next to this script).
 ROOT=$(cd "$(dirname "$0")" && pwd) || exit 1
+# `agentctl backup` reads its Compose project name from this file.
+export ENV_FILE="${ENV_FILE:-$ROOT/infra/.env}"
 PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" exec uv run --project "$ROOT" \
-    --env-file "${ENV_FILE:-$ROOT/infra/.env}" python -m orchestrator.cli "$@"
+    --env-file "$ENV_FILE" python -m orchestrator.cli "$@"

@@ -31,7 +31,7 @@ SERVICES := db temporal temporal-ui s3
 JOBS := temporal-schema temporal-namespace
 JOB_TIMEOUT := 120
 
-.PHONY: help check up down reset status migrate db-roles smoke restart-check unhealthy-check logs registry-lock workers-up workers-down workers-check recovery-check benchmark observability-up observability-down demo-worker-loss task task-status task-output
+.PHONY: help check up down reset status migrate db-roles smoke restart-check unhealthy-check logs registry-lock workers-up workers-down workers-check recovery-check benchmark observability-up observability-down demo-worker-loss task task-status task-output backup restore drill
 
 help:
 	@echo "make up              start the stack and wait until it is healthy"
@@ -55,6 +55,9 @@ help:
 	@echo "make task-status ID=...             show a task: attempts, latest checkpoint, orders"
 	@echo "make demo-worker-loss               kill the worker container running a task (demo step 2)"
 	@echo "make task-output ID=... FILE=...    print one of a task's output files"
+	@echo "make backup                         back up the databases and the bucket into backups/"
+	@echo "make restore BACKUP=backups/...     restore a backup into an empty stack"
+	@echo "make drill                          back up, reset, restore and check (deletes the stack's data)"
 
 check:
 	@sh infra/check-prereqs.sh $(ENV_FILE)
@@ -116,6 +119,10 @@ unhealthy-check: check
 
 logs: check
 	@$(COMPOSE) logs -f --tail 100
+
+# Phase 3A persistence plan D8 (notes.md#d8): the workers stop during the dumps.
+backup: check
+	@$(UV) python -m orchestrator.cli backup
 
 # Record new template versions; existing entries are never rewritten.
 registry-lock:

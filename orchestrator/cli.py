@@ -13,6 +13,7 @@
     ./agentctl gc [--dry-run]
     ./agentctl request delete REQ [--dry-run] [--force]
     ./agentctl reconcile [--reindex]
+    ./agentctl backup [--to DIR]
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from common.persistence.repositories import (
     make_engine,
 )
 from common.schemas import TaskResult
+from orchestrator.backup import DockerCompose, backup
 from orchestrator.lifecycle import delete_request, gc, prune_events
 from orchestrator.reconcile import reconcile
 from orchestrator.submit import prepare_task, start_task
@@ -365,6 +367,22 @@ async def reconcile_command(args: argparse.Namespace) -> int:
     return 0 if report.clean else 1
 
 
+async def backup_command(args: argparse.Namespace) -> int:
+    """`agentctl backup [--to DIR]` (Phase 3A persistence plan D8)."""
+    engine = make_engine()
+    try:
+        where = await backup(
+            engine,
+            S3BlobStore.from_env(),
+            DockerCompose.from_env(),
+            to=Path(args.to) if args.to else None,
+        )
+    finally:
+        await engine.dispose()
+    print(json.dumps({"backup": str(where)}))
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="praxis")
     commands = p.add_subparsers(dest="group", required=True)
@@ -405,6 +423,10 @@ def parser() -> argparse.ArgumentParser:
     rc.add_argument(
         "--reindex", action="store_true", help="index unindexed references first (idempotent)"
     )
+    b = commands.add_parser(
+        "backup", help="dump the three databases and copy the bucket (stops the workers)"
+    )
+    b.add_argument("--to", help="an empty directory to create (default backups/<UTC time>)")
     req = commands.add_parser("request").add_subparsers(dest="command", required=True)
     d = req.add_parser("delete", help="delete a request's data: blobs, content, events")
     d.add_argument("request_id")
@@ -420,7 +442,7 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str]) -> int:
     args = parser().parse_args(argv)
     configure_logging(os.environ.get("LOG_LEVEL", "INFO"), stream=sys.stderr)
-    command = args.group if args.group in ("tail", "gc", "reconcile") else args.command
+    command = args.group if args.group in ("tail", "gc", "reconcile", "backup") else args.command
     handler = {
         "submit": submit,
         "status": status,
@@ -429,6 +451,7 @@ def main(argv: list[str]) -> int:
         "prune": prune,
         "gc": gc_command,
         "reconcile": reconcile_command,
+        "backup": backup_command,
         "delete": request_delete,
     }[command]
     try:

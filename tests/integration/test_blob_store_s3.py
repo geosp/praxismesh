@@ -44,3 +44,12 @@ async def test_list_objects_names_every_object(store: S3BlobStore) -> None:
     listing = await store.list_objects()
     assert set(listing) == {r.key for r in refs}
     assert all(listing[r.key].size == r.bytes for r in refs)
+
+
+async def test_a_bucket_not_yet_created_lists_nothing() -> None:
+    """The bucket is created on first use; until then reconcile and gc see an
+    empty one (Phase 3A persistence plan phase 03)."""
+    os.environ.setdefault("S3_BUCKET", "praxismesh")
+    s3 = S3BlobStore.from_env()
+    s3.bucket = f"absent-{run_id()}"
+    assert await s3.list_objects() == {}
