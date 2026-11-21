@@ -22,6 +22,8 @@ set -euo pipefail
 backup=${1:-}
 : "${PROJECT_NAME:?run this through 'make restore BACKUP=...'}"
 : "${ENV_FILE:?run this through 'make restore BACKUP=...'}"
+# In step with DATABASES and WORKERS in orchestrator/backup.py, and the databases
+# with infra/db/databases.sh (impl-review F181).
 DATABASES="praxismesh temporal temporal_visibility"
 WORKERS="orchestrator worker-a worker-b worker-dsh-a worker-dsh-b"
 MARK=praxismesh-restore-in-progress

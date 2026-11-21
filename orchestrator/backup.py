@@ -49,6 +49,8 @@ from common.persistence.repositories import make_engine
 from common.persistence.retention import APP_TABLES
 
 ROOT = Path(__file__).resolve().parents[1]
+# Keep these two in step with DATABASES and WORKERS in infra/restore.sh, and the
+# databases with infra/db/databases.sh (impl-review F181).
 DATABASES = ("praxismesh", "temporal", "temporal_visibility")
 # Services that write rows, blobs or Workflow state (infra/docker-compose.yml).
 WORKERS = ("orchestrator", "worker-a", "worker-b", "worker-dsh-a", "worker-dsh-b")
