@@ -124,6 +124,15 @@ logs: check
 backup: check
 	@$(UV) python -m orchestrator.cli backup
 
+# Into an empty stack only (R23); prints reconcile's report (notes.md#d8).
+restore: check
+	@PROJECT_NAME="$(PROJECT_NAME)" bash infra/restore.sh "$(BACKUP)"
+
+# Backup, reset, restore and checks on this stack (notes.md#d8). Deletes the
+# stack's data; never part of `make smoke`. CI runs it after the smoke tests.
+drill: check
+	@PROJECT_NAME="$(PROJECT_NAME)" MAKE="$(MAKE)" bash infra/drill.sh
+
 # Record new template versions; existing entries are never rewritten.
 registry-lock:
 	@uv run python -m registry.lock

@@ -26,6 +26,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init.sh:/docker-entrypoint-initdb.d/20_praxismesh.sh:ro
+      - ./db/databases.sh:/usr/local/bin/praxismesh-databases:ro
       - ./db/roles.sh:/usr/local/bin/praxismesh-roles:ro
       - ./db/healthcheck.sh:/usr/local/bin/praxismesh-healthcheck:ro
     ports:
