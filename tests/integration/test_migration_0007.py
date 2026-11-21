@@ -9,6 +9,7 @@ database is never migrated or seeded here.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -243,3 +244,13 @@ async def test_new_defaults_and_checks(scratch: tuple[str, AsyncEngine]) -> None
             await conn.execute(
                 text("INSERT INTO task_inbox (task_id, retention_class) VALUES ('u', 'forever')")
             )
+
+
+async def test_an_in_process_migration_keeps_existing_loggers(
+    scratch: tuple[str, AsyncEngine],
+) -> None:
+    """Alembic's `fileConfig` disables loggers that already exist unless told not
+    to; the harness's refusal log lines then vanish from later tests."""
+    harness = logging.getLogger("praxis.harness")
+    await migrate(scratch[0], "0007")
+    assert not harness.disabled
