@@ -4,7 +4,6 @@ transaction, then the bucket, and a rerun that finishes what a crash left
 
 from __future__ import annotations
 
-import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -16,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from common.blob_store import BlobExpired, MemoryBlobStore
 from common.persistence.removal import Batch, RemovalEngine, live_references, operation_id
 from common.persistence.repositories import RecordingBlobStore
-from tests.support.lifecycle import StoredTask, end_task, record_task
+from tests.support.lifecycle import StoredTask, end_task, record_task, tombstones
 from tests.support.scratch_db import scratch_database
 
 pytestmark = pytest.mark.integration
@@ -37,22 +36,6 @@ async def task_batch(engine: AsyncEngine, stored: StoredTask, op: str) -> Batch:
     async with engine.connect() as conn:
         held = await live_references(conn, [stored.task_id])
     return Batch("test.remove", f"task:{stored.task_id}", held, details={"reason": op})
-
-
-async def tombstones(engine: AsyncEngine, op: str) -> list[dict[str, object]]:
-    async with engine.connect() as conn:
-        rows = await conn.execute(
-            text("SELECT action, subject, details FROM audit_log WHERE operation_id = :o"),
-            {"o": op},
-        )
-        return [
-            {
-                "action": r[0],
-                "subject": r[1],
-                **(r[2] if isinstance(r[2], dict) else json.loads(r[2])),
-            }
-            for r in rows
-        ]
 
 
 async def blob_state(engine: AsyncEngine, key: str) -> tuple[bool, bool]:
@@ -89,8 +72,8 @@ async def test_a_shared_blob_survives_while_another_task_holds_it(engine: AsyncE
     assert a.instructions.key not in inner.objects  # the bucket step ran
     assert await blob_state(engine, a.instructions.key) == (True, True)
     [stone] = await tombstones(engine, op)
-    assert stone["rows"] == 0 and stone["references"] == result.references
-    assert stone["blobs"] == 1 and stone["subject"] == f"task:{a.task_id}"
+    assert stone.details["rows"] == 0 and stone.details["references"] == result.references
+    assert stone.details["blobs"] == 1 and stone.subject == f"task:{a.task_id}"
 
 
 async def test_a_dry_run_changes_nothing_and_reports_the_same_counts(engine: AsyncEngine) -> None:

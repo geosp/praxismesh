@@ -19,12 +19,20 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from common.blob_store import BlobExpired, MemoryBlobStore
-from common.events import TableTransport, Writer
+from common.events import TableTransport
 from common.persistence.removal import RemovalBusy, run_lock
 from common.persistence.repositories import Checkpoint, CheckpointRepository, RecordingBlobStore
-from common.schemas.events import AgentEvent
 from orchestrator.lifecycle import GcRefused, WorkflowStatus, gc
-from tests.support.lifecycle import StoredTask, end_task, new_task_id, record_task
+from tests.support.lifecycle import (
+    FakeTemporal,
+    StoredTask,
+    content_rows,
+    end_task,
+    new_task_id,
+    one,
+    publish_events,
+    record_task,
+)
 from tests.support.scratch_db import scratch_database
 
 pytestmark = pytest.mark.integration
@@ -36,18 +44,6 @@ NOW = datetime.now(UTC)
 async def engine() -> AsyncIterator[AsyncEngine]:
     async with scratch_database("head") as (_, eng):
         yield eng
-
-
-class Temporal:
-    """Fake Workflow statuses, by task ID; unknown IDs are missing."""
-
-    def __init__(self, **status: WorkflowStatus) -> None:
-        self.status = status
-        self.asked: list[str] = []
-
-    async def __call__(self, task_id: str) -> WorkflowStatus:
-        self.asked.append(task_id)
-        return self.status.get(task_id, "missing")
 
 
 async def ended(
@@ -71,11 +67,6 @@ async def checkpoint(engine: AsyncEngine, store: RecordingBlobStore, stored: Sto
     await CheckpointRepository(engine).insert(
         Checkpoint(f"{stored.task_id}:1:1:0", stored.task_id, 1, 1, 0, stored.task_id, 0, ws, None)
     )
-
-
-async def count(engine: AsyncEngine, sql: str, **params: object) -> int:
-    async with engine.connect() as conn:
-        return int((await conn.execute(text(sql), params)).scalar_one())
 
 
 async def set_last_put(engine: AsyncEngine, key: str, at: datetime) -> None:
@@ -107,13 +98,12 @@ async def test_gc_removes_what_expired_and_keeps_the_rest(engine: AsyncEngine) -
     ancient = await ended(engine, store, 400)
     audit = await store.put(b"audit record", retention="audit", task_id=ancient.task_id)
 
-    totals = await gc(engine, inner, Temporal())
+    totals = await gc(engine, inner, FakeTemporal())
 
     # R6: the 8-day-old task's checkpoints, their references, the late upload
     # and the blobs left without a live reference are gone.
     assert (
-        await count(engine, "SELECT count(*) FROM checkpoints WHERE task_id = :t", t=old.task_id)
-        == 0
+        await one(engine, "SELECT count(*) FROM checkpoints WHERE task_id = :t", t=old.task_id) == 0
     )
     assert late.key not in inner.objects
     assert f"workspace {old.task_id}".encode() not in {o.data for o in inner.objects.values()}
@@ -122,9 +112,7 @@ async def test_gc_removes_what_expired_and_keeps_the_rest(engine: AsyncEngine) -
     # R7: a task ended 6 days ago, and a running one, keep their checkpoints.
     for kept in (recent, running):
         assert (
-            await count(
-                engine, "SELECT count(*) FROM checkpoints WHERE task_id = :t", t=kept.task_id
-            )
+            await one(engine, "SELECT count(*) FROM checkpoints WHERE task_id = :t", t=kept.task_id)
             == 1
         )
     assert await readable(store, recent, "instructions")
@@ -133,7 +121,7 @@ async def test_gc_removes_what_expired_and_keeps_the_rest(engine: AsyncEngine) -
     assert not await readable(store, ancient, "out.md")
     assert await store.get(audit) == b"audit record"
     assert (
-        await count(engine, "SELECT count(*) FROM tasks WHERE task_id = :t", t=ancient.task_id) == 1
+        await one(engine, "SELECT count(*) FROM tasks WHERE task_id = :t", t=ancient.task_id) == 1
     )
     assert totals.blobs >= 3 and totals.batches >= 3
     reasons = set(totals.by_reason)
@@ -145,7 +133,7 @@ async def test_every_batch_has_a_tombstone_and_the_counts_add_up(engine: AsyncEn
     store = RecordingBlobStore(inner, engine)
     for _ in range(3):
         await ended(engine, store, 100)
-    totals = await gc(engine, inner, Temporal())
+    totals = await gc(engine, inner, FakeTemporal())
     async with engine.connect() as conn:
         rows = await conn.execute(
             text("SELECT action, details FROM audit_log WHERE operation_id = :o"),
@@ -162,15 +150,13 @@ async def test_a_dry_run_reports_the_same_plan_and_changes_nothing(engine: Async
     store = RecordingBlobStore(inner, engine)
     old = await ended(engine, store, 100)
     objects = dict(inner.objects)
-    dry = await gc(engine, inner, Temporal(), dry_run=True)
+    dry = await gc(engine, inner, FakeTemporal(), dry_run=True)
     assert inner.objects == objects and await readable(store, old, "out.md")
     assert (
-        await count(
-            engine, "SELECT count(*) FROM audit_log WHERE operation_id = :o", o=dry.operation
-        )
+        await one(engine, "SELECT count(*) FROM audit_log WHERE operation_id = :o", o=dry.operation)
         == 0
     )
-    real = await gc(engine, inner, Temporal())
+    real = await gc(engine, inner, FakeTemporal())
     assert (dry.rows, dry.references, dry.blobs, dry.by_reason) == (
         real.rows,
         real.references,
@@ -184,43 +170,26 @@ async def test_wake_and_batch_rows_expire_with_their_task(engine: AsyncEngine) -
     store = RecordingBlobStore(inner, engine)
     old = await ended(engine, store, 2)  # ephemeral (1 day) past; transcript (30) not
     waiting = await record_task(engine, store)  # still running
-    await TableTransport(engine).publish(
-        old.task_id,
-        Writer(old.task_id, 1, 1),
-        f"{old.task_id}:1:1:0",
-        [
-            AgentEvent(
-                seq=0,
-                timestamp=NOW,
-                workflow_id=old.task_id,
-                task_id=old.task_id,
-                attempt_id=f"{old.task_id}:1:1",
-                type="token",
-                payload={},
-            )
-        ],
-    )
+    await publish_events(engine, old.task_id, 1)
     async with engine.begin() as conn:
         for workflow, created in ((old.task_id, NOW), (waiting.task_id, NOW - timedelta(days=9))):
             await conn.execute(
                 text("INSERT INTO message_wakes (recipient_workflow, created_at) VALUES (:w, :c)"),
                 {"w": workflow, "c": created},
             )
-    await gc(engine, inner, Temporal())
+    await gc(engine, inner, FakeTemporal())
     assert (
-        await count(
+        await one(
             engine, "SELECT count(*) FROM event_batches WHERE workflow_id = :w", w=old.task_id
         )
         == 0
     )
     assert (
-        await count(
-            engine, "SELECT count(*) FROM agent_events WHERE workflow_id = :w", w=old.task_id
-        )
+        await one(engine, "SELECT count(*) FROM agent_events WHERE workflow_id = :w", w=old.task_id)
         == 1
     )
     assert (
-        await count(
+        await one(
             engine,
             "SELECT count(*) FROM message_wakes WHERE recipient_workflow = :w",
             w=old.task_id,
@@ -229,7 +198,7 @@ async def test_wake_and_batch_rows_expire_with_their_task(engine: AsyncEngine) -
     )
     # An undelivered wake for a task still running is kept, however old (ADR-0010).
     assert (
-        await count(
+        await one(
             engine,
             "SELECT count(*) FROM message_wakes WHERE recipient_workflow = :w",
             w=waiting.task_id,
@@ -247,7 +216,7 @@ async def test_orphans_wait_for_the_safety_window(engine: AsyncEngine) -> None:
     await set_last_put(engine, new.key, NOW - timedelta(hours=1))
     stray = f"sha256/{uuid.uuid4().hex * 2}"  # in the bucket with no row at all
     inner.objects[stray] = replace(inner.objects[old.key], created_at=NOW - timedelta(hours=30))
-    totals = await gc(engine, inner, Temporal())
+    totals = await gc(engine, inner, FakeTemporal())
     assert old.key not in inner.objects and stray not in inner.objects  # R8
     assert new.key in inner.objects
     assert totals.by_reason["orphans"]["blobs"] == 2
@@ -264,7 +233,7 @@ async def test_rowless_uploads_go_only_when_the_workflow_is_not_running(
     for ref in (gone, kept):
         await set_last_put(engine, ref.key, NOW - timedelta(hours=30))
     statuses: dict[str, WorkflowStatus] = {closed: "closed", queued: "running"}
-    temporal = Temporal(**statuses)
+    temporal = FakeTemporal(statuses)
     await gc(engine, inner, temporal)
     assert gone.key not in inner.objects  # D5: no row, Workflow closed
     assert kept.key in inner.objects  # R7: queued for a worker, kept
@@ -278,14 +247,14 @@ async def test_gc_refuses_while_a_reference_is_unindexed(engine: AsyncEngine) ->
     async with engine.begin() as conn:
         await conn.execute(text("DELETE FROM blob_refs WHERE holder_table = 'tasks'"))
     with pytest.raises(GcRefused, match="reconcile --reindex"):
-        await gc(engine, inner, Temporal())
+        await gc(engine, inner, FakeTemporal())
     assert await readable(store, old, "out.md")  # nothing removed
 
 
 async def test_gc_fails_at_once_while_another_run_holds_the_lock(engine: AsyncEngine) -> None:
     async with run_lock(engine):
         with pytest.raises(RemovalBusy):
-            await gc(engine, MemoryBlobStore(), Temporal())
+            await gc(engine, MemoryBlobStore(), FakeTemporal())
 
 
 async def test_an_object_that_is_not_a_content_key_is_reported_not_removed(
@@ -300,12 +269,12 @@ async def test_an_object_that_is_not_a_content_key_is_reported_not_removed(
     inner.objects["notes/readme.txt"] = replace(
         inner.objects[real.key], created_at=NOW - timedelta(days=3)
     )
-    first = await gc(engine, inner, Temporal())
-    second = await gc(engine, inner, Temporal())
+    first = await gc(engine, inner, FakeTemporal())
+    second = await gc(engine, inner, FakeTemporal())
     assert "notes/readme.txt" in inner.objects and real.key not in inner.objects
     assert first.unrecognised == ["notes/readme.txt"] == second.unrecognised
     assert (
-        await count(engine, "SELECT count(*) FROM blob_objects WHERE key = 'notes/readme.txt'") == 0
+        await one(engine, "SELECT count(*) FROM blob_objects WHERE key = 'notes/readme.txt'") == 0
     )
 
 
@@ -327,12 +296,78 @@ async def test_an_orphan_uploaded_after_the_listing_is_kept_and_not_counted(
         return [replace(o, last_put_at=NOW - timedelta(hours=30)) for o in found]
 
     monkeypatch.setattr(refs, "orphaned", stale_listing)
-    totals = await gc(engine, inner, Temporal())
+    totals = await gc(engine, inner, FakeTemporal())
     assert ref.key in inner.objects
     assert "orphans" not in totals.by_reason and totals.batches == 0
     assert (
-        await count(
+        await one(
             engine, "SELECT count(*) FROM audit_log WHERE operation_id = :o", o=totals.operation
         )
         == 0
+    )
+
+
+async def test_every_row_rule_and_the_event_prune_expire_with_their_task(
+    engine: AsyncEngine,
+) -> None:
+    """F120 (R6, R7): each of gc's row rules and its event prune, on a task that
+    ended 400 days ago; a message to a task still running is kept."""
+    from orchestrator import cli
+
+    inner = MemoryBlobStore()
+    store = RecordingBlobStore(inner, engine)
+    old = await ended(engine, store, 400)
+    running = await record_task(engine, store)
+    await content_rows(engine, old.task_id, old.request_id)
+    await publish_events(engine, old.task_id, 5)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO task_messages (message_id, request_id, sender_task, recipient_task, "
+                "kind, status, body, idempotency_key) VALUES (:m, :r, :s, :t, 'send', 'pending', "
+                "'to a running task', :m)"
+            ),
+            {
+                "m": f"{old.task_id}:open",
+                "r": old.request_id,
+                "s": old.task_id,
+                "t": running.task_id,
+            },
+        )
+        await conn.execute(
+            text("UPDATE tasks SET ended_at = :at WHERE task_id = :t"),
+            {"at": NOW - timedelta(days=400), "t": old.task_id},
+        )
+    totals = await gc(engine, inner, FakeTemporal())
+
+    t = old.task_id
+    for table, column in (
+        ("checkpoints", "task_id"),
+        ("agent_sessions", "session_id"),
+        ("agent_messages", "session_id"),
+        ("task_inbox", "task_id"),
+        ("idempotency_keys", "task_id"),
+        ("sample_orders", "task_id"),
+        ("event_batches", "workflow_id"),
+        ("agent_events", "workflow_id"),
+    ):
+        assert await one(engine, f"SELECT count(*) FROM {table} WHERE {column} = :t", t=t) == 0, (
+            table
+        )
+    # The message to itself went; the one to a running task is kept.
+    assert await one(engine, "SELECT count(*) FROM task_messages WHERE sender_task = :t", t=t) == 1
+    assert (
+        await one(engine, "SELECT retained_base FROM event_logs WHERE workflow_id = :t", t=t) == 6
+    )
+    lines: list[str] = []
+
+    async def closed() -> bool:
+        return True
+
+    await cli.print_events(
+        TableTransport(engine), t, 0, follow=False, closed=closed, write=lines.append
+    )
+    assert lines == ["expired: events before 6 were pruned"]
+    assert {"events expired", "agent_sessions expired", "task_messages expired"} <= set(
+        totals.by_reason
     )

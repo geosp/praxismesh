@@ -26,8 +26,8 @@ from common.persistence.repositories import (
     CheckpointRepository,
     RecordingBlobStore,
 )
-from orchestrator.lifecycle import WorkflowStatus, delete_request, gc
-from tests.support.lifecycle import StoredTask, end_task, new_task_id, record_task
+from orchestrator.lifecycle import delete_request, gc
+from tests.support.lifecycle import FakeTemporal, StoredTask, end_task, new_task_id, record_task
 from tests.support.scratch_db import scratch_database
 
 pytestmark = pytest.mark.integration
@@ -41,10 +41,6 @@ class Killed(Exception):
 async def engine() -> AsyncIterator[AsyncEngine]:
     async with scratch_database("head") as (_, eng):
         yield eng
-
-
-async def missing(task_id: str) -> WorkflowStatus:
-    return "missing"
 
 
 async def stored_task(
@@ -165,14 +161,16 @@ async def test_a_killed_delete_finishes_when_run_again(
         await stored_task(engine, store, request, 0)
     kill_at(monkeypatch, where, 3)
     with pytest.raises(Killed):
-        await delete_request(engine, inner, missing, request)
+        await delete_request(engine, inner, FakeTemporal(), request)
     killed_ops = await operations(engine, "request.delete")
     assert (await tombstone_counts(engine, killed_ops))["tombstones"] >= 1  # R13
     # Killed after a commit: its blobs are marked, the bucket step not done.
     assert ((await marked_by(engine, killed_ops))["unfinished"] > 0) == (where == "after")
 
     monkeypatch.undo()
-    rerun = await delete_request(engine, inner, missing, request)  # R15: runs again, completes
+    rerun = await delete_request(
+        engine, inner, FakeTemporal(), request
+    )  # R15: runs again, completes
     assert (rerun.finished > 0) == (where == "after")  # F135: reported
     await check_consistent(engine, inner, "request.delete")
     async with engine.connect() as conn:
@@ -193,14 +191,14 @@ async def test_a_killed_gc_finishes_when_run_again(
         await stored_task(engine, store, f"req-kill-{uuid.uuid4().hex[:8]}", 100)
     kill_at(monkeypatch, where, 2)
     with pytest.raises(Killed):
-        await gc(engine, inner, missing)
+        await gc(engine, inner, FakeTemporal())
     killed_ops = await operations(engine, "gc")
     assert (await tombstone_counts(engine, killed_ops))["tombstones"] >= 1  # R13
     assert ((await marked_by(engine, killed_ops))["unfinished"] > 0) == (where == "after")
 
     monkeypatch.undo()
-    rerun = await gc(engine, inner, missing)
+    rerun = await gc(engine, inner, FakeTemporal())
     assert (rerun.finished > 0) == (where == "after")  # F135: reported
     await check_consistent(engine, inner, "gc")
-    again = await gc(engine, inner, missing)  # nothing left: nothing counted twice
+    again = await gc(engine, inner, FakeTemporal())  # nothing left: nothing counted twice
     assert (again.rows, again.references, again.blobs) == (0, 0, 0)
