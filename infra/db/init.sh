@@ -5,10 +5,9 @@
 # 10_bootstrap_paradedb.sh. It never runs again on an existing volume, so a
 # failed init or a changed password needs `make reset`.
 #
-# ParadeDB's bootstrap installs its extensions (pg_search, vector, postgis, ...)
-# into template1 and its own `paradedb` database, and pg_cron into `postgres`. All three databases are created from template0
-# instead, so Temporal's databases carry no extensions and the application
-# database gets only what this script adds (ADR-0002).
+# The databases, their CONNECT grants and extensions are in databases.sh
+# (mounted as praxismesh-databases), which infra/restore.sh runs again after it
+# drops them (Phase 3A persistence plan D8).
 #
 # The last statement writes the marker the health check reads, so `db` reports
 # healthy only after every step here has succeeded. The marker is a comment on
@@ -22,20 +21,9 @@ psql -v ON_ERROR_STOP=1 -d postgres \
     -v temporal_pw="$TEMPORAL_DB_PASSWORD" -v app_pw="$APP_DB_PASSWORD" <<'EOSQL'
 CREATE ROLE temporal LOGIN PASSWORD :'temporal_pw';
 CREATE ROLE praxismesh LOGIN PASSWORD :'app_pw';
-
-CREATE DATABASE temporal OWNER temporal TEMPLATE template0;
-CREATE DATABASE temporal_visibility OWNER temporal TEMPLATE template0;
-CREATE DATABASE praxismesh OWNER praxismesh TEMPLATE template0;
-
-REVOKE CONNECT ON DATABASE postgres, paradedb, temporal, temporal_visibility, praxismesh FROM PUBLIC;
-GRANT CONNECT ON DATABASE temporal, temporal_visibility TO temporal;
-GRANT CONNECT ON DATABASE praxismesh TO praxismesh;
 EOSQL
 
-psql -v ON_ERROR_STOP=1 -d praxismesh <<'EOSQL'
--- pg_search 0.26 requires the vector extension (pgvector).
-CREATE EXTENSION IF NOT EXISTS pg_search CASCADE;
-EOSQL
+bash /usr/local/bin/praxismesh-databases
 
 # The comms role (Phase 2 messaging D13), before the marker, so a healthy `db`
 # already has it when migration 0006 grants it the message tables.

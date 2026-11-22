@@ -8,16 +8,15 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Literal, Protocol
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from common.blob_store.base import BlobStore, BucketObject
+from common.blob_store.base import BlobStore, Bucket
 from common.errors import PraxisError
 from common.events import TableTransport
 from common.persistence import refs
@@ -39,6 +38,7 @@ from common.persistence.removal import (
 )
 from common.persistence.retention import DEFAULT_LIFETIME, SAFETY_WINDOW, TABLE_CLASS
 from common.schemas import RetentionClass
+from orchestrator.workflow_status import StatusOf
 
 
 @dataclass
@@ -213,16 +213,6 @@ async def _prune_events(
 
 
 # ---- gc (R6, R7, R8; D3, D4, D5) ----
-
-WorkflowStatus = Literal["running", "closed", "missing"]
-# The status of a task's Workflow (its ID is the task ID), from Temporal.
-StatusOf = Callable[[str], Awaitable[WorkflowStatus]]
-
-
-class Bucket(BlobStore, Protocol):
-    """The inner store, which can also list its objects (the orphan check)."""
-
-    async def list_objects(self) -> dict[str, BucketObject]: ...
 
 
 class GcRefused(PraxisError):

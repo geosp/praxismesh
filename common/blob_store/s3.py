@@ -158,7 +158,8 @@ class S3BlobStore:
 
     async def list_objects(self) -> dict[str, BucketObject]:
         """Every object in the bucket, by key (Phase 3A persistence plan, the
-        orphan check). Not part of the `BlobStore` protocol."""
+        orphan check). Not part of the `BlobStore` protocol. A bucket not yet
+        created (it is created on first use) holds nothing."""
 
         def listing() -> dict[str, BucketObject]:
             found: dict[str, BucketObject] = {}
@@ -171,5 +172,9 @@ class S3BlobStore:
 
         try:
             return await asyncio.to_thread(listing)
-        except (ClientError, BotoCoreError, EndpointConnectionError) as e:
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") == "NoSuchBucket":
+                return {}
+            raise _translate(e, self.bucket) from e
+        except (BotoCoreError, EndpointConnectionError) as e:
             raise _translate(e, self.bucket) from e

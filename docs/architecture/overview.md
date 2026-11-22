@@ -295,9 +295,9 @@ any ending --complete_task--> end_task: questions cancelled, unread rows undeliv
 - Rows a woken turn read stay `read` if that turn then fails for good.
 - On `openai_agents`, `sh` runs in the worker container and can read the comms database URL from its environment; DSH runs commands in its isolated container.
 
-## Phase 3A persistence: blob references, retention and removal (draft)
+## Phase 3A persistence: blob references, retention, removal, backup and restore
 
-Draft: phases 01 and 02 of the [Phase 3A persistence plan](../plans/2026-11-19-phase-3a-persistence-and-lifecycle/plan.md). Phase 03 adds backup, restore and `reconcile`, and completes this section. Operations: [runbook, Removing data](../operations/runbook.md#removing-data).
+As built by the [Phase 3A persistence plan](../plans/2026-11-19-phase-3a-persistence-and-lifecycle/plan.md), phases 01 to 03. Operations: [runbook, Removing data](../operations/runbook.md#removing-data) and [Backup and restore](../operations/runbook.md#backup-and-restore).
 
 ### Components
 
@@ -311,6 +311,10 @@ Draft: phases 01 and 02 of the [Phase 3A persistence plan](../plans/2026-11-19-p
 | Deleted tasks | `common/persistence/fence.py` | ADR-0007's fence condition refuses every write of a task with a `deleted` attempt row, whatever its turn; `refuse_if_deleted` does the same, under the task lock, for writes with no attempt identity (the openai session store's items, the sample MCP server's orders). |
 | Expired reads | `RecordingBlobStore.get`, `stream`, `stat` | Raise `BlobExpired`, naming the removal date, when `blob_objects.removed_at` is set; `agentctl task output` reads through it. |
 | Events | `common/events/table.py` | `prune` takes the caller's connection, a row limit and the operation that marks the pruned events' references; events leave only through it, so `tail` reports *expired*, not a gap. |
+| Reconcile | `orchestrator/reconcile.py` | `agentctl reconcile` reads one snapshot, then the bucket listing, and lists dangling references, orphaned objects with their age, unindexed references, and unended tasks whose Workflow Temporal reports closed or missing (`orchestrator/workflow_status.py`); read-only, exit 1 when it lists anything, 2 when it cannot finish (`WorkflowStatusUnavailable` for a Temporal error other than NOT_FOUND). `--reindex` first runs `refs.reindex` under the run lock. |
+| Backup | `orchestrator/backup.py`, `make backup` | `agentctl backup` holds the run lock, creates its directory under it (new, mode 0700), reads the image list, writes the workers to start again (running or restarting) to `workers-stopped`, stops every worker service (`docker compose stop`, project from the env file only), runs `pg_dump -Fc` for `praxismesh`, `temporal` and `temporal_visibility` in the `db` container, starts them again even when the stop or a dump fails or on SIGTERM and SIGHUP (a signal handler raises `BackupFailed`), keeping the first error, lists the bucket through `S3BlobStore.list_objects` (only a bucket not yet created is empty, and only while no live blob is recorded), copies every object with its content type and metadata, and writes `manifest.json` last through a rename. |
+| Restore | `infra/restore.sh`, `make restore`, `infra/db/databases.sh` | Refuses a backup that is not whole or does not fit this checkout (`python -m orchestrator.backup check-backup`: the manifest, its format and migration head, every dump and object at its size), an unfinished restore (a comment on the `postgres` role) and a stack with rows in any application table, Workflows in the app namespace (`count_workflows`, Temporal's API) or bucket objects. Then marks itself, stops every worker and Temporal, drops the three databases, recreates them through `databases.sh --no-extensions` (the dumps bring the extensions) and `roles.sh`, runs `pg_restore --exit-on-error`, loads the objects, clears the mark, starts Temporal and the workers that were running or restarting and prints `reconcile`, telling its findings (exit 1 with a report) from a failure. `init.sh` creates its databases through the same `databases.sh`. |
+| Drill | `infra/drill.sh`, `make drill` | Backup, refused restore, `make reset`, a restore killed with SIGKILL while loading, a second reset, restore, then `task status`, `task output`, the `praxis_comms` role and a removed object reported dangling. CI's `stack` job runs it last. |
 
 ### Failure and recovery
 
@@ -319,13 +323,20 @@ Draft: phases 01 and 02 of the [Phase 3A persistence plan](../plans/2026-11-19-p
 - A delete that stopped partway is finished by its rerun with its own task list; a completed delete writes a `request delete complete` tombstone.
 - Bytes a `put` uploaded in a transaction that never committed sit under a row still marked removed; `gc` finds them (`refs.returned`) and removes them again.
 - An attempt writing a message holds its task lock and then waits for the request lock a delete holds; the delete's first batch takes task locks without waiting, so it releases the request lock and retries instead of deadlocking.
+- A removal process killed with SIGKILL releases the run lock and the request lock with its connection; the rerun finishes its marked objects on SeaweedFS (`test_removal_kills.py`).
+- A backup whose dump fails starts the workers again and writes no manifest. A restore killed after it marks itself leaves the mark; the next restore refuses until `make reset` (the drill).
+- A blob uploaded after the application dump is restored as an orphan; `gc` removes it after the safety window.
 
 ### Tests
 
-- Integration, each on a scratch database with an in-memory bucket: `test_removal_engine.py`, `test_revive.py`, `test_event_prune.py`, `test_gc.py`, `test_request_delete.py`, `test_removal_kills.py`, `test_blob_expired.py`. Session IDs on both runners: `test_task_e2e.py`, `test_dsh_outcomes.py`.
-- Unit: `tests/test_cli.py` (`gc`, `request delete`).
+- Integration, each on a scratch database with an in-memory bucket: `test_removal_engine.py`, `test_revive.py`, `test_event_prune.py`, `test_gc.py`, `test_request_delete.py`, `test_removal_kills.py`, `test_blob_expired.py`, `test_reconcile.py`. Session IDs on both runners: `test_task_e2e.py`, `test_dsh_outcomes.py`.
+- Against the stack: `test_backup.py` (real dumps and bucket copy; the worker stop and start simulated), `test_restore_refusals.py` (a scratch database, a SeaweedFS bucket of its own and the real Temporal), `test_workflow_status.py` (real Temporal), the SIGKILL test in `test_removal_kills.py` (SeaweedFS), `test_blob_store_s3.py`.
+- `make drill` (opt-in, CI); the demo script `infra/demo/phase-3a-lifecycle.sh`.
+- Unit: `tests/test_cli.py` (`gc`, `request delete`, `reconcile`).
 
 ### Known limits
 
 - Temporal keeps each turn's summary, questions and outcome for `TEMPORAL_RETENTION` (72 hours) after a delete, and in backups taken before.
-- Removal is manual; nothing schedules `gc`.
+- Removal and backup are manual; nothing schedules `gc` or `make backup` (Phase 7).
+- Backups are clear text and unencrypted (threat model R9); the recovery point is the last manual backup.
+- Reconcile does not compare every Workflow with its rows; it lists only unended tasks whose Workflow is closed or missing.

@@ -96,6 +96,19 @@ As built for the Phase 3A persistence plan, phase 01 (migration 0007; plan
   Signals, ADR-0010) are the one instance so far; no general outbox table
   exists until a second service needs one (Phase 5's GitHub delivery).
 
+As built for phase 03 (backup and restore, D8; no migration): a **backup** is a
+directory `backups/<UTC time>/` holding `praxismesh.dump`, `temporal.dump` and
+`temporal_visibility.dump` (`pg_dump -Fc`), `blobs/<key>` for every bucket object,
+and `manifest.json`, written last: `format` (1), `started_at`, `finished_at`,
+`migration` (the application database's Alembic head), `databases` (file and size
+of each dump), `rows` (count per application table, `blob_refs`, `blob_objects`
+and `audit_log`), `bucket`, `objects` (key, size, content type and S3 metadata of
+each object, which restore puts back), `workers_stopped` and `images` (the stack's
+pinned images). A directory without `manifest.json` is incomplete; restore refuses
+it. While a restore runs, the database superuser role `postgres` carries the
+comment `praxismesh-restore-in-progress`; a later restore refuses while it is
+there.
+
 ### `BlobStore` contract
 
 Provide a narrow async Python interface with `put`, `get/stream`, `delete`, `stat`, optional presigned/access-controlled URL operation, and typed error handling. The default adapter targets **SeaweedFS via S3-compatible API**. Ceph RGW uses the S3 adapter with configuration changes; GCS uses a dedicated adapter when enabled. Verify backend semantics for multipart uploads, versioning, conditional writes, signed URLs and integrity instead of assuming perfect interchangeability.

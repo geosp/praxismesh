@@ -12,6 +12,8 @@
     ./agentctl events prune --task TASK_ID (--below N | --older-than 7d) [--dry-run]
     ./agentctl gc [--dry-run]
     ./agentctl request delete REQ [--dry-run] [--force]
+    ./agentctl reconcile [--reindex]
+    ./agentctl backup [--to DIR]
 """
 
 from __future__ import annotations
@@ -29,9 +31,9 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from temporalio.client import Client, WorkflowExecutionStatus
+from sqlalchemy.exc import SQLAlchemyError
+from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
-from temporalio.service import RPCError, RPCStatusCode
 
 from common.blob_store.s3 import S3BlobStore
 from common.errors import InvalidTaskInput, PraxisError
@@ -50,8 +52,11 @@ from common.persistence.repositories import (
     make_engine,
 )
 from common.schemas import TaskResult
-from orchestrator.lifecycle import WorkflowStatus, delete_request, gc, prune_events
+from orchestrator.backup import DockerCompose, backup
+from orchestrator.lifecycle import delete_request, gc, prune_events
+from orchestrator.reconcile import reconcile
 from orchestrator.submit import prepare_task, start_task
+from orchestrator.workflow_status import WorkflowStatusUnavailable, status_of, workflow_status
 from registry.loader import load_registry
 
 PROVIDER = configure_tracing("praxis-cli")
@@ -260,7 +265,7 @@ async def tail(args: argparse.Namespace) -> int:
             try:
                 # Unknown or beyond retention counts as closed: nothing more arrives.
                 return await workflow_status(client, args.task_id) != "running"
-            except RPCError as e:
+            except WorkflowStatusUnavailable as e:
                 log.warning("cannot read the Workflow status; still following",
                             extra={"fields": {"error": str(e)}})  # fmt: skip
                 return False
@@ -278,18 +283,6 @@ async def _closed() -> bool:
     return True
 
 
-async def workflow_status(client: Client, workflow_id: str) -> WorkflowStatus:
-    """`running`, `closed` or `missing` (unknown, or beyond Temporal's retention);
-    other Temporal errors propagate."""
-    try:
-        description = await client.get_workflow_handle(workflow_id).describe()
-    except RPCError as e:
-        if e.status == RPCStatusCode.NOT_FOUND:
-            return "missing"
-        raise
-    return "running" if description.status == WorkflowExecutionStatus.RUNNING else "closed"
-
-
 async def gc_command(args: argparse.Namespace) -> int:
     """`agentctl gc [--dry-run]` (Phase 3A persistence plan R6-R8, D4, D5)."""
     engine = make_engine()
@@ -298,7 +291,7 @@ async def gc_command(args: argparse.Namespace) -> int:
         totals = await gc(
             engine,
             S3BlobStore.from_env(),
-            lambda task_id: workflow_status(client, task_id),
+            status_of(client),
             dry_run=args.dry_run,
         )
     finally:
@@ -347,7 +340,7 @@ async def request_delete(args: argparse.Namespace) -> int:
         totals = await delete_request(
             engine,
             S3BlobStore.from_env(),
-            lambda task_id: workflow_status(client, task_id),
+            status_of(client),
             args.request_id,
             force=args.force,
             dry_run=args.dry_run,
@@ -356,6 +349,47 @@ async def request_delete(args: argparse.Namespace) -> int:
         await engine.dispose()
     report = {"request_id": args.request_id, "dry_run": args.dry_run, **totals.report()}
     print(json.dumps(report, indent=2))
+    return 0
+
+
+class ServiceUnavailable(PraxisError):
+    """Temporal or the database could not be reached: exit 2, not a traceback."""
+
+
+async def reconcile_command(args: argparse.Namespace) -> int:
+    """`agentctl reconcile [--reindex]` (Phase 3A persistence plan R17): exit 1
+    when anything is listed, 2 when it cannot finish (impl-review F197)."""
+    engine = make_engine()
+    try:
+        try:
+            client = await connect()
+        except RuntimeError as e:  # temporalio's "Failed client connect"
+            raise ServiceUnavailable(f"cannot reach Temporal: {e}") from e
+        try:
+            report = await reconcile(
+                engine, S3BlobStore.from_env(), status_of(client), reindex=args.reindex
+            )
+        except (SQLAlchemyError, OSError) as e:
+            raise ServiceUnavailable(f"cannot reach the database: {e}") from e
+    finally:
+        await engine.dispose()
+    print(json.dumps(report.as_json(), indent=2))
+    return 0 if report.clean else 1
+
+
+async def backup_command(args: argparse.Namespace) -> int:
+    """`agentctl backup [--to DIR]` (Phase 3A persistence plan D8)."""
+    engine = make_engine()
+    try:
+        where = await backup(
+            engine,
+            S3BlobStore.from_env(),
+            DockerCompose.from_env(),
+            to=Path(args.to) if args.to else None,
+        )
+    finally:
+        await engine.dispose()
+    print(json.dumps({"backup": str(where)}))
     return 0
 
 
@@ -393,6 +427,16 @@ def parser() -> argparse.ArgumentParser:
     pr.add_argument("--dry-run", action="store_true", help="print what would go; change nothing")
     g = commands.add_parser("gc", help="remove everything whose retention has expired")
     g.add_argument("--dry-run", action="store_true", help="print the plan; change nothing")
+    rc = commands.add_parser(
+        "reconcile", help="list dangling, orphaned and unindexed references, unended tasks"
+    )
+    rc.add_argument(
+        "--reindex", action="store_true", help="index unindexed references first (idempotent)"
+    )
+    b = commands.add_parser(
+        "backup", help="dump the three databases and copy the bucket (stops the workers)"
+    )
+    b.add_argument("--to", help="an empty directory to create (default backups/<UTC time>)")
     req = commands.add_parser("request").add_subparsers(dest="command", required=True)
     d = req.add_parser("delete", help="delete a request's data: blobs, content, events")
     d.add_argument("request_id")
@@ -408,7 +452,7 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: list[str]) -> int:
     args = parser().parse_args(argv)
     configure_logging(os.environ.get("LOG_LEVEL", "INFO"), stream=sys.stderr)
-    command = args.group if args.group in ("tail", "gc") else args.command
+    command = args.group if args.group in ("tail", "gc", "reconcile", "backup") else args.command
     handler = {
         "submit": submit,
         "status": status,
@@ -416,6 +460,8 @@ def main(argv: list[str]) -> int:
         "tail": tail,
         "prune": prune,
         "gc": gc_command,
+        "reconcile": reconcile_command,
+        "backup": backup_command,
         "delete": request_delete,
     }[command]
     try:

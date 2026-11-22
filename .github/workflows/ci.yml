@@ -103,7 +103,8 @@ jobs:
   stack:
     runs-on: ubuntu-latest
     # Phase 2 messaging's acceptance suites (real DSH containers, 100 wakes) took
-    # `make smoke` from about 6 to 17 minutes; the whole job needs about 32.
+    # `make smoke` from about 6 to 17 minutes; the whole job needs about 32, and
+    # the drill about 3 more.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,6 +122,9 @@ jobs:
       - run: make unhealthy-check
       - run: make workers-check
       - run: make recovery-check
+      # The backup and restore drill (Phase 3A persistence plan task 2.3). It
+      # resets this stack, so it runs last, after every suite that needs its data.
+      - run: make drill
       - name: Stack logs on failure
         if: failure()
         run: |

@@ -23,7 +23,8 @@ from common.blob_store.base import content_key
 from common.events import TableTransport
 from common.persistence.removal import RemovalBusy, run_lock
 from common.persistence.repositories import Checkpoint, CheckpointRepository, RecordingBlobStore
-from orchestrator.lifecycle import GcRefused, WorkflowStatus, gc
+from orchestrator.lifecycle import GcRefused, gc
+from orchestrator.workflow_status import WorkflowStatus
 from tests.support.lifecycle import (
     FakeTemporal,
     StoredTask,

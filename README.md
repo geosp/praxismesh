@@ -162,6 +162,8 @@ make workers-down
 
 `make task` prints the task ID, waits, and prints the `TaskResult`. `make benchmark` runs the agent benchmark (10 tasks) on your model. `make observability-up` starts Prometheus (<http://127.0.0.1:9090>) and Jaeger (<http://127.0.0.1:16686>); set `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` in `infra/.env` before `make workers-up` to send traces there. What an agent may use (model, MCP servers, skills, commands) comes only from its worker template in `registry/`. A request that names a skill, an MCP server or a tool is rejected. `make workers-check` runs a scripted task through the worker containers against a deterministic fake model (CI does this); afterwards, run `make workers-up` to point the workers back at your model.
 
+Stored data expires by its retention class, and an operator removes it: `./agentctl gc`, `./agentctl request delete REQ`, each with `--dry-run`, and `./agentctl reconcile` to check the rows, the index and the bucket against each other. `make backup` dumps the three databases and copies the bucket into `backups/` (clear text, git-ignored); `make restore BACKUP=backups/<time>` loads one into an empty stack (after `make reset` and `make up`); `make drill` runs the whole procedure and deletes the stack's data. See the runbook's [Removing data](docs/operations/runbook.md#removing-data) and [Backup and restore](docs/operations/runbook.md#backup-and-restore).
+
 ## Contributing
 
 Work is tracked in GitHub issues and reaches `main` only through pull requests that pass `ci-ok`. See [CONTRIBUTING.md](CONTRIBUTING.md). Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).

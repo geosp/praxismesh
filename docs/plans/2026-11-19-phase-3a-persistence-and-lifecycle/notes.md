@@ -232,30 +232,36 @@ own connection for the whole run:
 2. `pg_dump -Fc` of `praxismesh`, `temporal` and `temporal_visibility` through
    `docker compose exec db`, then start the workers again.
 3. Copy every bucket object to `blobs/<key>` through the S3 API (boto3, already a dependency).
-4. Write `manifest.json`: times, row counts, object count, migration head, versions.
+4. Write `manifest.json`: times, row counts, every object with its size and metadata, migration
+   head, the database files and sizes, the workers stopped and the default services' images.
 
 Order: the application database first, so no restored row names a blob newer than the copy. A blob
 uploaded after the dump is restored as a bucket object with no row: an orphan by the bucket listing
 (d2), which `gc` removes after the window. The lock keeps removals out between the dump and the
 copy. With the workers stopped, no Workflow advances between the dumps. Reconcile covers
-references, blobs and unended tasks whose Workflow is closed; a full comparison of every Workflow
+references, blobs and unended tasks whose Workflow is closed or missing; a full comparison of every Workflow
 with its rows is Phase 9 hardening.
 
 `make restore BACKUP=backups/<time>` (`infra/restore.sh`):
 
-1. Refuse unless `tasks` is missing or empty, Temporal's API lists no Workflow in the app's
-   namespace (system namespaces ignored; no SQL on Temporal's databases, ADR-0002), and the
-   bucket is empty (R23).
+1. Refuse unless the backup is whole and fits this checkout (its manifest, backup format and
+   migration head, and every dump and object at the size the manifest gives), no application
+   table has rows (impl-review F171; it was `tasks` alone), Temporal's API lists no Workflow in
+   the app's namespace (system namespaces ignored; no SQL on Temporal's databases, ADR-0002),
+   and the bucket is empty (R23).
 2. Stop the workers and Temporal.
 3. Drop `praxismesh`, `temporal` and `temporal_visibility`, then run `infra/db/databases.sh`: the
    `CREATE DATABASE`, `REVOKE`/`GRANT CONNECT` and extension statements, moved out of `init.sh`
-   (which runs them once through it; Compose mounts it next to `init.sh`). Then run `roles.sh` (already rerunnable) and `pg_restore`
+   (which runs them once through it; Compose mounts it next to `init.sh`). Restore runs it with
+   `--no-extensions`: the dumps create the extensions themselves. Then run `roles.sh` (already rerunnable) and `pg_restore`
    each dump.
-4. Load the blobs, start Temporal and the workers, and print `agentctl reconcile`'s report; its
+4. Load the blobs, clear the mark, start Temporal and the workers that were running or
+   restarting, and print `agentctl reconcile`'s report; its
    findings are information, so restore does not fail on its exit status.
 
-A failure after step 3 starts leaves a partial load, which step 1 then refuses; `make reset`
-clears the stack, and restore runs again.
+Before step 2, restore sets a mark (a comment on the `postgres` role). A failure between the
+mark and the end of the load leaves it, so the next restore refuses ("an earlier restore did not
+finish"); `make reset` clears the stack and the mark, and restore runs again.
 
 **The drill** is `make drill`, opt-in and never part of `make smoke`, because it runs `make reset`.
 It needs a stack started with `make up`: it backs up, resets, runs `make up`, restores into the same
