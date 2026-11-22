@@ -20,3 +20,6 @@ One record per consequential architecture decision, written when the decision is
 | [0009](0009-use-a-postgresql-event-table-for-agent-events.md) | Carry agent progress events in a PostgreSQL event table, behind an event-transport interface | accepted |
 | [0010](0010-wake-agents-through-a-durable-inbox.md) | Keep agent messages in a durable PostgreSQL inbox, and use Temporal Signals only to wake the recipient | accepted |
 | [0011](0011-scope-agent-messaging-to-the-request.md) | Confine agent messaging to the sender's request, through a separate tool server that takes the sender from the worker | accepted |
+| [0012](0012-index-every-blob-reference-with-its-holder.md) | Index every stored blob reference in its holder's transaction, and give every table and blob a retention class | accepted |
+| [0013](0013-remove-data-only-through-the-removal-engine.md) | Remove data only through one removal engine, in tombstoned batches under one run lock, rows before the bucket | accepted |
+| [0014](0014-back-up-as-database-dumps-and-a-bucket-copy.md) | Back up the Compose stack as three database dumps and a bucket copy, and restore only into an empty stack | accepted |
