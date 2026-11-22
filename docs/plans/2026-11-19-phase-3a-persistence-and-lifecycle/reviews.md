@@ -318,3 +318,10 @@ code_sha 4d269be, docs_sha 1b91b61 (both on origin/feat/92-phase-3a-backup-resto
 
 ## 2026-11-21 · done · phase 03
 Tests, acceptance, the drill, the demo and verification passed (verification-persistence-03.md); impl review round 2 passed with nothing open. Every phase is done: the plan is implemented.
+
+## 2026-11-21 · ADR review
+ADRs in force reviewed: ADR-0002, ADR-0003, ADR-0005 to ADR-0011 (accepted); ADR-0001 and ADR-0004 are proposed. None records the plan's reference index, removal engine or backup procedure. Created, with the owner's confirmation:
+- ADR-0012: index every stored blob reference in its holder's transaction, and give every table and blob a retention class (D2, D3, D10).
+- ADR-0013: remove data only through one removal engine, in tombstoned batches under one run lock, rows before the bucket (D4, D6).
+- ADR-0014: back up the Compose stack as three database dumps and a bucket copy, and restore only into an empty stack (D8).
+Not recorded: D1, D5, D7, D9, D11 and D12 are tactical or specific to this plan.
