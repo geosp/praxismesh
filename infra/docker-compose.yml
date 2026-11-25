@@ -11,7 +11,7 @@
 services:
   db:
     # ParadeDB is AGPL-3.0, run unmodified as a separate service (docs/release.md).
-    image: paradedb/paradedb:0.26.6-pg16@sha256:c0f24b2e8d0bbb989006992b30956d904b2e121e5060452fb8da46e6fc79c5b4
+    image: paradedb/paradedb:v0.27.0-pg16@sha256:2287c2656bff7eb111e812ec2b68dc70bc262f1eb4b2841cea83c90d66a5d680
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/.env}
